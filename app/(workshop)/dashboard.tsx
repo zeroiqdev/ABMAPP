@@ -6,22 +6,32 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  Dimensions,
+  SafeAreaView,
+  Platform,
+  StatusBar,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
-import { Job, Invoice, InventoryItem } from '@/types';
-import { format } from 'date-fns';
+import { Job, Invoice } from '@/types';
+import { format, subMonths, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
+
+const { width } = Dimensions.get('window');
+const CARD_WIDTH = width * 0.85;
+const CARD_SPACING = 15;
+const SIDE_PADDING = (width - CARD_WIDTH) / 2;
 
 export default function WorkshopDashboard() {
   const { user } = useAuthStore();
   const router = useRouter();
   const [stats, setStats] = useState({
-    activeJobs: 0,
-    pendingInvoices: 0,
-    lowStockItems: 0,
-    todayRevenue: 0,
+    totalRevenue: 0,
+    lastMonthRevenue: 0,
+    technicianRevenue: [] as { name: string; amount: number }[],
+    completedJobs: 0,
+    lastMonthCompletedJobs: 0,
   });
   const [recentJobs, setRecentJobs] = useState<Job[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -34,34 +44,71 @@ export default function WorkshopDashboard() {
     if (!user?.workshopId) return;
 
     try {
-      const activeJobs = await firebaseService.getJobs(
-        undefined,
-        user.workshopId,
-        ['received', 'diagnosed', 'repairing']
-      );
-      setStats((prev) => ({ ...prev, activeJobs: activeJobs.length }));
-      setRecentJobs(activeJobs.slice(0, 5));
+      const [jobs, invoices] = await Promise.all([
+        firebaseService.getJobs(undefined, user.workshopId),
+        firebaseService.getInvoices(undefined, user.workshopId),
+      ]);
 
-      const invoices = await firebaseService.getInvoices(undefined, user.workshopId);
-      const pending = invoices.filter((inv) => inv.paymentStatus === 'pending');
-      setStats((prev) => ({ ...prev, pendingInvoices: pending.length }));
+      // --- Revenue Metrics ---
+      const now = new Date();
+      const lastMonthStart = startOfMonth(subMonths(now, 1));
+      const lastMonthEnd = endOfMonth(subMonths(now, 1));
 
-      const inventory = await firebaseService.getInventoryItems(user.workshopId);
-      const lowStock = inventory.filter(
-        (item) => item.quantity <= item.minStockLevel
-      );
-      setStats((prev) => ({ ...prev, lowStockItems: lowStock.length }));
+      // Calculate total revenue from all paid amounts (including partial payments)
+      const paidInvoices = invoices.filter((inv) => inv.paymentStatus === 'paid' || inv.paymentStatus === 'partially_paid');
+      const totalRevenue = paidInvoices.reduce((sum, inv) => sum + (inv.amountPaid || 0), 0);
 
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const todayInvoices = invoices.filter(
-        (inv) =>
-          inv.paymentStatus === 'paid' &&
-          inv.paymentDate &&
-          inv.paymentDate >= today
-      );
-      const revenue = todayInvoices.reduce((sum, inv) => sum + inv.total, 0);
-      setStats((prev) => ({ ...prev, todayRevenue: revenue }));
+      // Calculate last month revenue from payment history
+      const lastMonthRevenue = invoices.reduce((sum, inv) => {
+        if (!inv.paymentHistory || inv.paymentHistory.length === 0) return sum;
+        
+        const lastMonthPayments = inv.paymentHistory.filter((payment) => {
+          const paymentDate = payment.date instanceof Date ? payment.date : new Date(payment.date);
+          return isWithinInterval(paymentDate, { start: lastMonthStart, end: lastMonthEnd });
+        });
+        
+        return sum + lastMonthPayments.reduce((paymentSum, p) => paymentSum + p.amount, 0);
+      }, 0);
+
+      // --- Technician Revenue Breakdown ---
+      const jobMap = new Map(jobs.map(j => [j.id, j]));
+      const techRevenueMap = new Map<string, number>();
+
+      // Calculate technician earnings from payment history
+      invoices.forEach(inv => {
+        const job = jobMap.get(inv.jobId);
+        if (job && job.assignedTechnicianId && inv.paymentHistory && inv.paymentHistory.length > 0) {
+          const techName = job.technicianName || 'Unknown Tech';
+          const current = techRevenueMap.get(techName) || 0;
+          // Add all payments for this invoice to technician's earnings
+          const invoicePayments = inv.paymentHistory.reduce((sum, p) => sum + p.amount, 0);
+          techRevenueMap.set(techName, current + invoicePayments);
+        }
+      });
+
+      const technicianRevenue = Array.from(techRevenueMap.entries())
+        .map(([name, amount]) => ({ name, amount }))
+        .sort((a, b) => b.amount - a.amount)
+        .slice(0, 3);
+
+      // --- Completed Jobs ---
+      const completedJobs = jobs.filter(j => j.status === 'completed').length;
+      const lastMonthCompletedJobs = jobs.filter(j =>
+        j.status === 'completed' &&
+        j.completedAt &&
+        isWithinInterval(j.completedAt, { start: lastMonthStart, end: lastMonthEnd })
+      ).length;
+
+      setStats({
+        totalRevenue,
+        lastMonthRevenue,
+        technicianRevenue,
+        completedJobs,
+        lastMonthCompletedJobs,
+      });
+
+      setRecentJobs(jobs.slice(0, 5));
+
     } catch (error) {
       console.error('Error loading dashboard data:', error);
     }
@@ -74,40 +121,19 @@ export default function WorkshopDashboard() {
   };
 
   const getRoleDashboard = () => {
-    switch (user?.role) {
-      case 'admin':
-        return <AdminDashboard stats={stats} recentJobs={recentJobs} />;
-      case 'technician':
-        return <TechnicianDashboard stats={stats} recentJobs={recentJobs} />;
-      case 'storekeeper':
-        return <StorekeeperDashboard stats={stats} />;
-      case 'accountant':
-        return <AccountantDashboard stats={stats} />;
-      case 'service_advisor':
-        return <ServiceAdvisorDashboard stats={stats} recentJobs={recentJobs} />;
-      default:
-        return null;
-    }
+    return <AdminDashboard stats={stats} recentJobs={recentJobs} />;
   };
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Dashboard</Text>
-          <Text style={styles.headerSubtitle}>
-            {user?.name} - {user?.role?.replace('_', ' ').toUpperCase()}
-          </Text>
-        </View>
-        <TouchableOpacity onPress={() => router.push('/(workshop)/settings')}>
-          <Ionicons name="settings-outline" size={24} color="#000" />
-        </TouchableOpacity>
-      </View>
+      <StatusBar barStyle="dark-content" />
+      <DashboardHeader user={user} />
 
       <ScrollView
         style={styles.content}
+        contentContainerStyle={styles.contentContainer}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#000" />
         }
       >
         {getRoleDashboard()}
@@ -116,7 +142,33 @@ export default function WorkshopDashboard() {
   );
 }
 
-// Admin Dashboard
+function DashboardHeader({ user }: { user: any }) {
+  const router = useRouter();
+  return (
+    <View style={styles.headerContainer}>
+      <SafeAreaView>
+        <View style={styles.headerContent}>
+          <View>
+            <Text style={styles.headerGreeting}>Welcome back,</Text>
+            <Text style={styles.headerName}>{user?.name}</Text>
+          </View>
+          <View style={styles.headerActions}>
+            <TouchableOpacity style={styles.iconButton}>
+              <Ionicons name="search-outline" size={24} color="#333" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={() => router.push('/(workshop)/settings')}
+            >
+              <Ionicons name="person-outline" size={24} color="#333" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </SafeAreaView>
+    </View>
+  );
+}
+
 function AdminDashboard({
   stats,
   recentJobs,
@@ -125,278 +177,203 @@ function AdminDashboard({
   recentJobs: Job[];
 }) {
   const router = useRouter();
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  const calculateGrowth = (current: number, previous: number) => {
+    if (previous === 0) return current > 0 ? 100 : 0;
+    return ((current - previous) / previous) * 100;
+  };
+
+  const revenueGrowth = calculateGrowth(stats.totalRevenue, stats.lastMonthRevenue);
+  const jobsGrowth = calculateGrowth(stats.completedJobs, stats.lastMonthCompletedJobs);
+
+  const handleScroll = (event: any) => {
+    const scrollX = event.nativeEvent.contentOffset.x;
+    const index = Math.round(scrollX / (CARD_WIDTH + CARD_SPACING));
+    setActiveIndex(index);
+  };
 
   return (
     <>
-      <View style={styles.statsGrid}>
-        <StatCard
-          icon="briefcase-outline"
-          label="Active Jobs"
-          value={stats.activeJobs.toString()}
-          color="#007AFF"
-          onPress={() => router.push('/(workshop)/jobs')}
-        />
-        <StatCard
-          icon="receipt-outline"
-          label="Pending Invoices"
-          value={stats.pendingInvoices.toString()}
-          color="#FFA500"
-          onPress={() => router.push('/(workshop)/invoices')}
-        />
-        <StatCard
-          icon="cube-outline"
-          label="Low Stock"
-          value={stats.lowStockItems.toString()}
-          color="#FF3B30"
-          onPress={() => router.push('/(workshop)/inventory')}
-        />
-        <StatCard
-          icon="cash-outline"
-          label="Today's Revenue"
-          value={`₦${stats.todayRevenue.toLocaleString()}`}
-          color="#30D158"
-        />
+      <View style={styles.carouselContainer}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          decelerationRate="fast"
+          snapToInterval={CARD_WIDTH + CARD_SPACING}
+          snapToAlignment="start"
+          contentContainerStyle={{
+            paddingHorizontal: SIDE_PADDING,
+            paddingBottom: 20,
+          }}
+        >
+          {/* Slide 1: Revenue */}
+          <View style={styles.slideContainer}>
+            <MetricCard
+              title="Revenue Generated"
+              value={`₦${stats.totalRevenue.toLocaleString()}`}
+              growth={revenueGrowth}
+              chartData={[40, 60, 45, 70, 80, 65, 85]}
+            />
+          </View>
+
+          {/* Slide 2: Technician Revenue */}
+          <View style={styles.slideContainer}>
+            <TechnicianRevenueCard data={stats.technicianRevenue} />
+          </View>
+
+          {/* Slide 3: Jobs Completed */}
+          <View style={styles.slideContainer}>
+            <MetricCard
+              title="Jobs Completed"
+              value={stats.completedJobs.toString()}
+              growth={jobsGrowth}
+              chartData={[20, 30, 25, 40, 35, 50, 45]}
+              isCurrency={false}
+            />
+          </View>
+        </ScrollView>
+
+        <View style={styles.pagination}>
+          {[0, 1, 2].map((_, index) => (
+            <View
+              key={index}
+              style={[
+                styles.paginationDot,
+                index === activeIndex ? styles.paginationDotActive : null,
+              ]}
+            />
+          ))}
+        </View>
       </View>
 
-      <View style={styles.section}>
+      <View style={styles.recentSectionContainer}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent Jobs</Text>
-          <TouchableOpacity onPress={() => router.push('/(workshop)/jobs')}>
-            <Text style={styles.seeAll}>See All</Text>
+          <Text style={styles.sectionTitle}>Recent Jobs and Requests</Text>
+          <TouchableOpacity
+            style={styles.arrowButton}
+            onPress={() => router.push('/(workshop)/jobs')}
+          >
+            <Ionicons name="arrow-forward" size={20} color="#333" />
           </TouchableOpacity>
         </View>
+
         {recentJobs.length === 0 ? (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>No active jobs</Text>
+            <Text style={styles.emptyText}>No recent activity</Text>
           </View>
         ) : (
           recentJobs.map((job) => (
-            <JobCard key={job.id} job={job} />
+            <RecentJobItem key={job.id} job={job} />
           ))
         )}
       </View>
+    </>
+  );
+}
 
-      <View style={styles.quickActions}>
-        <Text style={styles.sectionTitle}>Quick Actions</Text>
-        <View style={styles.actionsGrid}>
-          <ActionButton
-            icon="people-outline"
-            label="Customers"
-            onPress={() => router.push('/(workshop)/customers')}
-          />
-          <ActionButton
-            icon="car-outline"
-            label="Vehicles"
-            onPress={() => router.push('/(workshop)/vehicles')}
-          />
-          <ActionButton
-            icon="bar-chart-outline"
-            label="Reports"
-            onPress={() => router.push('/(workshop)/reports')}
-          />
-          <ActionButton
-            icon="settings-outline"
-            label="Settings"
-            onPress={() => router.push('/(workshop)/settings')}
-          />
+function MetricCard({
+  title,
+  value,
+  growth,
+  chartData,
+  isCurrency = true,
+}: {
+  title: string;
+  value: string;
+  growth: number;
+  chartData: number[];
+  isCurrency?: boolean;
+}) {
+  const isPositive = growth >= 0;
+
+  return (
+    <View style={styles.blackCard}>
+      <View style={styles.metricHeader}>
+        <Text style={styles.metricTitle}>{title}</Text>
+        <View style={styles.metricIconCircle}>
+          <Ionicons name="arrow-up" size={14} color="#000" style={{ transform: [{ rotate: '45deg' }] }} />
         </View>
       </View>
-    </>
+
+      <Text style={styles.metricValue}>{value}</Text>
+
+      <View style={styles.metricFooter}>
+        <View style={styles.growthContainer}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Ionicons
+              name={isPositive ? "arrow-up" : "arrow-down"}
+              size={16}
+              color={isPositive ? "#34C759" : "#FF3B30"}
+            />
+            <Text style={[styles.growthText, { color: isPositive ? "#34C759" : "#FF3B30" }]}>
+              {Math.abs(growth).toFixed(1)}%
+            </Text>
+          </View>
+          <Text style={styles.growthLabel}>Than last month</Text>
+        </View>
+
+        <View style={styles.miniChart}>
+          {chartData.map((height, index) => (
+            <View
+              key={index}
+              style={[
+                styles.chartBar,
+                {
+                  height: `${height}%`,
+                  backgroundColor: '#fff',
+                  opacity: 0.6 + (index / chartData.length) * 0.4
+                }
+              ]}
+            />
+          ))}
+        </View>
+      </View>
+    </View>
   );
 }
 
-// Technician Dashboard
-function TechnicianDashboard({
-  stats,
-  recentJobs,
-}: {
-  stats: any;
-  recentJobs: Job[];
-}) {
-  const router = useRouter();
-  const { user } = useAuthStore();
-
-  const myJobs = recentJobs.filter(
-    (job) => job.assignedTechnicianId === user?.id
-  );
-
+function TechnicianRevenueCard({ data }: { data: { name: string; amount: number }[] }) {
   return (
-    <>
-      <View style={styles.statsGrid}>
-        <StatCard
-          icon="briefcase-outline"
-          label="My Jobs"
-          value={myJobs.length.toString()}
-          color="#007AFF"
-          onPress={() => router.push('/(workshop)/jobs')}
-        />
-        <StatCard
-          icon="time-outline"
-          label="In Progress"
-          value={myJobs.filter((j) => j.status === 'repairing').length.toString()}
-          color="#34C759"
-        />
+    <View style={styles.blackCard}>
+      <View style={styles.metricHeader}>
+        <Text style={styles.metricTitle}>Technician Revenue</Text>
+        <View style={styles.metricIconCircle}>
+          <Ionicons name="people" size={14} color="#000" />
+        </View>
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>My Assigned Jobs</Text>
-        {myJobs.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>No assigned jobs</Text>
-          </View>
+      <View style={styles.techList}>
+        {data.length === 0 ? (
+          <Text style={styles.emptyTextWhite}>No data available</Text>
         ) : (
-          myJobs.map((job) => (
-            <JobCard key={job.id} job={job} />
+          data.map((tech, index) => (
+            <View key={index} style={styles.techRow}>
+              <Text style={styles.techName}>{tech.name}</Text>
+              <Text style={styles.techAmount}>₦{tech.amount.toLocaleString()}</Text>
+            </View>
           ))
         )}
       </View>
-    </>
+    </View>
   );
 }
 
-// Storekeeper Dashboard
-function StorekeeperDashboard({ stats }: { stats: any }) {
+function RecentJobItem({ job }: { job: Job }) {
   const router = useRouter();
 
-  return (
-    <>
-      <View style={styles.statsGrid}>
-        <StatCard
-          icon="cube-outline"
-          label="Low Stock Items"
-          value={stats.lowStockItems.toString()}
-          color="#FF3B30"
-          onPress={() => router.push('/(workshop)/inventory')}
-        />
-      </View>
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'received': return 'mail-outline';
+      case 'diagnosed': return 'search-outline';
+      case 'repairing': return 'construct-outline';
+      case 'completed': return 'checkmark-circle-outline';
+      default: return 'help-outline';
+    }
+  };
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Inventory Management</Text>
-        <TouchableOpacity
-          style={styles.actionCard}
-          onPress={() => router.push('/(workshop)/inventory')}
-        >
-          <Ionicons name="cube-outline" size={32} color="#007AFF" />
-          <Text style={styles.actionText}>Manage Inventory</Text>
-        </TouchableOpacity>
-      </View>
-    </>
-  );
-}
-
-// Accountant Dashboard
-function AccountantDashboard({ stats }: { stats: any }) {
-  const router = useRouter();
-
-  return (
-    <>
-      <View style={styles.statsGrid}>
-        <StatCard
-          icon="receipt-outline"
-          label="Pending Invoices"
-          value={stats.pendingInvoices.toString()}
-          color="#FFA500"
-          onPress={() => router.push('/(workshop)/invoices')}
-        />
-        <StatCard
-          icon="cash-outline"
-          label="Today's Revenue"
-          value={`₦${stats.todayRevenue.toLocaleString()}`}
-          color="#30D158"
-        />
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Financial Management</Text>
-        <TouchableOpacity
-          style={styles.actionCard}
-          onPress={() => router.push('/(workshop)/invoices')}
-        >
-          <Ionicons name="receipt-outline" size={32} color="#007AFF" />
-          <Text style={styles.actionText}>Manage Invoices</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.actionCard}
-          onPress={() => router.push('/(workshop)/reports')}
-        >
-          <Ionicons name="bar-chart-outline" size={32} color="#007AFF" />
-          <Text style={styles.actionText}>View Reports</Text>
-        </TouchableOpacity>
-      </View>
-    </>
-  );
-}
-
-// Service Advisor Dashboard
-function ServiceAdvisorDashboard({
-  stats,
-  recentJobs,
-}: {
-  stats: any;
-  recentJobs: Job[];
-}) {
-  const router = useRouter();
-
-  return (
-    <>
-      <View style={styles.statsGrid}>
-        <StatCard
-          icon="briefcase-outline"
-          label="Active Jobs"
-          value={stats.activeJobs.toString()}
-          color="#007AFF"
-          onPress={() => router.push('/(workshop)/jobs')}
-        />
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Recent Jobs</Text>
-        {recentJobs.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>No active jobs</Text>
-          </View>
-        ) : (
-          recentJobs.map((job) => (
-            <JobCard key={job.id} job={job} />
-          ))
-        )}
-      </View>
-    </>
-  );
-}
-
-// Stat Card Component
-function StatCard({
-  icon,
-  label,
-  value,
-  color,
-  onPress,
-}: {
-  icon: string;
-  label: string;
-  value: string;
-  color: string;
-  onPress?: () => void;
-}) {
-  const Card = onPress ? TouchableOpacity : View;
-  return (
-    <Card
-      style={[styles.statCard, onPress && styles.statCardPressable]}
-      onPress={onPress}
-    >
-      <View style={[styles.statIcon, { backgroundColor: color + '20' }]}>
-        <Ionicons name={icon as any} size={24} color={color} />
-      </View>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </Card>
-  );
-}
-
-// Job Card Component
-function JobCard({ job }: { job: Job }) {
-  const router = useRouter();
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'received': return '#FFA500';
@@ -409,48 +386,23 @@ function JobCard({ job }: { job: Job }) {
 
   return (
     <TouchableOpacity
-      style={styles.jobCard}
+      style={styles.recentItem}
       onPress={() => router.push(`/(workshop)/job-details?id=${job.id}`)}
     >
-      <View style={styles.jobHeader}>
-        <Text style={styles.jobType}>
-          {job.type === 'service' ? 'Service' : 'Complaint'}
-        </Text>
-        <View
-          style={[
-            styles.statusBadge,
-            { backgroundColor: getStatusColor(job.status) },
-          ]}
-        >
-          <Text style={styles.statusText}>
-            {job.status.charAt(0).toUpperCase() + job.status.slice(1)}
-          </Text>
-        </View>
+      <View style={[styles.recentIconContainer, { backgroundColor: '#F5F6FA' }]}>
+        <Ionicons name={getStatusIcon(job.status) as any} size={24} color={getStatusColor(job.status)} />
       </View>
-      <Text style={styles.jobDescription} numberOfLines={2}>
-        {job.description}
-      </Text>
-      <Text style={styles.jobDate}>
-        {format(job.createdAt, 'MMM dd, yyyy')}
-      </Text>
-    </TouchableOpacity>
-  );
-}
-
-// Action Button Component
-function ActionButton({
-  icon,
-  label,
-  onPress,
-}: {
-  icon: string;
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity style={styles.actionButton} onPress={onPress}>
-      <Ionicons name={icon as any} size={24} color="#007AFF" />
-      <Text style={styles.actionButtonText}>{label}</Text>
+      <View style={styles.recentInfo}>
+        <Text style={styles.recentTitle}>{job.type === 'service' ? 'Service' : 'Complaint'}</Text>
+        <Text style={styles.recentSubtitle} numberOfLines={1}>
+          {format(job.updatedAt, 'MMM dd, yyyy')} | {job.description}
+        </Text>
+      </View>
+      <View style={[styles.statusBadge, { backgroundColor: getStatusColor(job.status) + '15' }]}>
+        <Text style={[styles.statusText, { color: getStatusColor(job.status) }]}>
+          {job.status.charAt(0).toUpperCase() + job.status.slice(1)}
+        </Text>
+      </View>
     </TouchableOpacity>
   );
 }
@@ -458,171 +410,240 @@ function ActionButton({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#F5F6FA',
   },
-  header: {
+  headerContainer: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 20,
+    paddingBottom: 10,
+    paddingTop: Platform.OS === 'android' ? 40 : 10,
+  },
+  headerContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    paddingTop: 60,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  headerSubtitle: {
+  headerGreeting: {
     fontSize: 14,
     color: '#666',
-    marginTop: 4,
+  },
+  headerName: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#000',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 15,
+  },
+  iconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F5F6FA',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   content: {
     flex: 1,
   },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    padding: 15,
-    gap: 15,
+  contentContainer: {
+    paddingBottom: 40,
   },
-  statCard: {
-    width: '47%',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 15,
-    alignItems: 'center',
+  carouselContainer: {
+    marginTop: 20,
+    marginBottom: 10,
+  },
+  slideContainer: {
+    width: CARD_WIDTH,
+    marginRight: CARD_SPACING,
+  },
+  blackCard: {
+    backgroundColor: '#000',
+    borderRadius: 30,
+    padding: 24,
+    height: 200,
+    justifyContent: 'space-between',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
   },
-  statCardPressable: {
-    // Additional styles for pressable cards
+  metricHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
   },
-  statIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+  metricTitle: {
+    fontSize: 16,
+    color: '#999',
+    fontWeight: '500',
+  },
+  metricIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#fff',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 10,
   },
-  statValue: {
-    fontSize: 20,
+  metricValue: {
+    fontSize: 42,
     fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 4,
+    color: '#fff',
   },
-  statLabel: {
-    fontSize: 12,
+  metricFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  growthContainer: {
+    flex: 1,
+  },
+  growthText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  growthLabel: {
     color: '#666',
-    textAlign: 'center',
+    fontWeight: '400',
+    fontSize: 12,
+    marginTop: 2,
   },
-  section: {
-    padding: 15,
+  miniChart: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    height: 30,
+    gap: 4,
+  },
+  chartBar: {
+    width: 6,
+    borderRadius: 3,
+  },
+  pagination: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 10,
+    gap: 8,
+  },
+  paginationDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#D1D1D6',
+  },
+  paginationDotActive: {
+    backgroundColor: '#000',
+    width: 24,
+  },
+  recentSectionContainer: {
     backgroundColor: '#fff',
-    marginBottom: 10,
+    marginHorizontal: 20,
+    borderRadius: 30,
+    padding: 20,
+    paddingBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 15,
+    marginBottom: 20,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 15,
+    color: '#000',
   },
-  seeAll: {
-    fontSize: 14,
-    color: '#007AFF',
-    fontWeight: '600',
-  },
-  jobCard: {
-    backgroundColor: '#f9f9f9',
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 10,
-  },
-  jobHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  arrowButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F5F6FA',
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 10,
   },
-  jobType: {
+  recentItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  recentIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  recentInfo: {
+    flex: 1,
+    marginRight: 10,
+  },
+  recentTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
+    color: '#000',
+    marginBottom: 4,
   },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-  },
-  statusText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  jobDescription: {
-    fontSize: 14,
+  recentSubtitle: {
+    fontSize: 13,
     color: '#666',
-    marginBottom: 8,
+    marginBottom: 4,
   },
-  jobDate: {
+  recentMeta: {
     fontSize: 12,
     color: '#999',
   },
-  quickActions: {
-    padding: 15,
-    backgroundColor: '#fff',
-    marginBottom: 10,
-  },
-  actionsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 15,
-  },
-  actionCard: {
-    width: '47%',
-    backgroundColor: '#f9f9f9',
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 12,
-    padding: 20,
+    minWidth: 80,
     alignItems: 'center',
-    marginBottom: 10,
   },
-  actionText: {
-    marginTop: 10,
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-  },
-  actionButton: {
-    width: '47%',
-    backgroundColor: '#f9f9f9',
-    borderRadius: 12,
-    padding: 15,
-    alignItems: 'center',
-    gap: 8,
-  },
-  actionButtonText: {
+  statusText: {
     fontSize: 12,
-    color: '#333',
     fontWeight: '600',
   },
   emptyState: {
-    padding: 40,
+    padding: 20,
     alignItems: 'center',
   },
   emptyText: {
     fontSize: 14,
     color: '#999',
   },
+  emptyTextWhite: {
+    fontSize: 14,
+    color: '#666',
+  },
+  techList: {
+    flex: 1,
+    justifyContent: 'center',
+    gap: 12,
+  },
+  techRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+    paddingBottom: 8,
+  },
+  techName: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  techAmount: {
+    color: '#34C759',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
 });
-

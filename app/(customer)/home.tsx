@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 export default function CustomerHomeScreen() {
   const { user } = useAuthStore();
   const router = useRouter();
+  const [activeTab, setActiveTab] = useState<'appointment' | 'tow' | 'orders'>('appointment');
   const [activeJobs, setActiveJobs] = useState<Job[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -80,10 +81,20 @@ export default function CustomerHomeScreen() {
     }
   };
 
+  const ongoingJob = activeJobs.length > 0 ? activeJobs[0] : null;
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Welcome, {user?.name}</Text>
+        <View style={styles.profileSection}>
+          <View style={styles.profileIcon}>
+            <Ionicons name="person" size={24} color="#007AFF" />
+          </View>
+          <View>
+            <Text style={styles.welcomeText}>Welcome,</Text>
+            <Text style={styles.userName}>{user?.name || 'Customer'}</Text>
+          </View>
+        </View>
         <TouchableOpacity onPress={() => router.push('/(customer)/notifications')}>
           <Ionicons name="notifications-outline" size={24} color="#000" />
           {notifications.length > 0 && (
@@ -100,99 +111,135 @@ export default function CustomerHomeScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        <View style={styles.quickActions}>
+        {ongoingJob && (
+          <View style={styles.banner}>
+            <View style={styles.bannerContent}>
+              <View style={styles.bannerTextContainer}>
+                <Text style={styles.bannerTitle}>Ongoing Repair</Text>
+                <Text style={styles.bannerSubtitle}>
+                  {ongoingJob.type === 'service' ? 'Service' : 'Complaint'} in progress
+                </Text>
           <TouchableOpacity
-            style={styles.actionCard}
-            onPress={() => router.push('/(customer)/book-service')}
+                  style={styles.bannerButton}
+                  onPress={() => router.push(`/(customer)/job-details?id=${ongoingJob.id}`)}
           >
-            <Ionicons name="add-circle" size={32} color="#007AFF" />
-            <Text style={styles.actionText}>Book Service</Text>
+                  <Text style={styles.bannerButtonText}>View Details</Text>
+                  <Ionicons name="arrow-forward" size={16} color="#fff" />
           </TouchableOpacity>
+              </View>
+              <View style={styles.bannerIcon}>
+                <Ionicons name="construct" size={48} color="#fff" />
+              </View>
+            </View>
+          </View>
+        )}
+
+        <View style={styles.tabsContainer}>
           <TouchableOpacity
-            style={styles.actionCard}
-            onPress={() => router.push('/(customer)/vehicles')}
+            style={[styles.tab, activeTab === 'appointment' && styles.tabActive]}
+            onPress={() => {
+              setActiveTab('appointment');
+              router.push('/(customer)/service');
+            }}
           >
-            <Ionicons name="car" size={32} color="#007AFF" />
-            <Text style={styles.actionText}>My Vehicles</Text>
+            <Ionicons
+              name="calendar-outline"
+              size={20}
+              color={activeTab === 'appointment' ? '#fff' : '#666'}
+            />
+            <Text style={[styles.tabText, activeTab === 'appointment' && styles.tabTextActive]}>
+              Book Appointment
+            </Text>
           </TouchableOpacity>
+
           <TouchableOpacity
-            style={styles.actionCard}
-            onPress={() => router.push('/(customer)/invoices')}
+            style={[styles.tab, activeTab === 'tow' && styles.tabActive]}
+            onPress={() => {
+              setActiveTab('tow');
+            }}
           >
-            <Ionicons name="receipt" size={32} color="#007AFF" />
-            <Text style={styles.actionText}>Invoices</Text>
+            <Ionicons
+              name="car-outline"
+              size={20}
+              color={activeTab === 'tow' ? '#fff' : '#666'}
+            />
+            <Text style={[styles.tabText, activeTab === 'tow' && styles.tabTextActive]}>
+              Request Tow
+            </Text>
           </TouchableOpacity>
+
           <TouchableOpacity
-            style={styles.actionCard}
-            onPress={() => router.push('/(marketplace)/home')}
+            style={[styles.tab, activeTab === 'orders' && styles.tabActive]}
+            onPress={() => {
+              setActiveTab('orders');
+              router.push('/(marketplace)/orders');
+            }}
           >
-            <Ionicons name="storefront" size={32} color="#007AFF" />
-            <Text style={styles.actionText}>Marketplace</Text>
+            <Ionicons
+              name="bag-outline"
+              size={20}
+              color={activeTab === 'orders' ? '#fff' : '#666'}
+            />
+            <Text style={[styles.tabText, activeTab === 'orders' && styles.tabTextActive]}>
+              Orders
+            </Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Active Jobs</Text>
-          {activeJobs.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyText}>No active jobs</Text>
-            </View>
-          ) : (
-            activeJobs.map((job) => (
+          <Text style={styles.sectionTitle}>Suggested Services</Text>
+          <View style={styles.servicesList}>
               <TouchableOpacity
-                key={job.id}
-                style={styles.jobCard}
-                onPress={() => router.push(`/(customer)/job-details?id=${job.id}`)}
+              style={styles.serviceCard}
+              onPress={() => router.push('/(customer)/service')}
               >
-                <View style={styles.jobHeader}>
-                  <Text style={styles.jobType}>
-                    {job.type === 'service' ? 'Service' : 'Complaint'}
-                  </Text>
-                  <View
-                    style={[
-                      styles.statusBadge,
-                      { backgroundColor: getStatusColor(job.status) },
-                    ]}
-                  >
-                    <Text style={styles.statusText}>
-                      {job.status.charAt(0).toUpperCase() + job.status.slice(1)}
-                    </Text>
+              <View style={styles.serviceIcon}>
+                <Ionicons name="build-outline" size={32} color="#666" />
                   </View>
+              <View style={styles.serviceInfo}>
+                <Text style={styles.serviceName}>General Service</Text>
+                <View style={styles.serviceStatus}>
+                  <View style={styles.statusDot} />
+                  <Text style={styles.serviceStatusText}>Available</Text>
                 </View>
-                <Text style={styles.jobDescription} numberOfLines={2}>
-                  {job.description}
-                </Text>
-                {job.technicianName && (
-                  <Text style={styles.technician}>
-                    Technician: {job.technicianName}
-                  </Text>
-                )}
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#007AFF" />
               </TouchableOpacity>
-            ))
-          )}
-        </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Recent Notifications</Text>
-          {notifications.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyText}>No new notifications</Text>
+            <TouchableOpacity
+              style={styles.serviceCard}
+              onPress={() => router.push('/(customer)/service')}
+            >
+              <View style={styles.serviceIcon}>
+                <Ionicons name="car-sport-outline" size={32} color="#666" />
+              </View>
+              <View style={styles.serviceInfo}>
+                <Text style={styles.serviceName}>Oil Change</Text>
+                <View style={styles.serviceStatus}>
+                  <View style={styles.statusDot} />
+                  <Text style={styles.serviceStatusText}>Available</Text>
+        </View>
             </View>
-          ) : (
-            notifications.map((notification) => (
+              <Ionicons name="chevron-forward" size={20} color="#999" />
+            </TouchableOpacity>
+
               <TouchableOpacity
-                key={notification.id}
-                style={styles.notificationCard}
-              >
-                <Text style={styles.notificationTitle}>
-                  {notification.title}
-                </Text>
-                <Text style={styles.notificationMessage}>
-                  {notification.message}
-                </Text>
+              style={styles.serviceCard}
+              onPress={() => router.push('/(customer)/service')}
+            >
+              <View style={styles.serviceIcon}>
+                <Ionicons name="settings-outline" size={32} color="#666" />
+              </View>
+              <View style={styles.serviceInfo}>
+                <Text style={styles.serviceName}>Brake Service</Text>
+                <View style={styles.serviceStatus}>
+                  <View style={styles.statusDot} />
+                  <Text style={styles.serviceStatusText}>Available</Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#999" />
               </TouchableOpacity>
-            ))
-          )}
+          </View>
         </View>
       </ScrollView>
     </View>
@@ -214,9 +261,27 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
-  headerTitle: {
-    fontSize: 24,
+  profileSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  profileIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#E3F2FD',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  welcomeText: {
+    fontSize: 14,
+    color: '#666',
+  },
+  userName: {
+    fontSize: 18,
     fontWeight: 'bold',
+    color: '#333',
   },
   badge: {
     position: 'absolute',
@@ -238,29 +303,85 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
-  quickActions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    padding: 15,
-    gap: 15,
-  },
-  actionCard: {
-    width: '47%',
-    backgroundColor: '#fff',
-    borderRadius: 12,
+  banner: {
+    backgroundColor: '#007AFF',
+    margin: 15,
+    borderRadius: 16,
     padding: 20,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    overflow: 'hidden',
   },
-  actionText: {
-    marginTop: 10,
+  bannerContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  bannerTextContainer: {
+    flex: 1,
+  },
+  bannerTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  bannerSubtitle: {
+    fontSize: 14,
+    color: '#fff',
+    opacity: 0.9,
+    marginBottom: 12,
+  },
+  bannerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FF9500',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    alignSelf: 'flex-start',
+  },
+  bannerButtonText: {
+    color: '#fff',
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
+    marginRight: 4,
+  },
+  bannerIcon: {
+    width: 80,
+    height: 80,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  tabsContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    gap: 10,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#eee',
+    gap: 6,
+  },
+  tabActive: {
+    backgroundColor: '#007AFF',
+    borderColor: '#007AFF',
+  },
+  tabText: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  tabTextActive: {
+    color: '#fff',
+    fontWeight: '600',
   },
   section: {
     padding: 15,
@@ -269,76 +390,54 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 15,
+    color: '#333',
   },
-  jobCard: {
+  servicesList: {
+    gap: 12,
+  },
+  serviceCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#fff',
     borderRadius: 12,
     padding: 15,
-    marginBottom: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
   },
-  jobHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  serviceIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#f0f0f0',
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 10,
+    marginRight: 15,
   },
-  jobType: {
+  serviceInfo: {
+    flex: 1,
+  },
+  serviceName: {
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
+    marginBottom: 4,
   },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-  },
-  statusText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  jobDescription: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 5,
-  },
-  technician: {
-    fontSize: 12,
-    color: '#999',
-    marginTop: 5,
-  },
-  notificationCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  notificationTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 5,
-  },
-  notificationMessage: {
-    fontSize: 14,
-    color: '#666',
-  },
-  emptyState: {
-    padding: 40,
+  serviceStatus: {
+    flexDirection: 'row',
     alignItems: 'center',
   },
-  emptyText: {
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#34C759',
+    marginRight: 6,
+  },
+  serviceStatusText: {
     fontSize: 14,
-    color: '#999',
+    color: '#34C759',
   },
 });
-

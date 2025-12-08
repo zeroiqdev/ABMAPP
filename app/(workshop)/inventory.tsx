@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,7 @@ import {
   RefreshControl,
   Alert,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
@@ -17,80 +17,74 @@ import { InventoryItem } from '@/types';
 export default function InventoryScreen() {
   const { user } = useAuthStore();
   const router = useRouter();
+  const params = useLocalSearchParams<{ refresh?: string }>();
   const [items, setItems] = useState<InventoryItem[]>([]);
-  const [filter, setFilter] = useState<'all' | 'low_stock'>('all');
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    loadInventory();
-  }, [user, filter]);
-
-  const loadInventory = async () => {
+  const loadInventory = () => {
     if (!user?.workshopId) return;
 
-    try {
-      const inventoryItems = await firebaseService.getInventoryItems(user.workshopId);
-      let filtered = inventoryItems;
+    console.log('Subscribing to inventory for workshop:', user.workshopId);
+    const unsubscribe = firebaseService.subscribeToInventory(user.workshopId, (inventoryItems) => {
+      console.log('Received', inventoryItems.length, 'inventory items');
+      setItems(inventoryItems);
+      setRefreshing(false);
+    });
 
-      if (filter === 'low_stock') {
-        filtered = inventoryItems.filter(
-          (item) => item.quantity <= item.minStockLevel
-        );
-      }
-
-      setItems(filtered);
-    } catch (error) {
-      console.error('Error loading inventory:', error);
-    }
+    return unsubscribe;
   };
+
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+
+    if (user?.workshopId) {
+      unsubscribe = loadInventory();
+    }
+
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, [user?.workshopId]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadInventory();
-    setRefreshing(false);
+    // With real-time listener, we don't really need to "fetch", 
+    // but we can simulate a refresh or just rely on the listener.
+    // For now, let's just wait a bit and turn off refreshing since the listener is active.
+    setTimeout(() => setRefreshing(false), 1000);
   };
 
   const renderItem = ({ item }: { item: InventoryItem }) => {
-    const isLowStock = item.quantity <= item.minStockLevel;
+    // Generate a consistent color based on item name char code sum
+    const colors = ['#FFCC00', '#5B68F6', '#34C759', '#FF3B30', '#AF52DE'];
+    const colorIndex = item.name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length;
+    const iconColor = colors[colorIndex];
 
     return (
-      <TouchableOpacity style={styles.itemCard}>
-        <View style={styles.itemHeader}>
-          <View style={styles.itemInfo}>
-            <Text style={styles.itemName}>{item.name}</Text>
-            <Text style={styles.itemCategory}>{item.category}</Text>
-          </View>
-          {isLowStock && (
-            <View style={styles.lowStockBadge}>
-              <Ionicons name="warning-outline" size={16} color="#FF3B30" />
-              <Text style={styles.lowStockText}>Low Stock</Text>
-            </View>
-          )}
+      <View style={styles.itemCard}>
+        <View style={[styles.iconBox, { backgroundColor: iconColor }]}>
+          <Ionicons name="cube-outline" size={24} color="#fff" />
         </View>
-        <View style={styles.itemDetails}>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Quantity:</Text>
-            <Text
-              style={[
-                styles.detailValue,
-                isLowStock && styles.lowStockValue,
-              ]}
-            >
-              {item.quantity} / {item.minStockLevel} min
-            </Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Unit Price:</Text>
-            <Text style={styles.detailValue}>₦{item.unitPrice.toLocaleString()}</Text>
-          </View>
-          {item.supplier && (
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Supplier:</Text>
-              <Text style={styles.detailValue}>{item.supplier}</Text>
-            </View>
-          )}
+
+        <View style={styles.itemInfo}>
+          <Text style={styles.itemName}>{item.name}</Text>
+          <Text style={styles.itemSubtitle}>
+            {item.sku ? `${item.sku} • ` : ''}{item.quantity} in Stock
+          </Text>
         </View>
-      </TouchableOpacity>
+
+        <View style={styles.itemRight}>
+          <Text style={styles.itemPrice}>₦{(item.sellingPrice || item.unitPrice || 0).toLocaleString()}</Text>
+          <TouchableOpacity
+            style={styles.editButton}
+            onPress={() => router.push(`/(workshop)/create-inventory-item?id=${item.id}`)}
+          >
+            <Text style={styles.editText}>Edit</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
     );
   };
 
@@ -101,41 +95,10 @@ export default function InventoryScreen() {
           <Ionicons name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Inventory</Text>
-        <TouchableOpacity onPress={() => Alert.alert('Add Item', 'Feature coming soon')}>
-          <Ionicons name="add-circle-outline" size={24} color="#007AFF" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Filter Tabs */}
-      <View style={styles.filterContainer}>
-        <TouchableOpacity
-          style={[styles.filterTab, filter === 'all' && styles.filterTabActive]}
-          onPress={() => setFilter('all')}
-        >
-          <Text
-            style={[
-              styles.filterText,
-              filter === 'all' && styles.filterTextActive,
-            ]}
-          >
-            All Items
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.filterTab,
-            filter === 'low_stock' && styles.filterTabActive,
-          ]}
-          onPress={() => setFilter('low_stock')}
-        >
-          <Text
-            style={[
-              styles.filterText,
-              filter === 'low_stock' && styles.filterTextActive,
-            ]}
-          >
-            Low Stock
-          </Text>
+        <TouchableOpacity onPress={() => router.push('/(workshop)/create-inventory-item')}>
+          <View style={styles.addButton}>
+            <Ionicons name="add" size={24} color="#fff" />
+          </View>
         </TouchableOpacity>
       </View>
 
@@ -161,7 +124,7 @@ export default function InventoryScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#fff', // Changed to white as per Monday style usually
   },
   header: {
     flexDirection: 'row',
@@ -171,58 +134,40 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#f0f0f0',
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
   },
-  filterContainer: {
-    flexDirection: 'row',
-    padding: 15,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-    gap: 10,
-  },
-  filterTab: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 8,
-    backgroundColor: '#f5f5f5',
+  addButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#007AFF',
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  filterTabActive: {
-    backgroundColor: '#007AFF',
-  },
-  filterText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#666',
-  },
-  filterTextActive: {
-    color: '#fff',
-  },
   listContent: {
-    padding: 15,
+    padding: 20,
   },
   itemCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  itemHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 10,
+    alignItems: 'center',
+    marginBottom: 20,
+    backgroundColor: '#fff',
+    // Removed shadow/card style for a cleaner list look as per Monday template list
+    borderBottomWidth: 1,
+    borderBottomColor: '#f5f5f5',
+    paddingBottom: 15,
+  },
+  iconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 15,
   },
   itemInfo: {
     flex: 1,
@@ -233,43 +178,29 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 4,
   },
-  itemCategory: {
-    fontSize: 12,
-    color: '#666',
+  itemSubtitle: {
+    fontSize: 13,
+    color: '#888',
   },
-  lowStockBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFE5E5',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-    gap: 4,
+  itemRight: {
+    alignItems: 'flex-end',
+    gap: 8,
   },
-  lowStockText: {
-    fontSize: 12,
-    color: '#FF3B30',
+  itemPrice: {
+    fontSize: 15,
     fontWeight: '600',
-  },
-  itemDetails: {
-    marginTop: 10,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 5,
-  },
-  detailLabel: {
-    fontSize: 14,
-    color: '#666',
-  },
-  detailValue: {
-    fontSize: 14,
     color: '#333',
-    fontWeight: '600',
   },
-  lowStockValue: {
-    color: '#FF3B30',
+  editButton: {
+    backgroundColor: '#f0f0f0',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  editText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#333',
   },
   emptyState: {
     padding: 60,
@@ -281,4 +212,3 @@ const styles = StyleSheet.create({
     color: '#999',
   },
 });
-

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -13,76 +13,55 @@ import {
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
 
-export default function SignupScreen() {
+export default function StaffInviteScreen() {
+  const router = useRouter();
+  const { acceptStaffInvite, loading } = useAuthStore();
   const [email, setEmail] = useState('');
-  const [registrationCode, setRegistrationCode] = useState('');
+  const [invitationCode, setInvitationCode] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const { signup, loading, user } = useAuthStore();
-  const router = useRouter();
 
-  useEffect(() => {
-    if (user) {
-      if (user.role === 'customer') {
-        router.replace('/(customer)/home');
-      } else if (user.role === 'vendor') {
-        router.replace('/(marketplace)/home');
-      }
-    }
-  }, [user, router]);
-
-  const handleSignup = async () => {
-    if (!email || !registrationCode || !password || !confirmPassword) {
-      Alert.alert('Error', 'Please fill in all fields');
-      return;
-    }
-
-    if (!email.includes('@') || !email.includes('.')) {
-      Alert.alert('Error', 'Please enter a valid email address');
+  const handleAcceptInvite = async () => {
+    if (!email || !invitationCode || !password || !confirmPassword) {
+      Alert.alert('Error', 'Please fill in all fields.');
       return;
     }
 
     if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
+      Alert.alert('Error', 'Passwords do not match.');
       return;
     }
 
     if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
+      Alert.alert('Error', 'Password must be at least 6 characters long.');
       return;
     }
 
     try {
-      await signup(email, password, registrationCode);
+      await acceptStaffInvite(email.trim(), password, invitationCode.trim());
+      Alert.alert('Success', 'Account created successfully.');
+      router.replace('/(workshop)/dashboard');
     } catch (error: any) {
-      let errorMessage = 'Unable to create account';
-      if (error.code === 'auth/email-already-in-use') {
-        errorMessage = 'An account with this email already exists';
-      } else if (error.code === 'auth/invalid-email') {
-        errorMessage = 'Invalid email address';
-      } else if (error.code === 'auth/weak-password') {
-        errorMessage = 'Password is too weak. Please choose a stronger password';
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-      Alert.alert('Signup Failed', errorMessage);
+      Alert.alert('Invite Error', error.message || 'Unable to accept invitation.');
     }
   };
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.content}>
-          <Text style={styles.title}>Create Account</Text>
-          <Text style={styles.subtitle}>Enter your registered email and code</Text>
+          <Text style={styles.title}>Activate Staff Access</Text>
+          <Text style={styles.subtitle}>
+            Enter the invitation code sent to your email to create your staff account.
+          </Text>
 
           <View style={styles.form}>
             <TextInput
               style={styles.input}
-              placeholder="Email Address"
+              placeholder="Work Email"
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -92,16 +71,16 @@ export default function SignupScreen() {
 
             <TextInput
               style={styles.input}
-              placeholder="Registration Code"
-              value={registrationCode}
-              onChangeText={setRegistrationCode}
+              placeholder="Invitation Code"
+              value={invitationCode}
+              onChangeText={setInvitationCode}
               autoCapitalize="characters"
-              autoComplete="off"
+              autoCorrect={false}
             />
 
             <TextInput
               style={styles.input}
-              placeholder="Password"
+              placeholder="Create Password"
               value={password}
               onChangeText={setPassword}
               secureTextEntry
@@ -129,20 +108,17 @@ export default function SignupScreen() {
 
             <TouchableOpacity
               style={[styles.button, loading && styles.buttonDisabled]}
-              onPress={handleSignup}
+              onPress={handleAcceptInvite}
               disabled={loading}
             >
               <Text style={styles.buttonText}>
-                {loading ? 'Creating account...' : 'Sign Up'}
+                {loading ? 'Processing...' : 'Activate Account'}
               </Text>
             </TouchableOpacity>
 
-            <View style={styles.loginContainer}>
-              <Text style={styles.loginText}>Already have an account? </Text>
-              <TouchableOpacity onPress={() => router.back()}>
-                <Text style={styles.loginLink}>Sign In</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity onPress={() => router.back()} style={styles.linkButton}>
+              <Text style={styles.linkText}>Back to Login</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
@@ -164,16 +140,16 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   title: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: 'bold',
-    marginBottom: 8,
+    marginBottom: 10,
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 16,
     color: '#666',
-    marginBottom: 40,
     textAlign: 'center',
+    marginBottom: 30,
   },
   form: {
     width: '100%',
@@ -187,12 +163,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   button: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#111827',
     padding: 15,
     borderRadius: 8,
     alignItems: 'center',
-    marginTop: 10,
-    marginBottom: 20,
+    marginBottom: 15,
   },
   buttonDisabled: {
     opacity: 0.6,
@@ -202,15 +177,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  loginContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
+  linkButton: {
+    alignItems: 'center',
   },
-  loginText: {
-    color: '#666',
-    fontSize: 14,
-  },
-  loginLink: {
+  linkText: {
     color: '#007AFF',
     fontSize: 14,
     fontWeight: '600',

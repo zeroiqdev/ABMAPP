@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,8 +16,21 @@ import { useAuthStore } from '@/store/authStore';
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const { login, loading } = useAuthStore();
+  const { login, loading, user } = useAuthStore();
   const router = useRouter();
+
+  useEffect(() => {
+    if (user) {
+      const workshopRoles = ['admin', 'technician', 'storekeeper', 'accountant', 'service_advisor'];
+      if (user.role === 'customer') {
+        router.replace('/(customer)/home');
+      } else if (user.role === 'vendor') {
+        router.replace('/(marketplace)/home');
+      } else if (workshopRoles.includes(user.role)) {
+        router.replace('/(workshop)/dashboard');
+      }
+    }
+  }, [user, router]);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -25,11 +38,27 @@ export default function LoginScreen() {
       return;
     }
 
+    if (!email.includes('@')) {
+      Alert.alert('Error', 'Please enter a valid email address');
+      return;
+    }
+
     try {
       await login(email, password);
-      router.replace('/(customer)/home');
     } catch (error: any) {
-      Alert.alert('Login Failed', error.message || 'Invalid credentials');
+      let errorMessage = 'Invalid credentials';
+      if (error.code === 'auth/user-not-found') {
+        errorMessage = 'No account found with this email';
+      } else if (error.code === 'auth/wrong-password') {
+        errorMessage = 'Incorrect password';
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = 'Invalid email address';
+      } else if (error.code === 'auth/too-many-requests') {
+        errorMessage = 'Too many failed attempts. Please try again later';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      Alert.alert('Login Failed', errorMessage);
     }
   };
 
@@ -61,6 +90,11 @@ export default function LoginScreen() {
               onChangeText={setPassword}
               secureTextEntry
               autoCapitalize="none"
+              textContentType="oneTimeCode"
+              autoComplete="off"
+              importantForAutofill="no"
+              passwordRules=""
+              keyboardType="default"
             />
 
             <TouchableOpacity
@@ -86,6 +120,13 @@ export default function LoginScreen() {
                 <Text style={styles.signupLink}>Sign Up</Text>
               </TouchableOpacity>
             </View>
+
+            <TouchableOpacity
+              style={styles.staffInviteLink}
+              onPress={() => router.push('/(auth)/staff-invite')}
+            >
+              <Text style={styles.staffInviteText}>Have a staff invite code?</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
@@ -164,6 +205,14 @@ const styles = StyleSheet.create({
     color: '#007AFF',
     fontSize: 14,
     fontWeight: '600',
+  },
+  staffInviteLink: {
+    marginTop: 12,
+    alignItems: 'center',
+  },
+  staffInviteText: {
+    fontSize: 13,
+    color: '#999',
   },
 });
 

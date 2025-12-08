@@ -4,17 +4,42 @@ import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import Constants from 'expo-constants';
 
-const firebaseConfig = {
-  apiKey: Constants.expoConfig?.extra?.firebaseApiKey || process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
-  authDomain: Constants.expoConfig?.extra?.firebaseAuthDomain || process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: Constants.expoConfig?.extra?.firebaseProjectId || process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: Constants.expoConfig?.extra?.firebaseStorageBucket || process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: Constants.expoConfig?.extra?.firebaseMessagingSenderId || process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: Constants.expoConfig?.extra?.firebaseAppId || process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
+const getConfigValue = (extraKey: string): string => {
+  const value = Constants.expoConfig?.extra?.[extraKey];
+  const trimmed = value ? String(value).trim() : '';
+  
+  if (__DEV__ && !trimmed) {
+    console.warn(`Missing Firebase config: ${extraKey}`);
+    console.warn(`Available extra keys:`, Object.keys(Constants.expoConfig?.extra || {}));
+  }
+  
+  return trimmed;
 };
 
 const requiredConfigKeys = ['apiKey', 'authDomain', 'projectId', 'storageBucket', 'messagingSenderId', 'appId'];
+
+const firebaseConfig = {
+  apiKey: getConfigValue('firebaseApiKey'),
+  authDomain: getConfigValue('firebaseAuthDomain'),
+  projectId: getConfigValue('firebaseProjectId'),
+  storageBucket: getConfigValue('firebaseStorageBucket'),
+  messagingSenderId: getConfigValue('firebaseMessagingSenderId'),
+  appId: getConfigValue('firebaseAppId'),
+};
+
 const missingKeys = requiredConfigKeys.filter(key => !firebaseConfig[key as keyof typeof firebaseConfig]);
+
+if (__DEV__) {
+  const hasAllConfig = requiredConfigKeys.every(key => firebaseConfig[key as keyof typeof firebaseConfig]);
+  if (!hasAllConfig) {
+    console.warn('Firebase configuration incomplete.');
+    console.warn('Constants.expoConfig exists:', !!Constants.expoConfig);
+    console.warn('Constants.expoConfig.extra exists:', !!Constants.expoConfig?.extra);
+    console.warn('Available extra keys:', Object.keys(Constants.expoConfig?.extra || {}));
+    console.warn('Missing keys:', missingKeys);
+    console.warn('Check your .env file and restart Expo server with: npm start -- --clear');
+  }
+}
 
 if (missingKeys.length > 0) {
   console.error(

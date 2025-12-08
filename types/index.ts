@@ -14,7 +14,7 @@ export type JobStatus =
   | 'completed' 
   | 'cancelled';
 
-export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded';
+export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded' | 'partially_paid';
 
 export interface User {
   id: string;
@@ -55,6 +55,7 @@ export interface Job {
   scheduledDate?: Date;
   partsUsed?: PartUsed[];
   notes?: string;
+  serviceCharge?: number;
   createdAt: Date;
   updatedAt: Date;
   completedAt?: Date;
@@ -65,6 +66,13 @@ export interface PartUsed {
   partName: string;
   quantity: number;
   unitPrice: number;
+}
+
+export interface PaymentRecord {
+  amount: number;
+  date: Date;
+  method: string;
+  recordedBy?: string;
 }
 
 export interface Invoice {
@@ -81,6 +89,8 @@ export interface Invoice {
   paymentMethod?: string;
   paymentDate?: Date;
   dueDate?: Date;
+  amountPaid?: number;
+  paymentHistory?: PaymentRecord[];
   createdAt: Date;
 }
 
@@ -100,6 +110,11 @@ export interface InventoryItem {
   minStockLevel: number;
   unitPrice: number;
   supplier?: string;
+  vendor?: string; // Vendor/supplier name
+  sku?: string; // Stock Keeping Unit
+  costPrice?: number; // Cost price per unit
+  sellingPrice?: number; // Selling price per unit
+  unitIds?: string[]; // Unique IDs/Serial numbers for each unit
   createdAt: Date;
   updatedAt: Date;
 }
@@ -168,5 +183,33 @@ export interface Notification {
   type: 'job_update' | 'payment' | 'inventory' | 'general';
   read: boolean;
   createdAt: Date;
+}
+
+export interface CustomerRegistration {
+  id: string;
+  email: string;
+  name: string;
+  phone: string;
+  registrationCode: string;
+  registeredBy: string;
+  workshopId: string;
+  used: boolean;
+  createdAt: Date;
+  usedAt?: Date;
+}
+
+export interface StaffInvitation {
+  id: string;
+  email: string;
+  name: string;
+  phone?: string;
+  role: UserRole;
+  invitationCode: string;
+  invitedBy: string;
+  workshopId: string;
+  used: boolean;
+  createdAt: Date;
+  usedAt?: Date;
+  expiresAt?: Date;
 }
 

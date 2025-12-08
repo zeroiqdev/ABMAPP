@@ -1,0 +1,106 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function userExists() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+    
+    function getUserData() {
+      return userExists() ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data : null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && getUserData() != null && getUserData().role == 'admin';
+    }
+    
+    function isStaff() {
+      return isAuthenticated() && getUserData() != null && (getUserData().role == 'admin' || getUserData().role == 'service_advisor' || getUserData().role == 'technician');
+    }
+    
+    function getUserWorkshopId() {
+      let userData = getUserData();
+      return userData != null ? userData.workshopId : null;
+    }
+    
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || (isStaff() && getUserWorkshopId() == resource.data.workshopId));
+      allow create: if isAuthenticated() && (request.auth.uid == userId || isStaff());
+      allow update: if isAuthenticated() && (request.auth.uid == userId || isStaff());
+    }
+    
+    match /workshops/{workshopId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.auth.uid == workshopId;
+      allow update: if isAuthenticated() && (request.auth.uid == workshopId || (isAdmin() && getUserWorkshopId() == workshopId));
+    }
+    
+    // Customer registrations must be readable during signup (before auth),
+    // so reads are open, but writes are still restricted to staff/bootstrap.
+    match /customerRegistrations/{registrationId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && (isStaff() && request.resource.data.workshopId == getUserWorkshopId() || request.resource.data.workshopId == request.auth.uid);
+      allow update: if isStaff() && resource.data.workshopId == getUserWorkshopId();
+    }
+    
+    // Staff invitations must be readable during invite acceptance (before auth),
+    // so reads are open, but writes remain restricted to staff/bootstrap.
+    match /staffInvitations/{invitationId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && (isStaff() && request.resource.data.workshopId == getUserWorkshopId() || request.resource.data.workshopId == request.auth.uid);
+      allow update: if isAuthenticated() && ( (isStaff() && resource.data.workshopId == getUserWorkshopId()) || (request.resource.data.used == true) );
+    }
+    
+    match /vehicles/{vehicleId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isStaff());
+      allow create: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isStaff());
+      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isStaff());
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isStaff());
+    }
+    
+    match /jobs/{jobId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || (isStaff() && resource.data.workshopId == getUserWorkshopId()));
+      allow create: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isStaff());
+      allow update: if isStaff() && resource.data.workshopId == getUserWorkshopId();
+    }
+    
+    match /invoices/{invoiceId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || (isStaff() && resource.data.workshopId == getUserWorkshopId()));
+      allow create: if isStaff() && request.resource.data.workshopId == getUserWorkshopId();
+      allow update: if isStaff() && resource.data.workshopId == getUserWorkshopId();
+    }
+    
+    match /inventory/{itemId} {
+      allow read: if isStaff() && resource.data.workshopId == getUserWorkshopId();
+      allow create: if isStaff() && request.resource.data.workshopId == getUserWorkshopId();
+      allow update: if isStaff() && resource.data.workshopId == getUserWorkshopId();
+      allow delete: if isStaff() && resource.data.workshopId == getUserWorkshopId();
+    }
+    
+    match /stockTransactions/{transactionId} {
+      allow read: if isStaff() && resource.data.workshopId == getUserWorkshopId();
+      allow create: if isStaff() && request.resource.data.workshopId == getUserWorkshopId();
+    }
+    
+    match /marketplaceProducts/{productId} {
+      allow read: if isAuthenticated();
+      allow create: if isStaff();
+      allow update: if isStaff();
+    }
+    
+    match /orders/{orderId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isStaff());
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+    }
+    
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+  }
+}

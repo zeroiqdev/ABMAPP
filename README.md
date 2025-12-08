@@ -240,9 +240,11 @@ npm install
    - **Firestore**: Create database (start in test mode)
    - **Storage**: Get started (test mode)
 
-4. **Set Security Rules** (See Firebase Console)
+4. **Set Security Rules** (See `DATABASE_SETUP.md` for detailed rules)
    - Firestore: Allow authenticated read/write for development
    - Storage: Allow authenticated read/write for development
+
+**Note**: Collections (database tables) are created automatically when you first use the app. No manual setup required!
 
 ### 3. Run the App
 

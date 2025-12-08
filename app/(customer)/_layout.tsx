@@ -8,6 +8,7 @@ export default function CustomerLayout() {
         headerShown: false,
         tabBarActiveTintColor: '#007AFF',
         tabBarInactiveTintColor: '#666',
+        unmountOnBlur: false,
       }}
     >
       <Tabs.Screen
@@ -20,39 +21,90 @@ export default function CustomerLayout() {
         }}
       />
       <Tabs.Screen
-        name="vehicles"
+        name="service"
         options={{
-          title: 'Vehicles',
+          title: 'Service',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="car" size={size} color={color} />
+            <Ionicons name="construct" size={size} color={color} />
           ),
         }}
       />
       <Tabs.Screen
-        name="bookings"
+        name="marketplace"
         options={{
-          title: 'Bookings',
+          title: 'Marketplace',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="calendar" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="invoices"
-        options={{
-          title: 'Invoices',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="receipt" size={size} color={color} />
+            <Ionicons name="storefront" size={size} color={color} />
           ),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
+          title: 'Account',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person" size={size} color={color} />
           ),
+        }}
+      />
+      <Tabs.Screen
+        name="vehicles"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="add-vehicle"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="book-service"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="bookings"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="job-details"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="invoices"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="invoice-details"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="payment"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="notifications"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="support"
+        options={{
+          href: null,
         }}
       />
     </Tabs>

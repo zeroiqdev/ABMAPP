@@ -46,7 +46,10 @@ export default function WorkshopSettingsScreen() {
               </View>
               <Ionicons name="chevron-forward" size={20} color="#999" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.settingRow}>
+            <TouchableOpacity
+              style={styles.settingRow}
+              onPress={() => router.push('/(workshop)/staff-invitations')}
+            >
               <Ionicons name="people-outline" size={24} color="#666" />
               <View style={styles.settingInfo}>
                 <Text style={styles.settingLabel}>Staff Management</Text>

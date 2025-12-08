@@ -18,7 +18,13 @@ export default function RootLayout() {
         try {
           const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
           if (userDoc.exists()) {
-            const userData = userDoc.data() as User;
+            const data = userDoc.data();
+            const userData: User = {
+              ...data,
+              id: userDoc.id,
+              createdAt: data.createdAt?.toDate() || new Date(),
+              updatedAt: data.updatedAt?.toDate() || new Date(),
+            } as User;
             setUser(userData);
           }
         } catch (error) {

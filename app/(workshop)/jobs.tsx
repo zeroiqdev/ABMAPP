@@ -6,45 +6,64 @@ import {
   FlatList,
   TouchableOpacity,
   RefreshControl,
+  TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
-import { Job } from '@/types';
-import { format } from 'date-fns';
+import { Job, Vehicle } from '@/types';
+import { formatDistanceToNow } from 'date-fns';
 
 export default function JobsScreen() {
   const { user } = useAuthStore();
   const router = useRouter();
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [filteredJobs, setFilteredJobs] = useState<Job[]>([]);
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     loadJobs();
-  }, [user, filter]);
+  }, [user]);
+
+  useEffect(() => {
+    filterJobs();
+  }, [jobs, filter, searchQuery]);
 
   const loadJobs = async () => {
     if (!user?.workshopId) return;
-
     try {
-      let statusFilter: string[] | undefined;
-      if (filter === 'active') {
-        statusFilter = ['received', 'diagnosed', 'repairing'];
-      } else if (filter === 'completed') {
-        statusFilter = ['completed'];
-      }
-
-      const jobsData = await firebaseService.getJobs(
-        undefined,
-        user.workshopId,
-        statusFilter
-      );
+      const jobsData = await firebaseService.getJobs(undefined, user.workshopId);
       setJobs(jobsData);
     } catch (error) {
       console.error('Error loading jobs:', error);
     }
+  };
+
+  const filterJobs = () => {
+    let result = jobs;
+
+    // Status Filter
+    if (filter === 'active') {
+      result = result.filter(j => ['received', 'diagnosed', 'repairing'].includes(j.status));
+    } else if (filter === 'completed') {
+      result = result.filter(j => j.status === 'completed');
+    }
+
+    // Search Filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(j =>
+        j.description.toLowerCase().includes(query) ||
+        j.id.toLowerCase().includes(query) ||
+        (j.technicianName && j.technicianName.toLowerCase().includes(query))
+      );
+    }
+
+    setFilteredJobs(result);
   };
 
   const onRefresh = async () => {
@@ -53,121 +72,44 @@ export default function JobsScreen() {
     setRefreshing(false);
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'received': return '#FFA500';
-      case 'diagnosed': return '#007AFF';
-      case 'repairing': return '#34C759';
-      case 'completed': return '#30D158';
-      case 'cancelled': return '#FF3B30';
-      default: return '#666';
-    }
-  };
-
-  const renderJob = ({ item }: { item: Job }) => (
-    <TouchableOpacity
-      style={styles.jobCard}
-      onPress={() => router.push(`/(workshop)/job-details?id=${item.id}`)}
-    >
-      <View style={styles.jobHeader}>
-        <View>
-          <Text style={styles.jobType}>
-            {item.type === 'service' ? 'Service' : 'Complaint'}
-          </Text>
-          <Text style={styles.jobDate}>
-            {format(item.createdAt, 'MMM dd, yyyy')}
-          </Text>
-        </View>
-        <View
-          style={[
-            styles.statusBadge,
-            { backgroundColor: getStatusColor(item.status) },
-          ]}
-        >
-          <Text style={styles.statusText}>
-            {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-          </Text>
-        </View>
-      </View>
-      <Text style={styles.jobDescription} numberOfLines={2}>
-        {item.description}
-      </Text>
-      {item.technicianName && (
-        <View style={styles.technicianRow}>
-          <Ionicons name="person-outline" size={16} color="#666" />
-          <Text style={styles.technician}>{item.technicianName}</Text>
-        </View>
-      )}
-      <View style={styles.jobFooter}>
-        <Ionicons name="chevron-forward" size={20} color="#999" />
-      </View>
-    </TouchableOpacity>
-  );
-
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#000" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Jobs</Text>
-        <TouchableOpacity onPress={() => router.push('/(workshop)/job-details?new=true')}>
-          <Ionicons name="add-circle-outline" size={24} color="#007AFF" />
-        </TouchableOpacity>
-      </View>
+        <View style={styles.headerTop}>
+          <Text style={styles.headerTitle}>My Tasks</Text>
+          <TouchableOpacity onPress={() => router.push('/(workshop)/create-job')}>
+            <Ionicons name="notifications-outline" size={24} color="#000" />
+            {/* Using notification icon as placeholder for 'Add' or keep Add? 
+                The image has a notification bell. 
+                I'll add a separate Add button or use the FAB style. 
+                Let's put a + icon next to it or replace it. 
+                Actually, let's keep the bell and put a FAB or a header action for Create.
+                The user wants to create jobs. I'll add a + button.
+            */}
+          </TouchableOpacity>
+        </View>
 
-      {/* Filter Tabs */}
-      <View style={styles.filterContainer}>
-        <TouchableOpacity
-          style={[styles.filterTab, filter === 'all' && styles.filterTabActive]}
-          onPress={() => setFilter('all')}
-        >
-          <Text
-            style={[
-              styles.filterText,
-              filter === 'all' && styles.filterTextActive,
-            ]}
-          >
-            All
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.filterTab,
-            filter === 'active' && styles.filterTabActive,
-          ]}
-          onPress={() => setFilter('active')}
-        >
-          <Text
-            style={[
-              styles.filterText,
-              filter === 'active' && styles.filterTextActive,
-            ]}
-          >
-            Active
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.filterTab,
-            filter === 'completed' && styles.filterTabActive,
-          ]}
-          onPress={() => setFilter('completed')}
-        >
-          <Text
-            style={[
-              styles.filterText,
-              filter === 'completed' && styles.filterTextActive,
-            ]}
-          >
-            Completed
-          </Text>
-        </TouchableOpacity>
+        <View style={styles.searchContainer}>
+          <Ionicons name="search" size={20} color="#999" style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="By car name/registration number"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholderTextColor="#999"
+          />
+        </View>
+
+        <View style={styles.filterContainer}>
+          <FilterPill label="All Status" active={filter === 'all'} onPress={() => setFilter('all')} />
+          <FilterPill label="Active" active={filter === 'active'} onPress={() => setFilter('active')} />
+          <FilterPill label="Completed" active={filter === 'completed'} onPress={() => setFilter('completed')} />
+        </View>
       </View>
 
       <FlatList
-        data={jobs}
-        renderItem={renderJob}
+        data={filteredJobs}
+        renderItem={({ item }) => <JobCard job={item} />}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         refreshControl={
@@ -175,128 +117,219 @@ export default function JobsScreen() {
         }
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Ionicons name="briefcase-outline" size={64} color="#ccc" />
             <Text style={styles.emptyText}>No jobs found</Text>
           </View>
         }
       />
+
+      {/* Floating Action Button for Create Job */}
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => router.push('/(workshop)/create-job')}
+      >
+        <Ionicons name="add" size={30} color="#fff" />
+      </TouchableOpacity>
     </View>
+  );
+}
+
+function FilterPill({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  return (
+    <TouchableOpacity
+      style={[styles.filterPill, active && styles.filterPillActive]}
+      onPress={onPress}
+    >
+      <Text style={[styles.filterPillText, active && styles.filterPillTextActive]}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function JobCard({ job }: { job: Job }) {
+  const router = useRouter();
+  const [vehicle, setVehicle] = useState<Vehicle | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadVehicle();
+  }, [job.vehicleId]);
+
+  const loadVehicle = async () => {
+    try {
+      const vehicles = await firebaseService.getVehicles(job.userId);
+      const v = vehicles.find(v => v.id === job.vehicleId);
+      setVehicle(v || null);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'received': return '#007AFF';
+      case 'diagnosed': return '#FF9500';
+      case 'repairing': return '#5856D6';
+      case 'completed': return '#34C759';
+      default: return '#8E8E93';
+    }
+  };
+
+  return (
+    <TouchableOpacity
+      style={styles.itemCard}
+      onPress={() => router.push(`/(workshop)/job-details?id=${job.id}`)}
+    >
+      <View style={[styles.iconBox, { backgroundColor: getStatusColor(job.status) }]}>
+        <Ionicons name="car-sport-outline" size={24} color="#fff" />
+      </View>
+
+      <View style={styles.itemInfo}>
+        <Text style={styles.itemName}>
+          {loading ? 'Loading...' : vehicle ? `${vehicle.make} ${vehicle.model}` : 'Unknown Vehicle'}
+        </Text>
+        <Text style={styles.itemSubtitle}>
+          {vehicle?.licensePlate || 'No Reg'} • {formatDistanceToNow(job.createdAt, { addSuffix: true })}
+        </Text>
+      </View>
+
+      <View style={styles.itemRight}>
+        <Text style={[styles.statusText, { color: getStatusColor(job.status) }]}>
+          {job.status.charAt(0).toUpperCase() + job.status.slice(1)}
+        </Text>
+      </View>
+    </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#fff',
   },
   header: {
+    backgroundColor: '#fff',
+    paddingTop: 60,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    paddingTop: 60,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    marginBottom: 20,
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
+    color: '#000',
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F6FA',
+    borderRadius: 12,
+    paddingHorizontal: 15,
+    height: 50,
+    marginBottom: 20,
+  },
+  searchIcon: {
+    marginRight: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#000',
   },
   filterContainer: {
     flexDirection: 'row',
-    padding: 15,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
     gap: 10,
   },
-  filterTab: {
-    flex: 1,
+  filterPill: {
+    paddingHorizontal: 20,
     paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 8,
-    backgroundColor: '#f5f5f5',
-    alignItems: 'center',
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#eee',
   },
-  filterTabActive: {
-    backgroundColor: '#007AFF',
+  filterPillActive: {
+    backgroundColor: '#1c1c1e',
+    borderColor: '#1c1c1e',
   },
-  filterText: {
+  filterPillText: {
     fontSize: 14,
-    fontWeight: '600',
     color: '#666',
+    fontWeight: '500',
   },
-  filterTextActive: {
+  filterPillTextActive: {
     color: '#fff',
   },
   listContent: {
-    padding: 15,
+    padding: 20,
   },
-  jobCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  jobHeader: {
+  itemCard: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 10,
+    alignItems: 'center',
+    marginBottom: 20,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f5f5f5',
+    paddingBottom: 15,
   },
-  jobType: {
+  iconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 15,
+  },
+  itemInfo: {
+    flex: 1,
+  },
+  itemName: {
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
     marginBottom: 4,
   },
-  jobDate: {
-    fontSize: 12,
-    color: '#999',
+  itemSubtitle: {
+    fontSize: 13,
+    color: '#888',
   },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
+  itemRight: {
+    alignItems: 'flex-end',
+    gap: 4,
   },
   statusText: {
-    color: '#fff',
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '600',
   },
-  jobDescription: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 10,
-    lineHeight: 20,
-  },
-  technicianRow: {
-    flexDirection: 'row',
+  fab: {
+    position: 'absolute',
+    bottom: 30,
+    right: 30,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#007AFF',
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 10,
-  },
-  technician: {
-    fontSize: 12,
-    color: '#666',
-  },
-  jobFooter: {
-    alignItems: 'flex-end',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
   },
   emptyState: {
-    padding: 60,
     alignItems: 'center',
+    marginTop: 50,
   },
   emptyText: {
-    marginTop: 16,
-    fontSize: 16,
     color: '#999',
+    fontSize: 16,
   },
 });
-

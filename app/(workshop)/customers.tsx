@@ -12,6 +12,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
 import { User } from '@/types';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { db } from '@/config/firebase';
 
 export default function CustomersScreen() {
   const { user } = useAuthStore();
@@ -24,9 +26,27 @@ export default function CustomersScreen() {
   }, [user]);
 
   const loadCustomers = async () => {
-    // In a real app, you'd query users by role='customer' and workshopId
-    // For now, this is a placeholder
-    setCustomers([]);
+    if (!user?.workshopId) return;
+    try {
+      const q = query(
+        collection(db, 'users'),
+        where('role', '==', 'customer'),
+        where('workshopId', '==', user.workshopId)
+      );
+      const snapshot = await getDocs(q);
+      const customersList = snapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          createdAt: data.createdAt?.toDate() || new Date(),
+          updatedAt: data.updatedAt?.toDate() || new Date(),
+        } as User;
+      });
+      setCustomers(customersList);
+    } catch (error) {
+      console.error('Error loading customers:', error);
+    }
   };
 
   const onRefresh = async () => {
@@ -36,7 +56,10 @@ export default function CustomersScreen() {
   };
 
   const renderCustomer = ({ item }: { item: User }) => (
-    <TouchableOpacity style={styles.customerCard}>
+    <TouchableOpacity 
+      style={styles.customerCard}
+      onPress={() => router.push(`/(workshop)/customer-details?id=${item.id}`)}
+    >
       <View style={styles.customerInfo}>
         <View style={styles.avatar}>
           <Ionicons name="person" size={24} color="#666" />
@@ -58,7 +81,9 @@ export default function CustomersScreen() {
           <Ionicons name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Customers</Text>
-        <View style={{ width: 24 }} />
+        <TouchableOpacity onPress={() => router.push('/(workshop)/register-customer')}>
+          <Ionicons name="add-circle" size={28} color="#007AFF" />
+        </TouchableOpacity>
       </View>
 
       <FlatList
