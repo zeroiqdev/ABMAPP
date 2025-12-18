@@ -8,6 +8,7 @@ import {
   RefreshControl,
   TextInput,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,6 +16,7 @@ import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
 import { Job, Vehicle } from '@/types';
 import { formatDistanceToNow } from 'date-fns';
+import { BrandLogo } from '@/components/BrandLogo';
 
 export default function JobsScreen() {
   const { user } = useAuthStore();
@@ -26,22 +28,20 @@ export default function JobsScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
-    loadJobs();
+    if (!user?.workshopId) return;
+
+    setRefreshing(true);
+    const unsubscribe = firebaseService.subscribeToWorkshopJobs(user.workshopId, (updatedJobs) => {
+      setJobs(updatedJobs);
+      setRefreshing(false);
+    });
+
+    return () => unsubscribe();
   }, [user]);
 
   useEffect(() => {
     filterJobs();
   }, [jobs, filter, searchQuery]);
-
-  const loadJobs = async () => {
-    if (!user?.workshopId) return;
-    try {
-      const jobsData = await firebaseService.getJobs(undefined, user.workshopId);
-      setJobs(jobsData);
-    } catch (error) {
-      console.error('Error loading jobs:', error);
-    }
-  };
 
   const filterJobs = () => {
     let result = jobs;
@@ -67,9 +67,10 @@ export default function JobsScreen() {
   };
 
   const onRefresh = async () => {
+    // Subscription handles updates, but we can simulate a refresh or re-fetch if needed.
+    // For now, we rely on the subscription.
     setRefreshing(true);
-    await loadJobs();
-    setRefreshing(false);
+    setTimeout(() => setRefreshing(false), 1000);
   };
 
   return (
@@ -77,15 +78,11 @@ export default function JobsScreen() {
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <Text style={styles.headerTitle}>My Tasks</Text>
-          <TouchableOpacity onPress={() => router.push('/(workshop)/create-job')}>
-            <Ionicons name="notifications-outline" size={24} color="#000" />
-            {/* Using notification icon as placeholder for 'Add' or keep Add? 
-                The image has a notification bell. 
-                I'll add a separate Add button or use the FAB style. 
-                Let's put a + icon next to it or replace it. 
-                Actually, let's keep the bell and put a FAB or a header action for Create.
-                The user wants to create jobs. I'll add a + button.
-            */}
+          <TouchableOpacity
+            style={styles.addButton}
+            onPress={() => router.push('/(workshop)/create-job')}
+          >
+            <Ionicons name="add" size={20} color="#fff" />
           </TouchableOpacity>
         </View>
 
@@ -122,13 +119,6 @@ export default function JobsScreen() {
         }
       />
 
-      {/* Floating Action Button for Create Job */}
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => router.push('/(workshop)/create-job')}
-      >
-        <Ionicons name="add" size={30} color="#fff" />
-      </TouchableOpacity>
     </View>
   );
 }
@@ -167,21 +157,35 @@ function JobCard({ job }: { job: Job }) {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'received': return '#007AFF';
-      case 'diagnosed': return '#FF9500';
-      case 'repairing': return '#5856D6';
-      case 'completed': return '#34C759';
-      default: return '#8E8E93';
+      case 'received': return '#FFA500';
+      case 'diagnosed': return '#007AFF';
+      case 'repairing': return '#34C759';
+      case 'completed': return '#30D158';
+      default: return '#666';
+    }
+  };
+
+  const isUnassigned = job.status === 'received';
+
+  const handlePress = () => {
+    if (isUnassigned) {
+      router.push(`/(workshop)/create-job?jobId=${job.id}`);
+    } else {
+      router.push(`/(workshop)/job-details?id=${job.id}`);
     }
   };
 
   return (
     <TouchableOpacity
       style={styles.itemCard}
-      onPress={() => router.push(`/(workshop)/job-details?id=${job.id}`)}
+      onPress={handlePress}
     >
-      <View style={[styles.iconBox, { backgroundColor: getStatusColor(job.status) }]}>
-        <Ionicons name="car-sport-outline" size={24} color="#fff" />
+      <View style={[styles.iconBox, { backgroundColor: vehicle ? 'transparent' : getStatusColor(job.status) }]}>
+        {vehicle ? (
+          <BrandLogo brand={vehicle.make} size={30} />
+        ) : (
+          <Ionicons name="car-sport-outline" size={24} color="#fff" />
+        )}
       </View>
 
       <View style={styles.itemInfo}>
@@ -194,9 +198,11 @@ function JobCard({ job }: { job: Job }) {
       </View>
 
       <View style={styles.itemRight}>
-        <Text style={[styles.statusText, { color: getStatusColor(job.status) }]}>
-          {job.status.charAt(0).toUpperCase() + job.status.slice(1)}
-        </Text>
+        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(job.status) + '15' }]}>
+          <Text style={[styles.statusText, { color: getStatusColor(job.status) }]}>
+            {isUnassigned ? 'Unassigned' : job.status.charAt(0).toUpperCase() + job.status.slice(1)}
+          </Text>
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -222,7 +228,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#000',
   },
@@ -308,21 +314,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  fab: {
-    position: 'absolute',
-    bottom: 30,
-    right: 30,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#007AFF',
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#000',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
   },
   emptyState: {
     alignItems: 'center',

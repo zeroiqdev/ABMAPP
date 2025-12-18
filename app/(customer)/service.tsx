@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,798 +7,425 @@ import {
   TouchableOpacity,
   TextInput,
   Alert,
-  Image,
+  KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
 import { notificationService } from '@/services/notificationService';
-import { Ionicons } from '@expo/vector-icons';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import * as ImagePicker from 'expo-image-picker';
-import { Vehicle, Job } from '@/types';
-import {
-  AVAILABLE_SERVICES,
-  getSuggestionsForServices,
-  Service,
-  ServiceSuggestion,
-} from '@/types/services';
+import { Vehicle } from '@/types';
+import { Colors, Spacing, Typography, BorderRadius } from '@/constants/design';
 
-type BookingStep = 1 | 2 | 3 | 4;
-
-interface BookingState {
-  selectedServiceKeys: string[];
-  selectedSuggestionKeys: string[];
-  description: string;
-  imageFile: string | null;
-  preferredDate: Date | null;
-  selectedVehicle: string | null;
-}
+// Duplicate of admin issue options for consistency
+const ISSUE_OPTIONS = [
+  'Servicing',
+  'Mechanical',
+  'Electrical',
+  'Hydraulic',
+  'Software / Sensors',
+  'Wear & Tear',
+  'Accidental Damage',
+  'Fluid Leak',
+  'Noise / Vibration',
+  'Overheating',
+  'Performance Loss',
+];
 
 export default function ServiceScreen() {
-  const { user } = useAuthStore();
   const router = useRouter();
-  const [step, setStep] = useState<BookingStep>(1);
+  const { user } = useAuthStore();
+
+  // Form State
+  const [description, setDescription] = useState('');
+  const [issues, setIssues] = useState<string[]>([]);
+  const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [loadingVehicles, setLoadingVehicles] = useState(true);
-  const [showDatePicker, setShowDatePicker] = useState(false);
+
+  // UI State
   const [loading, setLoading] = useState(false);
+  const [loadingVehicles, setLoadingVehicles] = useState(true);
+  const [showVehicleDropdown, setShowVehicleDropdown] = useState(false);
 
-  const [bookingState, setBookingState] = useState<BookingState>({
-    selectedServiceKeys: [],
-    selectedSuggestionKeys: [],
-    description: '',
-    imageFile: null,
-    preferredDate: null,
-    selectedVehicle: null,
-  });
-
-  useEffect(() => {
-    loadVehicles();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadVehicles();
+    }, [user])
+  );
 
   const loadVehicles = async () => {
     if (!user) return;
     try {
       const userVehicles = await firebaseService.getVehicles(user.id);
       setVehicles(userVehicles);
-      if (userVehicles.length > 0) {
-        setBookingState((prev) => ({
-          ...prev,
-          selectedVehicle: userVehicles[0].id,
-        }));
+      if (userVehicles.length > 0 && !selectedVehicle) {
+        // Pre-select first vehicle if none selected
+        setSelectedVehicle(userVehicles[0]);
       }
     } catch (error) {
       console.error('Error loading vehicles:', error);
+      Alert.alert('Error', 'Failed to load your vehicles');
     } finally {
       setLoadingVehicles(false);
     }
   };
 
-  const toggleService = (serviceKey: string) => {
-    setBookingState((prev) => ({
-      ...prev,
-      selectedServiceKeys: prev.selectedServiceKeys.includes(serviceKey)
-        ? prev.selectedServiceKeys.filter((key) => key !== serviceKey)
-        : [...prev.selectedServiceKeys, serviceKey],
-    }));
-  };
-
-  const toggleSuggestion = (suggestionKey: string) => {
-    setBookingState((prev) => ({
-      ...prev,
-      selectedSuggestionKeys: prev.selectedSuggestionKeys.includes(suggestionKey)
-        ? prev.selectedSuggestionKeys.filter((key) => key !== suggestionKey)
-        : [...prev.selectedSuggestionKeys, suggestionKey],
-    }));
-  };
-
-  const pickImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please grant camera roll permissions');
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      quality: 0.8,
-    });
-
-    if (!result.canceled && result.assets[0]) {
-      try {
-        const url = await firebaseService.uploadFile(
-          result.assets[0].uri,
-          `jobs/${user?.id}/${Date.now()}-${result.assets[0].fileName || 'image.jpg'}`
-        );
-        setBookingState((prev) => ({ ...prev, imageFile: url }));
-      } catch (error) {
-        console.error('Error uploading image:', error);
-        Alert.alert('Error', 'Failed to upload image');
-      }
-    }
-  };
-
-  const handleNext = () => {
-    if (step === 1) {
-      if (bookingState.selectedServiceKeys.length === 0) {
-        Alert.alert('Error', 'Please select at least one service');
-        return;
-      }
-      setStep(2);
-    } else if (step === 2) {
-      setStep(3);
-    } else if (step === 3) {
-      if (!bookingState.description.trim() && bookingState.selectedSuggestionKeys.length === 0) {
-        Alert.alert('Error', 'Please describe the issue or select suggestions');
-        return;
-      }
-      setStep(4);
-    } else if (step === 4) {
-      handleSubmit();
-    }
-  };
-
-  const handlePrev = () => {
-    if (step > 1) {
-      setStep((step - 1) as BookingStep);
-    }
+  const toggleIssue = (issue: string) => {
+    setIssues((prev) =>
+      prev.includes(issue) ? prev.filter((i) => i !== issue) : [...prev, issue]
+    );
   };
 
   const handleSubmit = async () => {
-    if (!user || !bookingState.selectedVehicle) {
+    if (!user || !selectedVehicle) {
       Alert.alert('Error', 'Please select a vehicle');
       return;
     }
 
-    if (!bookingState.preferredDate) {
-      Alert.alert('Error', 'Please select a preferred date');
+    if (issues.length === 0) {
+      Alert.alert('Error', 'Please select at least one issue type');
+      return;
+    }
+
+    if (!description.trim()) {
+      Alert.alert('Error', 'Please provide a description of the issue');
       return;
     }
 
     setLoading(true);
     try {
-      const workshopId = user.workshopId || 'default-workshop';
-
-      const descriptionParts: string[] = [];
-      if (bookingState.selectedServiceKeys.length > 0) {
-        const serviceNames = bookingState.selectedServiceKeys
-          .map((key) => AVAILABLE_SERVICES.find((s) => s.key === key)?.title)
-          .filter(Boolean);
-        descriptionParts.push(`Services: ${serviceNames.join(', ')}`);
-      }
-      if (bookingState.selectedSuggestionKeys.length > 0) {
-        descriptionParts.push(`Issues: ${bookingState.selectedSuggestionKeys.join(', ')}`);
-      }
-      if (bookingState.description.trim()) {
-        descriptionParts.push(`Description: ${bookingState.description}`);
+      // Determine job type based on issues (mimicking admin logic)
+      // If only 'Servicing' is selected -> 'service'
+      // If 'Servicing' + others -> 'service_and_repair'
+      // Else -> 'repair'
+      let jobType: 'service' | 'repair' | 'service_and_repair' = 'repair';
+      if (issues.includes('Servicing')) {
+        if (issues.length === 1) {
+          jobType = 'service';
+        } else {
+          jobType = 'service_and_repair';
+        }
       }
 
-      const job: Omit<Job, 'id' | 'createdAt' | 'updatedAt'> = {
+      // Create job with 'received' status so admin sees it
+      await firebaseService.createJob({
         userId: user.id,
-        vehicleId: bookingState.selectedVehicle,
-        workshopId,
-        type: 'service',
-        description: descriptionParts.join('\n\n'),
+        vehicleId: selectedVehicle.id,
+        workshopId: user.workshopId || 'default-workshop', // Fallback if not set
+        type: jobType,
+        issues,
+        description: description.trim(),
         status: 'received',
-        images: bookingState.imageFile ? [bookingState.imageFile] : undefined,
-        scheduledDate: bookingState.preferredDate,
-      };
+        serviceCharge: 0, // Should be set by admin later
+        partsUsed: [], // Admin will add parts
+        notes: 'Customer Request',
+      } as any);
 
-      const jobId = await firebaseService.createJob(job);
-
+      // Notify user (and potentially admin via triggers)
       await notificationService.sendNotificationToUser(
         user.id,
-        'Service Request Submitted',
-        'Your service request has been received and is being processed.',
+        'Request Received',
+        'Your repair request has been submitted successfully.',
         'job_update'
       );
 
-      Alert.alert('Success', 'Service request submitted successfully', [
+      Alert.alert('Success', 'Your request has been sent to the workshop.', [
         {
           text: 'OK',
-          onPress: () => {
-            setStep(1);
-            setBookingState({
-              selectedServiceKeys: [],
-              selectedSuggestionKeys: [],
-              description: '',
-              imageFile: null,
-              preferredDate: null,
-              selectedVehicle: bookingState.selectedVehicle,
-            });
-            router.push('/(customer)/bookings');
-          },
+          onPress: () => router.push('/(customer)/home'),
         },
       ]);
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to submit service request');
+      console.error('Error creating job:', error);
+      Alert.alert('Error', 'Failed to submit request. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const skipToDescribe = () => {
-    setStep(3);
-  };
-
   if (loadingVehicles) {
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Book Service</Text>
-        </View>
-        <View style={styles.loadingContainer}>
-          <Text>Loading...</Text>
-        </View>
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" color={Colors.primary} />
       </View>
     );
   }
 
   if (vehicles.length === 0) {
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Book Service</Text>
-        </View>
-        <View style={styles.emptyState}>
-          <Ionicons name="car-outline" size={64} color="#ccc" />
-          <Text style={styles.emptyText}>No vehicles found</Text>
-          <Text style={styles.emptySubtext}>
-            Please add a vehicle first before booking a service
-          </Text>
-          <TouchableOpacity
-            style={styles.emptyButton}
-            onPress={() => router.push('/(customer)/vehicles')}
-          >
-            <Text style={styles.emptyButtonText}>Add Vehicle</Text>
-          </TouchableOpacity>
-        </View>
+      <View style={styles.centerContainer}>
+        <Ionicons name="car-outline" size={64} color={Colors.textTertiary} />
+        <Text style={styles.emptyText}>No vehicles found</Text>
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={() => router.push('/(customer)/add-vehicle')}
+        >
+          <Text style={styles.addButtonText}>Add Vehicle</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
-  const suggestionGroups = getSuggestionsForServices(bookingState.selectedServiceKeys);
-  const selectedServices = bookingState.selectedServiceKeys.map((key) =>
-    AVAILABLE_SERVICES.find((s) => s.key === key)
-  );
-
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Book Service</Text>
-        <Text style={styles.stepIndicator}>Step {step} of 4</Text>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Request Repair</Text>
+        <View style={{ width: 24 }} />
       </View>
 
       <ScrollView style={styles.content}>
-        {step === 1 && (
-          <View style={styles.stepContainer}>
-            <Text style={styles.stepTitle}>Select Services</Text>
-            <View style={styles.servicesGrid}>
-              {AVAILABLE_SERVICES.map((service) => (
+
+        {/* Vehicle Selection */}
+        <View style={styles.section}>
+          <Text style={styles.label}>Select Vehicle</Text>
+          <TouchableOpacity
+            style={styles.dropdownTrigger}
+            onPress={() => setShowVehicleDropdown(!showVehicleDropdown)}
+          >
+            <Text style={styles.dropdownText}>
+              {selectedVehicle
+                ? `${selectedVehicle.make} ${selectedVehicle.model} (${selectedVehicle.licensePlate})`
+                : 'Select Vehicle'}
+            </Text>
+            <Ionicons
+              name={showVehicleDropdown ? 'chevron-up' : 'chevron-down'}
+              size={20}
+              color={Colors.textSecondary}
+            />
+          </TouchableOpacity>
+
+          {showVehicleDropdown && (
+            <View style={styles.dropdownList}>
+              {vehicles.map((v) => (
                 <TouchableOpacity
-                  key={service.id}
-                  style={[
-                    styles.serviceCard,
-                    bookingState.selectedServiceKeys.includes(service.key) &&
-                      styles.serviceCardSelected,
-                  ]}
-                  onPress={() => toggleService(service.key)}
+                  key={v.id}
+                  style={styles.dropdownItem}
+                  onPress={() => {
+                    setSelectedVehicle(v);
+                    setShowVehicleDropdown(false);
+                  }}
                 >
-                  <View
-                    style={[
-                      styles.serviceCheckbox,
-                      bookingState.selectedServiceKeys.includes(service.key) &&
-                        styles.serviceCheckboxSelected,
-                    ]}
-                  >
-                    {bookingState.selectedServiceKeys.includes(service.key) && (
-                      <Ionicons name="checkmark" size={16} color="#fff" />
-                    )}
-                  </View>
-                  <Text
-                    style={[
-                      styles.serviceTitle,
-                      bookingState.selectedServiceKeys.includes(service.key) &&
-                        styles.serviceTitleSelected,
-                    ]}
-                  >
-                    {service.title}
+                  <Text style={styles.dropdownItemText}>
+                    {v.make} {v.model} ({v.licensePlate})
                   </Text>
-                  <Text
-                    style={[
-                      styles.serviceDescription,
-                      bookingState.selectedServiceKeys.includes(service.key) &&
-                        styles.serviceDescriptionSelected,
-                    ]}
-                  >
-                    {service.description}
-                  </Text>
+                  {selectedVehicle?.id === v.id && (
+                    <Ionicons name="checkmark" size={16} color={Colors.primary} />
+                  )}
                 </TouchableOpacity>
               ))}
             </View>
-            <TouchableOpacity style={styles.skipButton} onPress={skipToDescribe}>
-              <Text style={styles.skipButtonText}>Describe your issue</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {step === 2 && (
-          <View style={styles.stepContainer}>
-            <Text style={styles.stepTitle}>Suggestions</Text>
-            {suggestionGroups.length === 0 ? (
-              <View style={styles.emptySuggestions}>
-                <Text style={styles.emptyText}>No suggestions available</Text>
-                <TouchableOpacity style={styles.skipButton} onPress={skipToDescribe}>
-                  <Text style={styles.skipButtonText}>I want to describe the issue</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <>
-                {suggestionGroups.map((group) => (
-                  <View key={group.serviceKey} style={styles.suggestionGroup}>
-                    <Text style={styles.groupTitle}>{group.title}</Text>
-                    {group.suggestions.map((suggestion) => (
-                      <TouchableOpacity
-                        key={suggestion.id}
-                        style={[
-                          styles.suggestionItem,
-                          bookingState.selectedSuggestionKeys.includes(suggestion.key) &&
-                            styles.suggestionItemSelected,
-                        ]}
-                        onPress={() => toggleSuggestion(suggestion.key)}
-                      >
-                        <View
-                          style={[
-                            styles.checkbox,
-                            bookingState.selectedSuggestionKeys.includes(suggestion.key) &&
-                              styles.checkboxSelected,
-                          ]}
-                        >
-                          {bookingState.selectedSuggestionKeys.includes(suggestion.key) && (
-                            <Ionicons name="checkmark" size={14} color="#fff" />
-                          )}
-                        </View>
-                        <Text
-                          style={[
-                            styles.suggestionText,
-                            bookingState.selectedSuggestionKeys.includes(suggestion.key) &&
-                              styles.suggestionTextSelected,
-                          ]}
-                        >
-                          {suggestion.title}
-                        </Text>
-                        {suggestion.followUpBadges && suggestion.followUpBadges.length > 0 && (
-                          <View style={styles.badgesContainer}>
-                            {suggestion.followUpBadges.map((badge, idx) => (
-                              <View key={idx} style={styles.badge}>
-                                <Text style={styles.badgeText}>{badge}</Text>
-                              </View>
-                            ))}
-                          </View>
-                        )}
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                ))}
-                <TouchableOpacity style={styles.skipButton} onPress={skipToDescribe}>
-                  <Text style={styles.skipButtonText}>I want to describe the issue</Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
-        )}
-
-        {step === 3 && (
-          <View style={styles.stepContainer}>
-            <Text style={styles.stepTitle}>Describe Issue</Text>
-            <TextInput
-              style={styles.textArea}
-              placeholder="Describe the issue or service needed..."
-              value={bookingState.description}
-              onChangeText={(text) =>
-                setBookingState((prev) => ({ ...prev, description: text }))
-              }
-              multiline
-              numberOfLines={8}
-              textAlignVertical="top"
-            />
-            <TouchableOpacity style={styles.imageButton} onPress={pickImage}>
-              <Ionicons name="image-outline" size={20} color="#007AFF" />
-              <Text style={styles.imageButtonText}>
-                {bookingState.imageFile ? 'Change Image' : 'Add Image'}
-              </Text>
-            </TouchableOpacity>
-            {bookingState.imageFile && (
-              <View style={styles.imagePreview}>
-                <Image source={{ uri: bookingState.imageFile }} style={styles.image} />
-                <TouchableOpacity
-                  style={styles.removeImage}
-                  onPress={() => setBookingState((prev) => ({ ...prev, imageFile: null }))}
-                >
-                  <Ionicons name="close-circle" size={24} color="#FF3B30" />
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        )}
-
-        {step === 4 && (
-          <View style={styles.stepContainer}>
-            <Text style={styles.stepTitle}>Choose Date</Text>
-            <TouchableOpacity
-              style={styles.dateButton}
-              onPress={() => setShowDatePicker(true)}
-            >
-              <Ionicons name="calendar-outline" size={20} color="#007AFF" />
-              <Text style={styles.dateButtonText}>
-                {bookingState.preferredDate
-                  ? bookingState.preferredDate.toLocaleDateString() +
-                    ' ' +
-                    bookingState.preferredDate.toLocaleTimeString()
-                  : 'Select Preferred Date & Time'}
-              </Text>
-            </TouchableOpacity>
-            {showDatePicker && (
-              <DateTimePicker
-                value={bookingState.preferredDate || new Date()}
-                mode="datetime"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={(event, selectedDate) => {
-                  setShowDatePicker(Platform.OS === 'ios');
-                  if (selectedDate) {
-                    setBookingState((prev) => ({ ...prev, preferredDate: selectedDate }));
-                  }
-                }}
-              />
-            )}
-            {selectedServices.some((s) => s?.pre_post_inspection) && (
-              <View style={styles.noteContainer}>
-                <Ionicons name="information-circle-outline" size={20} color="#007AFF" />
-                <Text style={styles.noteText}>
-                  Note: This service includes pre and post inspection
-                </Text>
-              </View>
-            )}
-          </View>
-        )}
-
-        <View style={styles.navigation}>
-          {step > 1 && (
-            <TouchableOpacity style={styles.prevButton} onPress={handlePrev}>
-              <Ionicons name="arrow-back" size={20} color="#007AFF" />
-              <Text style={styles.prevButtonText}>Previous</Text>
-            </TouchableOpacity>
           )}
-          <TouchableOpacity
-            style={[styles.nextButton, loading && styles.nextButtonDisabled]}
-            onPress={handleNext}
-            disabled={loading}
-          >
-            <Text style={styles.nextButtonText}>
-              {loading
-                ? 'Submitting...'
-                : step === 4
-                  ? 'Submit'
-                  : 'Next'}
-            </Text>
-            {step < 4 && <Ionicons name="arrow-forward" size={20} color="#fff" />}
-          </TouchableOpacity>
         </View>
+
+        {/* Issue Categories */}
+        <View style={styles.section}>
+          <Text style={styles.label}>Issue Type</Text>
+          <View style={styles.issueChipsContainer}>
+            {ISSUE_OPTIONS.map((option) => {
+              const active = issues.includes(option);
+              return (
+                <TouchableOpacity
+                  key={option}
+                  style={[styles.issueChip, active && styles.issueChipActive]}
+                  onPress={() => toggleIssue(option)}
+                >
+                  <Text style={[styles.issueChipText, active && styles.issueChipTextActive]}>
+                    {option}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          {issues.length > 1 && (
+            <Text style={styles.issueHint}>Multiple issues selected</Text>
+          )}
+        </View>
+
+        {/* Description */}
+        <View style={styles.section}>
+          <Text style={styles.label}>Issue Description</Text>
+          <TextInput
+            style={styles.textArea}
+            value={description}
+            onChangeText={setDescription}
+            placeholder="Please describe the noise, leak, or problem..."
+            multiline
+            numberOfLines={6}
+            textAlignVertical="top"
+          />
+        </View>
+
+        <TouchableOpacity
+          style={[styles.submitButton, loading && styles.submitButtonDisabled]}
+          onPress={handleSubmit}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.submitButtonText}>Submit Request</Text>
+          )}
+        </TouchableOpacity>
+
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
+  },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.background,
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    paddingTop: 60,
-    backgroundColor: '#fff',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing['5xl'],
+    paddingBottom: Spacing.lg,
+    backgroundColor: Colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: Colors.border,
+  },
+  backButton: {
+    padding: Spacing.xs,
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  stepIndicator: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: Typography.fontSize.lg,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.textPrimary,
   },
   content: {
     flex: 1,
-    padding: 15,
+    padding: Spacing.lg,
   },
-  stepContainer: {
-    marginBottom: 20,
+  section: {
+    marginBottom: Spacing.xl,
   },
-  stepTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 20,
-    color: '#333',
+  label: {
+    fontSize: Typography.fontSize.md,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.textPrimary,
+    marginBottom: Spacing.sm,
   },
-  servicesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 20,
-  },
-  serviceCard: {
-    width: '48%',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 15,
-    borderWidth: 2,
-    borderColor: '#eee',
-    minHeight: 120,
-  },
-  serviceCardSelected: {
-    borderColor: '#007AFF',
-    backgroundColor: '#E3F2FD',
-  },
-  serviceCheckbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#ddd',
-    marginBottom: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  serviceCheckboxSelected: {
-    backgroundColor: '#007AFF',
-    borderColor: '#007AFF',
-  },
-  serviceTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 6,
-  },
-  serviceTitleSelected: {
-    color: '#007AFF',
-  },
-  serviceDescription: {
-    fontSize: 12,
-    color: '#666',
-    lineHeight: 16,
-  },
-  serviceDescriptionSelected: {
-    color: '#007AFF',
-  },
-  skipButton: {
-    marginTop: 20,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  skipButtonText: {
-    color: '#007AFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  suggestionGroup: {
-    marginBottom: 25,
-  },
-  groupTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 15,
-    color: '#333',
-  },
-  suggestionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    padding: 15,
-    borderRadius: 8,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#eee',
-  },
-  suggestionItemSelected: {
-    borderColor: '#007AFF',
-    backgroundColor: '#E3F2FD',
-  },
-  checkbox: {
-    width: 20,
-    height: 20,
-    borderRadius: 4,
-    borderWidth: 2,
-    borderColor: '#ddd',
-    marginRight: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  checkboxSelected: {
-    backgroundColor: '#007AFF',
-    borderColor: '#007AFF',
-  },
-  suggestionText: {
-    flex: 1,
-    fontSize: 16,
-    color: '#333',
-  },
-  suggestionTextSelected: {
-    color: '#007AFF',
-    fontWeight: '600',
-  },
-  badgesContainer: {
-    flexDirection: 'row',
-    gap: 6,
-    marginLeft: 8,
-  },
-  badge: {
-    backgroundColor: '#FF9500',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  badgeText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  emptySuggestions: {
-    padding: 40,
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: 16,
-    color: '#999',
-    marginBottom: 20,
-  },
-  textArea: {
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    padding: 15,
-    fontSize: 16,
-    minHeight: 150,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    marginBottom: 15,
-  },
-  imageButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    padding: 15,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    gap: 10,
-    marginBottom: 15,
-  },
-  imageButtonText: {
-    fontSize: 16,
-    color: '#007AFF',
-    fontWeight: '600',
-  },
-  imagePreview: {
-    position: 'relative',
-    width: '100%',
-    height: 200,
-    borderRadius: 8,
-    overflow: 'hidden',
-    marginBottom: 15,
-  },
-  image: {
-    width: '100%',
-    height: '100%',
-  },
-  removeImage: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-  },
-  dateButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    padding: 15,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    gap: 10,
-    marginBottom: 20,
-  },
-  dateButtonText: {
-    fontSize: 16,
-    color: '#333',
-  },
-  noteContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#E3F2FD',
-    padding: 12,
-    borderRadius: 8,
-    gap: 8,
-  },
-  noteText: {
-    flex: 1,
-    fontSize: 14,
-    color: '#007AFF',
-  },
-  navigation: {
+  dropdownTrigger: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 15,
-    marginTop: 20,
-    marginBottom: 30,
-  },
-  prevButton: {
-    flexDirection: 'row',
     alignItems: 'center',
-    padding: 15,
-    borderRadius: 8,
+    backgroundColor: Colors.surface,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
     borderWidth: 1,
-    borderColor: '#007AFF',
-    gap: 8,
+    borderColor: Colors.border,
   },
-  prevButtonText: {
-    color: '#007AFF',
-    fontSize: 16,
-    fontWeight: '600',
+  dropdownText: {
+    fontSize: Typography.fontSize.md,
+    color: Colors.textPrimary,
   },
-  nextButton: {
-    flex: 1,
+  dropdownList: {
+    marginTop: Spacing.xs,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    overflow: 'hidden',
+  },
+  dropdownItem: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#007AFF',
-    padding: 15,
-    borderRadius: 8,
-    gap: 8,
+    padding: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
   },
-  nextButtonDisabled: {
-    opacity: 0.6,
+  dropdownItemText: {
+    fontSize: Typography.fontSize.md,
+    color: Colors.textPrimary,
   },
-  nextButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  issueChipsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.xs,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  issueChip: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  issueChipActive: {
+    backgroundColor: Colors.primary + '15', // 15% opacity hex
+    borderColor: Colors.primary,
+  },
+  issueChipText: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textSecondary,
+  },
+  issueChipTextActive: {
+    color: Colors.primary,
+    fontWeight: Typography.fontWeight.semibold,
+  },
+  issueHint: {
+    fontSize: Typography.fontSize.xs,
+    color: Colors.textTertiary,
+    marginTop: Spacing.xs,
+  },
+  textArea: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: Spacing.md,
+    fontSize: Typography.fontSize.md,
+    minHeight: 120,
+  },
+  submitButton: {
+    backgroundColor: Colors.primary,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
     alignItems: 'center',
+    marginTop: Spacing.sm,
+    marginBottom: Spacing['3xl'],
   },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
+  submitButtonDisabled: {
+    opacity: 0.7,
   },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 10,
-    textAlign: 'center',
+  submitButtonText: {
+    color: Colors.textInverse,
+    fontSize: Typography.fontSize.md,
+    fontWeight: Typography.fontWeight.bold,
   },
-  emptyButton: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 30,
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginTop: 20,
+  emptyText: {
+    marginTop: Spacing.md,
+    fontSize: Typography.fontSize.md,
+    color: Colors.textSecondary,
   },
-  emptyButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  addButton: {
+    marginTop: Spacing.lg,
+    backgroundColor: Colors.primary,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
+  },
+  addButtonText: {
+    color: Colors.textInverse,
+    fontWeight: Typography.fontWeight.bold,
   },
 });
-

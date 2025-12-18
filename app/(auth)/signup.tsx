@@ -18,7 +18,7 @@ export default function SignupScreen() {
   const [registrationCode, setRegistrationCode] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const { signup, loading, user } = useAuthStore();
+  const { registerCustomerAccount, loading, user } = useAuthStore();
   const router = useRouter();
 
   useEffect(() => {
@@ -53,7 +53,7 @@ export default function SignupScreen() {
     }
 
     try {
-      await signup(email, password, registrationCode);
+      await registerCustomerAccount(email, password, registrationCode);
     } catch (error: any) {
       let errorMessage = 'Unable to create account';
       if (error.code === 'auth/email-already-in-use') {

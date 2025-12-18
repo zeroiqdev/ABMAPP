@@ -15,9 +15,11 @@ import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
 import { notificationService } from '@/services/notificationService';
 import * as ImagePicker from 'expo-image-picker';
+import { validateImageWithAlert } from '@/utils/imageValidation';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Vehicle, Job } from '@/types';
+import { Colors, Typography, Spacing, BorderRadius } from '@/constants/design';
 
 export default function BookServiceScreen() {
   const { user } = useAuthStore();
@@ -69,6 +71,10 @@ export default function BookServiceScreen() {
       const newImages: string[] = [];
       for (const asset of result.assets) {
         try {
+          // Validate image before upload
+          const isValid = await validateImageWithAlert(asset.uri);
+          if (!isValid) continue; // Skip invalid images
+          
           const url = await firebaseService.uploadFile(
             asset.uri,
             `jobs/${user?.id}/${Date.now()}-${asset.fileName || 'image.jpg'}`
@@ -76,9 +82,12 @@ export default function BookServiceScreen() {
           newImages.push(url);
         } catch (error) {
           console.error('Error uploading image:', error);
+          Alert.alert('Error', 'Failed to upload image');
         }
       }
-      setImages([...images, ...newImages]);
+      if (newImages.length > 0) {
+        setImages([...images, ...newImages]);
+      }
     }
   };
 
@@ -391,30 +400,30 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   typeButtonActive: {
-    borderColor: '#007AFF',
-    backgroundColor: '#E3F2FD',
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primaryLight + '20', // 20% opacity
   },
   typeButtonText: {
-    fontSize: 16,
-    color: '#666',
-    fontWeight: '600',
+    fontSize: Typography.fontSize.base,
+    color: Colors.textSecondary,
+    fontWeight: Typography.fontWeight.semibold,
   },
   typeButtonTextActive: {
-    color: '#007AFF',
+    color: Colors.primary,
   },
   vehicleOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 15,
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    marginBottom: 10,
+    padding: Spacing.base,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.sm,
+    marginBottom: Spacing.sm,
     borderWidth: 2,
-    borderColor: '#eee',
+    borderColor: Colors.border,
   },
   vehicleOptionSelected: {
-    borderColor: '#007AFF',
-    backgroundColor: '#E3F2FD',
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primaryLight + '20', // 20% opacity
   },
   vehicleInfo: {
     marginLeft: 12,
@@ -471,9 +480,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   imageButtonText: {
-    fontSize: 14,
-    color: '#007AFF',
-    fontWeight: '600',
+    fontSize: Typography.fontSize.sm,
+    color: Colors.primary,
+    fontWeight: Typography.fontWeight.semibold,
   },
   imageGrid: {
     flexDirection: 'row',
@@ -498,20 +507,20 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   submitButton: {
-    backgroundColor: '#007AFF',
-    padding: 18,
-    borderRadius: 8,
+    backgroundColor: Colors.primary,
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.sm,
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: Spacing.lg,
     marginBottom: 30,
   },
   submitButtonDisabled: {
     opacity: 0.6,
   },
   submitButtonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
+    color: Colors.textInverse,
+    fontSize: Typography.fontSize.lg,
+    fontWeight: Typography.fontWeight.semibold,
   },
   emptyState: {
     flex: 1,
@@ -532,16 +541,16 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   emptyButton: {
-    backgroundColor: '#007AFF',
+    backgroundColor: Colors.primary,
     paddingHorizontal: 30,
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginTop: 20,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    marginTop: Spacing.lg,
   },
   emptyButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    color: Colors.textInverse,
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.semibold,
   },
 });
 

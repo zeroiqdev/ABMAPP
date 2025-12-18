@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,46 +6,58 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  Image,
+  Dimensions,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
 import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 import { db } from '@/config/firebase';
-import { Job, Notification } from '@/types';
+import { Job, Notification, Vehicle, MarketplaceProduct } from '@/types';
 import { Ionicons } from '@expo/vector-icons';
+import { Colors, Typography, Spacing, BorderRadius, Shadows, StatusColors } from '@/constants/design';
+import { firebaseService } from '@/services/firebaseService';
+import { BrandLogo } from '@/components/BrandLogo';
+import { CAR_BRANDS } from '@/constants/carBrands';
+
+const { width } = Dimensions.get('window');
+const PRODUCT_CARD_WIDTH = (width - 40) / 2; // Match admin marketplace: (width - 40) / 2
 
 export default function CustomerHomeScreen() {
   const { user } = useAuthStore();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'appointment' | 'tow' | 'orders'>('appointment');
-  const [activeJobs, setActiveJobs] = useState<Job[]>([]);
+  const [activeTab, setActiveTab] = useState<'tow' | 'repairs' | 'orders'>('repairs');
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [marketplaceProducts, setMarketplaceProducts] = useState<MarketplaceProduct[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!user) return;
 
     try {
-      const jobsQuery = query(
-        collection(db, 'jobs'),
-        where('userId', '==', user.id),
-        where('status', 'in', ['received', 'diagnosed', 'repairing']),
-        orderBy('createdAt', 'desc'),
-        limit(5)
-      );
-      const jobsSnapshot = await getDocs(jobsQuery);
-      const jobs = jobsSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().createdAt?.toDate(),
-        updatedAt: doc.data().updatedAt?.toDate(),
-      })) as Job[];
-      setActiveJobs(jobs);
+      // Load vehicles - includes vehicles created by admin/technician for this customer
+      // (vehicles are stored with userId pointing to the customer's user ID)
+      console.log('[Customer Home] Loading vehicles for user ID:', user.id, 'Email:', user.email);
+      const userVehicles = await firebaseService.getVehicles(user.id);
+      console.log('[Customer Home] Loaded vehicles count:', userVehicles.length);
+      if (userVehicles.length > 0) {
+        console.log('[Customer Home] Vehicle details:', userVehicles.map(v => ({
+          id: v.id,
+          make: v.make,
+          model: v.model,
+          userId: v.userId
+        })));
+      } else {
+        console.log('[Customer Home] No vehicles found for user ID:', user.id);
+      }
+      setVehicles(userVehicles);
 
+      // Load marketplace products (limit to 6 for home screen)
+      const products = await firebaseService.getMarketplaceProducts(undefined, undefined, true);
+      setMarketplaceProducts(products.slice(0, 6));
+
+      // Load notifications
       const notificationsQuery = query(
         collection(db, 'notifications'),
         where('userId', '==', user.id),
@@ -63,7 +75,19 @@ export default function CustomerHomeScreen() {
     } catch (error) {
       console.error('Error loading data:', error);
     }
-  };
+  }, [user]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Reload data when screen comes into focus (e.g., after adding a vehicle)
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
+
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -71,38 +95,36 @@ export default function CustomerHomeScreen() {
     setRefreshing(false);
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'received': return '#FFA500';
-      case 'diagnosed': return '#007AFF';
-      case 'repairing': return '#34C759';
-      case 'completed': return '#30D158';
-      default: return '#666';
-    }
+  const getBrand = (make: string) => {
+    return CAR_BRANDS.find(b => b.name.toLowerCase() === make.toLowerCase());
   };
 
-  const ongoingJob = activeJobs.length > 0 ? activeJobs[0] : null;
+  // Get at least 2 vehicles for display
+  const displayVehicles = vehicles.slice(0, 2);
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.profileSection}>
           <View style={styles.profileIcon}>
-            <Ionicons name="person" size={24} color="#007AFF" />
+            <Ionicons name="person" size={24} color={Colors.secondary} />
           </View>
           <View>
             <Text style={styles.welcomeText}>Welcome,</Text>
             <Text style={styles.userName}>{user?.name || 'Customer'}</Text>
           </View>
         </View>
-        <TouchableOpacity onPress={() => router.push('/(customer)/notifications')}>
-          <Ionicons name="notifications-outline" size={24} color="#000" />
-          {notifications.length > 0 && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{notifications.length}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+
+          <TouchableOpacity onPress={() => router.push('/(customer)/notifications')}>
+            <Ionicons name="notifications-outline" size={24} color={Colors.textPrimary} />
+            {notifications.length > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{notifications.length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -111,60 +133,106 @@ export default function CustomerHomeScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {ongoingJob && (
-          <View style={styles.banner}>
-            <View style={styles.bannerContent}>
-              <View style={styles.bannerTextContainer}>
-                <Text style={styles.bannerTitle}>Ongoing Repair</Text>
-                <Text style={styles.bannerSubtitle}>
-                  {ongoingJob.type === 'service' ? 'Service' : 'Complaint'} in progress
-                </Text>
-          <TouchableOpacity
-                  style={styles.bannerButton}
-                  onPress={() => router.push(`/(customer)/job-details?id=${ongoingJob.id}`)}
-          >
-                  <Text style={styles.bannerButtonText}>View Details</Text>
-                  <Ionicons name="arrow-forward" size={16} color="#fff" />
-          </TouchableOpacity>
-              </View>
-              <View style={styles.bannerIcon}>
-                <Ionicons name="construct" size={48} color="#fff" />
-              </View>
+        {/* Wallet-Style Vehicle Card */}
+        <View style={styles.cardContainer}>
+          <View style={styles.cardHeader}>
+            <View>
+              <Text style={styles.cardTitle}>My Vehicles</Text>
             </View>
+            {/* Filters removed as requested */}
           </View>
-        )}
 
+          <View style={styles.cardBody}>
+            {vehicles.length > 0 ? (
+              <View style={styles.vehicleList}>
+                {displayVehicles.map((vehicle, index) => {
+                  const brand = getBrand(vehicle.make);
+                  return (
+                    <View key={vehicle.id} style={[styles.vehicleRow, index > 0 && styles.vehicleRowSpaced]}>
+                      <View style={styles.vehicleIcon}>
+                        {brand ? (
+                          <BrandLogo brand={brand.name} size={24} />
+                        ) : (
+                          <Text style={styles.vehicleIconText}>
+                            {vehicle.make.charAt(0).toUpperCase()}
+                          </Text>
+                        )}
+                      </View>
+                      <Text style={styles.vehicleName}>
+                        {vehicle.make} {vehicle.model}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : (
+              <View style={styles.emptyVehicleState}>
+                <Text style={styles.emptyVehicleText}>No vehicles linked</Text>
+                <TouchableOpacity onPress={() => router.push('/(customer)/add-vehicle')}>
+                  <Text style={styles.addLink}>Add now</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.cardFooter}>
+            <View style={styles.fleetInfo}>
+              {vehicles.length > 2 && (
+                <TouchableOpacity onPress={() => router.push('/(customer)/vehicles')}>
+                  <Text style={styles.seeFleetText}>+ {vehicles.length - 2} more (See Fleet)</Text>
+                </TouchableOpacity>
+              )}
+              {/* If <= 2, we can just show empty or "See Fleet" anyway if they want to manage */}
+              {vehicles.length <= 2 && vehicles.length > 0 && (
+                <TouchableOpacity onPress={() => router.push('/(customer)/vehicles')}>
+                  <Text style={styles.seeFleetText}>View Fleet</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <TouchableOpacity
+              style={styles.detailsButton}
+              onPress={() => router.push('/(customer)/invoices')}
+            >
+              <Text style={styles.detailsButtonText}>Invoices</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Service Selection Tabs */}
         <View style={styles.tabsContainer}>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'appointment' && styles.tabActive]}
-            onPress={() => {
-              setActiveTab('appointment');
-              router.push('/(customer)/service');
-            }}
-          >
-            <Ionicons
-              name="calendar-outline"
-              size={20}
-              color={activeTab === 'appointment' ? '#fff' : '#666'}
-            />
-            <Text style={[styles.tabText, activeTab === 'appointment' && styles.tabTextActive]}>
-              Book Appointment
-            </Text>
-          </TouchableOpacity>
-
           <TouchableOpacity
             style={[styles.tab, activeTab === 'tow' && styles.tabActive]}
             onPress={() => {
               setActiveTab('tow');
+              // Navigate to tow request screen
+              router.push('/(customer)/book-service?type=tow');
             }}
           >
             <Ionicons
               name="car-outline"
-              size={20}
-              color={activeTab === 'tow' ? '#fff' : '#666'}
+              size={18}
+              color={activeTab === 'tow' ? Colors.textInverse : Colors.textSecondary}
             />
             <Text style={[styles.tabText, activeTab === 'tow' && styles.tabTextActive]}>
               Request Tow
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'repairs' && styles.tabActive]}
+            onPress={() => {
+              setActiveTab('repairs');
+              router.push('/(customer)/service');
+            }}
+          >
+            <Ionicons
+              name="construct-outline"
+              size={18}
+              color={activeTab === 'repairs' ? Colors.textInverse : Colors.textSecondary}
+            />
+            <Text style={[styles.tabText, activeTab === 'repairs' && styles.tabTextActive]}>
+              Request Repair
             </Text>
           </TouchableOpacity>
 
@@ -177,8 +245,8 @@ export default function CustomerHomeScreen() {
           >
             <Ionicons
               name="bag-outline"
-              size={20}
-              color={activeTab === 'orders' ? '#fff' : '#666'}
+              size={18}
+              color={activeTab === 'orders' ? Colors.textInverse : Colors.textSecondary}
             />
             <Text style={[styles.tabText, activeTab === 'orders' && styles.tabTextActive]}>
               Orders
@@ -186,60 +254,71 @@ export default function CustomerHomeScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Marketplace Products Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Suggested Services</Text>
-          <View style={styles.servicesList}>
-              <TouchableOpacity
-              style={styles.serviceCard}
-              onPress={() => router.push('/(customer)/service')}
-              >
-              <View style={styles.serviceIcon}>
-                <Ionicons name="build-outline" size={32} color="#666" />
-                  </View>
-              <View style={styles.serviceInfo}>
-                <Text style={styles.serviceName}>General Service</Text>
-                <View style={styles.serviceStatus}>
-                  <View style={styles.statusDot} />
-                  <Text style={styles.serviceStatusText}>Available</Text>
-                </View>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color="#007AFF" />
-              </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.serviceCard}
-              onPress={() => router.push('/(customer)/service')}
-            >
-              <View style={styles.serviceIcon}>
-                <Ionicons name="car-sport-outline" size={32} color="#666" />
-              </View>
-              <View style={styles.serviceInfo}>
-                <Text style={styles.serviceName}>Oil Change</Text>
-                <View style={styles.serviceStatus}>
-                  <View style={styles.statusDot} />
-                  <Text style={styles.serviceStatusText}>Available</Text>
-        </View>
-            </View>
-              <Ionicons name="chevron-forward" size={20} color="#999" />
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Parts for Sell</Text>
+            <TouchableOpacity onPress={() => router.push('/(customer)/marketplace')}>
+              <Text style={styles.seeAllText}>See All</Text>
             </TouchableOpacity>
-
-              <TouchableOpacity
-              style={styles.serviceCard}
-              onPress={() => router.push('/(customer)/service')}
-            >
-              <View style={styles.serviceIcon}>
-                <Ionicons name="settings-outline" size={32} color="#666" />
-              </View>
-              <View style={styles.serviceInfo}>
-                <Text style={styles.serviceName}>Brake Service</Text>
-                <View style={styles.serviceStatus}>
-                  <View style={styles.statusDot} />
-                  <Text style={styles.serviceStatusText}>Available</Text>
-                </View>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color="#999" />
-              </TouchableOpacity>
           </View>
+          <View style={styles.productsGrid}>
+            {marketplaceProducts.map((product) => (
+              <TouchableOpacity
+                key={product.id}
+                style={styles.productCard}
+                onPress={() => router.push(`/(customer)/product-details?id=${product.id}`)}
+                activeOpacity={0.9}
+              >
+                <View style={styles.imageContainer}>
+                  {product.images && product.images.length > 0 ? (
+                    <Image
+                      source={{ uri: product.images[0] }}
+                      style={styles.productImage}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={[styles.productImage, styles.placeholderImage]}>
+                      <Ionicons name="image-outline" size={30} color="#ccc" />
+                    </View>
+                  )}
+                  <TouchableOpacity style={styles.favoriteButton}>
+                    <Ionicons name="heart-outline" size={18} color="#fff" />
+                  </TouchableOpacity>
+                  {product.stock <= 0 && (
+                    <View style={styles.outOfStockOverlay}>
+                      <Text style={styles.outOfStockText}>SOLD OUT</Text>
+                    </View>
+                  )}
+                </View>
+
+                <View style={styles.productInfo}>
+                  <Text style={styles.productName} numberOfLines={1}>
+                    {product.name}
+                  </Text>
+
+                  <View style={styles.ratingRow}>
+                    <Ionicons name="star" size={16} color="#000" />
+                    <Text style={styles.ratingText}>
+                      {(product.rating || 0) > 0 ? product.rating : 'New'}
+                    </Text>
+                    <Text style={styles.ratingSeparator}>|</Text>
+                    <View style={styles.soldBadge}>
+                      <Text style={styles.soldText}>{product.reviews || 0} sold</Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.productPrice}>₦{product.price.toLocaleString()}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {marketplaceProducts.length === 0 && (
+            <View style={styles.emptyState}>
+              <Ionicons name="storefront-outline" size={48} color={Colors.textTertiary} />
+              <Text style={styles.emptyText}>No products available</Text>
+            </View>
+          )}
         </View>
       </ScrollView>
     </View>
@@ -249,17 +328,17 @@ export default function CustomerHomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    paddingTop: 60,
-    backgroundColor: '#fff',
+    padding: Spacing.lg,
+    paddingTop: Spacing['5xl'],
+    backgroundColor: Colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: Colors.border,
   },
   profileSection: {
     flexDirection: 'row',
@@ -269,25 +348,33 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#E3F2FD',
+    backgroundColor: Colors.borderLight,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: Spacing.md,
   },
   welcomeText: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textSecondary,
   },
   userName: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
+    fontSize: Typography.fontSize.lg,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.textPrimary,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: Spacing.base,
+    alignItems: 'center',
+  },
+  headerButton: {
+    padding: Spacing.xs,
   },
   badge: {
     position: 'absolute',
     top: -5,
     right: -5,
-    backgroundColor: '#FF3B30',
+    backgroundColor: Colors.error,
     borderRadius: 10,
     minWidth: 20,
     height: 20,
@@ -296,148 +383,267 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
   },
   badgeText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
+    color: Colors.textInverse,
+    fontSize: Typography.fontSize.xs,
+    fontWeight: Typography.fontWeight.bold,
   },
   content: {
     flex: 1,
   },
-  banner: {
-    backgroundColor: '#007AFF',
-    margin: 15,
-    borderRadius: 16,
+  cardContainer: {
+    backgroundColor: '#000', // Black card
+    margin: 16,
+    borderRadius: 20,
     padding: 20,
-    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 5,
   },
-  bannerContent: {
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff', // White text
+    marginBottom: 4,
+  },
+  cardSubtitle: {
+    fontSize: 14,
+    color: '#ccc', // Light gray
+  },
+  cardBody: {
+    marginBottom: 20,
+  },
+  vehicleList: {
+    flexDirection: 'column',
+  },
+  vehicleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  vehicleRowSpaced: {
+    marginTop: 12,
+  },
+  vehicleIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#333', // Dark gray circle
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: '#444',
+  },
+  vehicleIconText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#fff', // White text
+  },
+  vehicleName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff', // White text
+  },
+  emptyVehicleState: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  emptyVehicleText: {
+    color: '#999',
+  },
+  addLink: {
+    color: Colors.primary, // Keep primary color or make it white/blue
+    fontWeight: 'bold',
+  },
+  cardFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  bannerTextContainer: {
-    flex: 1,
-  },
-  bannerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 4,
-  },
-  bannerSubtitle: {
-    fontSize: 14,
-    color: '#fff',
-    opacity: 0.9,
-    marginBottom: 12,
-  },
-  bannerButton: {
+  fleetInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FF9500',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    alignSelf: 'flex-start',
   },
-  bannerButtonText: {
-    color: '#fff',
+  seeFleetText: {
     fontSize: 14,
     fontWeight: '600',
-    marginRight: 4,
+    color: '#ccc', // Light gray
   },
-  bannerIcon: {
-    width: 80,
-    height: 80,
-    justifyContent: 'center',
-    alignItems: 'center',
+  detailsButton: {
+    backgroundColor: '#fff', // White button
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 30,
+  },
+  detailsButtonText: {
+    color: '#000', // Black text
+    fontWeight: '600',
+    fontSize: 14,
   },
   tabsContainer: {
     flexDirection: 'row',
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    gap: 10,
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.sm,
+    gap: Spacing.sm,
   },
   tab: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    backgroundColor: '#fff',
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.base,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: '#eee',
+    borderColor: Colors.border,
     gap: 6,
   },
   tabActive: {
-    backgroundColor: '#007AFF',
-    borderColor: '#007AFF',
+    backgroundColor: Colors.secondary,
+    borderColor: Colors.secondary,
   },
   tabText: {
+    fontSize: 12, // Reduced from sm (14)
+    color: Colors.textSecondary,
+    fontWeight: Typography.fontWeight.medium,
+  },
+  tabTextActive: {
+    color: Colors.textInverse,
+    fontWeight: Typography.fontWeight.semibold,
+  },
+  section: {
+    paddingBottom: Spacing.base,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.base,
+    paddingHorizontal: 16, // Align with vehicle card margin
+  },
+  sectionTitle: {
+    fontSize: Typography.fontSize.xl,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.textPrimary,
+  },
+  seeAllText: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.secondary,
+    fontWeight: Typography.fontWeight.semibold,
+  },
+  productsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: Spacing.base,
+  },
+  productCard: {
+    width: PRODUCT_CARD_WIDTH,
+    marginBottom: 16,
+    backgroundColor: 'transparent',
+    flexDirection: 'column',
+    overflow: 'visible',
+  },
+  imageContainer: {
+    width: '100%',
+    height: PRODUCT_CARD_WIDTH * 1.0, // Reduced from 1.2 to 1.0 (Square)
+    borderRadius: 20,
+    backgroundColor: '#f5f5f5',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  productImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'contain', // Changed to contain to see full product if it's cut off, or cover? Reference looked like cover/contain mix. Let's stick to cover but maybe 'contain' is better for "parts". The reference engine looked full. Let's try 'cover' with square.
+  },
+  placeholderImage: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  favoriteButton: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  outOfStockOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 5,
+  },
+  outOfStockText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 12,
+  },
+  productInfo: {
+    paddingHorizontal: 0,
+    marginTop: 8, // Reduced from 12
+    flexDirection: 'column',
+  },
+  productName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#000',
+    marginBottom: 4, // Reduced from 6
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4, // Reduced from 8
+  },
+  ratingText: {
     fontSize: 14,
+    fontWeight: '600',
+    color: '#000',
+    marginLeft: 4,
+  },
+  ratingSeparator: {
+    marginHorizontal: 8,
+    color: '#ccc',
+    fontSize: 14,
+  },
+  soldBadge: {
+    backgroundColor: '#f0f0f0',
+    paddingHorizontal: 6, // Slightly reduced
+    paddingVertical: 2, // Slightly reduced
+    borderRadius: 4,
+  },
+  soldText: {
+    fontSize: 10,
     color: '#666',
     fontWeight: '500',
   },
-  tabTextActive: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  section: {
-    padding: 15,
-  },
-  sectionTitle: {
-    fontSize: 20,
+  productPrice: {
+    fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 15,
-    color: '#333',
+    color: '#000',
   },
-  servicesList: {
-    gap: 12,
-  },
-  serviceCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  serviceIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#f0f0f0',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 15,
-  },
-  serviceInfo: {
-    flex: 1,
-  },
-  serviceName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 4,
-  },
-  serviceStatus: {
-    flexDirection: 'row',
+  emptyState: {
+    padding: Spacing['3xl'],
     alignItems: 'center',
   },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#34C759',
-    marginRight: 6,
-  },
-  serviceStatusText: {
-    fontSize: 14,
-    color: '#34C759',
+  emptyText: {
+    marginTop: Spacing.base,
+    fontSize: Typography.fontSize.base,
+    color: Colors.textTertiary,
   },
 });

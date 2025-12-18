@@ -7,13 +7,15 @@ import {
   TouchableOpacity,
   RefreshControl,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
 import { User } from '@/types';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/config/firebase';
+import { useCallback } from 'react';
+import { Colors, Typography, Spacing, BorderRadius } from '@/constants/design';
 
 export default function CustomersScreen() {
   const { user } = useAuthStore();
@@ -21,11 +23,7 @@ export default function CustomersScreen() {
   const [customers, setCustomers] = useState<User[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    loadCustomers();
-  }, [user]);
-
-  const loadCustomers = async () => {
+  const loadCustomers = useCallback(async () => {
     if (!user?.workshopId) return;
     try {
       const q = query(
@@ -47,7 +45,17 @@ export default function CustomersScreen() {
     } catch (error) {
       console.error('Error loading customers:', error);
     }
-  };
+  }, [user?.workshopId]);
+
+  useEffect(() => {
+    loadCustomers();
+  }, [loadCustomers]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadCustomers();
+    }, [loadCustomers])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -55,20 +63,34 @@ export default function CustomersScreen() {
     setRefreshing(false);
   };
 
+  const getInitial = (name?: string) => (name && name.length > 0 ? name[0].toUpperCase() : '?');
+
   const renderCustomer = ({ item }: { item: User }) => (
-    <TouchableOpacity 
-      style={styles.customerCard}
-      onPress={() => router.push(`/(workshop)/customer-details?id=${item.id}`)}
+    <TouchableOpacity
+      style={styles.customerRow}
+      onPress={() => router.push({
+        pathname: '/(workshop)/customer-details',
+        params: {
+          id: item.id,
+          name: item.name,
+          email: item.email,
+          phone: item.phone,
+          createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : new Date().toISOString(),
+          workshopId: item.workshopId,
+          role: item.role,
+        }
+      })}
     >
       <View style={styles.customerInfo}>
         <View style={styles.avatar}>
-          <Ionicons name="person" size={24} color="#666" />
+          <Text style={styles.avatarText}>{getInitial(item.name)}</Text>
         </View>
         <View style={styles.customerDetails}>
           <Text style={styles.customerName}>{item.name}</Text>
           <Text style={styles.customerEmail}>{item.email}</Text>
           <Text style={styles.customerPhone}>{item.phone}</Text>
         </View>
+
       </View>
       <Ionicons name="chevron-forward" size={20} color="#999" />
     </TouchableOpacity>
@@ -77,12 +99,12 @@ export default function CustomersScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#000" />
-        </TouchableOpacity>
         <Text style={styles.headerTitle}>Customers</Text>
-        <TouchableOpacity onPress={() => router.push('/(workshop)/register-customer')}>
-          <Ionicons name="add-circle" size={28} color="#007AFF" />
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={() => router.push('/(workshop)/register-customer')}
+        >
+          <Ionicons name="add" size={20} color="#fff" />
         </TouchableOpacity>
       </View>
 
@@ -108,38 +130,45 @@ export default function CustomersScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    paddingTop: 60,
-    backgroundColor: '#fff',
+    padding: Spacing.lg,
+    paddingTop: Spacing['5xl'],
+    backgroundColor: Colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: Colors.border,
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: Typography.fontSize['2xl'],
+    fontWeight: Typography.fontWeight.bold,
+    flex: 1,
+    textAlign: 'left',
+    color: Colors.textPrimary,
+  },
+  addButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.secondary,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   listContent: {
-    padding: 15,
+    padding: Spacing.base,
   },
-  customerCard: {
+  customerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    backgroundColor: Colors.surface,
+    paddingVertical: 14,
+    paddingHorizontal: Spacing.base,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
   },
   customerInfo: {
     flexDirection: 'row',
@@ -150,37 +179,43 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 25,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: Colors.secondary,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 15,
+    marginRight: Spacing.base,
+  },
+  avatarText: {
+    fontSize: Typography.fontSize.lg,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.textInverse,
   },
   customerDetails: {
     flex: 1,
   },
   customerName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.semibold,
+    color: Colors.textPrimary,
     marginBottom: 4,
   },
   customerEmail: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textSecondary,
     marginBottom: 2,
   },
   customerPhone: {
-    fontSize: 12,
-    color: '#999',
+    fontSize: Typography.fontSize.xs,
+    color: Colors.textTertiary,
   },
   emptyState: {
     padding: 60,
     alignItems: 'center',
   },
   emptyText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#999',
+    marginTop: Spacing.base,
+    fontSize: Typography.fontSize.base,
+    color: Colors.textTertiary,
   },
 });
+
 

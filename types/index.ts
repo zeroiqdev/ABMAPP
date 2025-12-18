@@ -1,17 +1,17 @@
-export type UserRole = 
-  | 'customer' 
-  | 'admin' 
-  | 'technician' 
-  | 'storekeeper' 
-  | 'accountant' 
+export type UserRole =
+  | 'customer'
+  | 'admin'
+  | 'technician'
+  | 'storekeeper'
+  | 'accountant'
   | 'service_advisor'
   | 'vendor';
 
-export type JobStatus = 
-  | 'received' 
-  | 'diagnosed' 
-  | 'repairing' 
-  | 'completed' 
+export type JobStatus =
+  | 'received'
+  | 'diagnosed'
+  | 'repairing'
+  | 'completed'
   | 'cancelled';
 
 export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded' | 'partially_paid';
@@ -45,7 +45,8 @@ export interface Job {
   userId: string;
   vehicleId: string;
   workshopId: string;
-  type: 'service' | 'complaint';
+  type: 'service' | 'complaint' | 'repair' | 'service_and_repair';
+  issues?: string[]; // Selected issue categories
   description: string;
   status: JobStatus;
   assignedTechnicianId?: string;
@@ -133,6 +134,7 @@ export interface StockTransaction {
 export interface MarketplaceProduct {
   id: string;
   vendorId: string;
+  userId?: string; // Author of the post
   name: string;
   description: string;
   category: string;
@@ -140,6 +142,11 @@ export interface MarketplaceProduct {
   images: string[];
   compatibility: string[]; // Vehicle makes/models
   stock: number;
+  brand?: string;
+  rating?: number;
+  reviews?: number;
+  soldCount?: number;
+  condition?: 'new' | 'used' | 'refurbished';
   approved: boolean;
   createdAt: Date;
 }

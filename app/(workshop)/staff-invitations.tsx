@@ -15,7 +15,7 @@ import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
 import { StaffInvitation, UserRole } from '@/types';
 
-const staffRoles: UserRole[] = ['service_advisor', 'technician', 'storekeeper', 'accountant', 'admin'];
+const staffRoles: UserRole[] = ['service_advisor', 'technician', 'storekeeper', 'accountant', 'admin', 'vendor'];
 
 export default function StaffInvitationsScreen() {
   const router = useRouter();
@@ -213,7 +213,7 @@ export default function StaffInvitationsScreen() {
             <Text style={styles.sectionSubtitle}>{invites.length} total</Text>
           </View>
           {loadingInvites ? (
-            <ActivityIndicator color="#007AFF" />
+            <ActivityIndicator color="#000" />
           ) : invites.length === 0 ? (
             <Text style={styles.emptyText}>No invitations sent yet.</Text>
           ) : (

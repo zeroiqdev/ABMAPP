@@ -104,7 +104,11 @@ export default function VehiclesScreen() {
           </View>
         ) : (
           vehicles.map((vehicle) => (
-            <View key={vehicle.id} style={styles.vehicleCard}>
+            <TouchableOpacity
+              key={vehicle.id}
+              style={styles.vehicleCard}
+              onPress={() => router.push(`/(customer)/vehicle-history?id=${vehicle.id}`)}
+            >
               <View style={styles.vehicleHeader}>
                 <View>
                   <Text style={styles.vehicleName}>
@@ -114,14 +118,18 @@ export default function VehiclesScreen() {
                 </View>
                 <View style={styles.actions}>
                   <TouchableOpacity
-                    onPress={() =>
-                      router.push(`/(customer)/edit-vehicle?id=${vehicle.id}`)
-                    }
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      router.push(`/(customer)/edit-vehicle?id=${vehicle.id}`);
+                    }}
                   >
                     <Ionicons name="pencil" size={20} color="#007AFF" />
                   </TouchableOpacity>
                   <TouchableOpacity
-                    onPress={() => handleDelete(vehicle.id)}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      handleDelete(vehicle.id);
+                    }}
                     style={styles.deleteButton}
                   >
                     <Ionicons name="trash" size={20} color="#FF3B30" />
@@ -143,8 +151,12 @@ export default function VehiclesScreen() {
                     <Text style={styles.detailValue}>{vehicle.color}</Text>
                   </View>
                 )}
+                <View style={[styles.detailRow, { marginTop: 8 }]}>
+                  <Text style={[styles.detailLabel, { color: '#007AFF' }]}>Tap to view Service History</Text>
+                  <Ionicons name="chevron-forward" size={16} color="#007AFF" />
+                </View>
               </View>
-            </View>
+            </TouchableOpacity>
           ))
         )}
       </ScrollView>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,13 +10,16 @@ import {
   SafeAreaView,
   Platform,
   StatusBar,
+  Image,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
-import { Job, Invoice } from '@/types';
-import { format, subMonths, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
+import { User, Vehicle, Job, Invoice } from '@/types';
+import { BrandLogo } from '@/components/BrandLogo';
+import { format, subMonths, startOfMonth, endOfMonth, isWithinInterval, startOfWeek, endOfWeek } from 'date-fns';
+import { Colors, Typography, Spacing, BorderRadius, Shadows, StatusColors } from '@/constants/design';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.85;
@@ -32,16 +35,24 @@ export default function WorkshopDashboard() {
     technicianRevenue: [] as { name: string; amount: number }[],
     completedJobs: 0,
     lastMonthCompletedJobs: 0,
+    // Technician specific
+    techWeeklyAssigned: 0,
+    techWeeklyCompleted: 0,
+    techRating: 0,
   });
   const [recentJobs, setRecentJobs] = useState<Job[]>([]);
+  const [recentJobVehicles, setRecentJobVehicles] = useState<Record<string, any>>({});
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    loadDashboardData();
-  }, [user]);
+  useFocusEffect(
+    useCallback(() => {
+      loadDashboardData();
+    }, [user])
+  );
 
   const loadDashboardData = async () => {
     if (!user?.workshopId) return;
+    setRefreshing(true);
 
     try {
       const [jobs, invoices] = await Promise.all([
@@ -49,39 +60,48 @@ export default function WorkshopDashboard() {
         firebaseService.getInvoices(undefined, user.workshopId),
       ]);
 
+      // Ensure arrays are defined
+      const safeJobs = Array.isArray(jobs) ? jobs : [];
+      const safeInvoices = Array.isArray(invoices) ? invoices : [];
+
       // --- Revenue Metrics ---
       const now = new Date();
       const lastMonthStart = startOfMonth(subMonths(now, 1));
       const lastMonthEnd = endOfMonth(subMonths(now, 1));
 
       // Calculate total revenue from all paid amounts (including partial payments)
-      const paidInvoices = invoices.filter((inv) => inv.paymentStatus === 'paid' || inv.paymentStatus === 'partially_paid');
-      const totalRevenue = paidInvoices.reduce((sum, inv) => sum + (inv.amountPaid || 0), 0);
+      const paidInvoices = safeInvoices.filter((inv) => inv && (inv.paymentStatus === 'paid' || inv.paymentStatus === 'partially_paid'));
+      const totalRevenue = paidInvoices.reduce((sum, inv) => sum + (inv?.amountPaid || 0), 0);
 
       // Calculate last month revenue from payment history
-      const lastMonthRevenue = invoices.reduce((sum, inv) => {
-        if (!inv.paymentHistory || inv.paymentHistory.length === 0) return sum;
-        
+      const lastMonthRevenue = safeInvoices.reduce((sum, inv) => {
+        if (!inv || !inv.paymentHistory || !Array.isArray(inv.paymentHistory) || inv.paymentHistory.length === 0) return sum;
+
         const lastMonthPayments = inv.paymentHistory.filter((payment) => {
-          const paymentDate = payment.date instanceof Date ? payment.date : new Date(payment.date);
-          return isWithinInterval(paymentDate, { start: lastMonthStart, end: lastMonthEnd });
+          if (!payment || !payment.date) return false;
+          try {
+            const paymentDate = payment.date instanceof Date ? payment.date : new Date(payment.date);
+            return isWithinInterval(paymentDate, { start: lastMonthStart, end: lastMonthEnd });
+          } catch (e) {
+            return false;
+          }
         });
-        
-        return sum + lastMonthPayments.reduce((paymentSum, p) => paymentSum + p.amount, 0);
+
+        return sum + lastMonthPayments.reduce((paymentSum, p) => paymentSum + (p?.amount || 0), 0);
       }, 0);
 
       // --- Technician Revenue Breakdown ---
-      const jobMap = new Map(jobs.map(j => [j.id, j]));
+      const jobMap = new Map(safeJobs.map(j => j && j.id ? [j.id, j] : null).filter(Boolean) as [string, Job][]);
       const techRevenueMap = new Map<string, number>();
 
       // Calculate technician earnings from payment history
-      invoices.forEach(inv => {
+      safeInvoices.forEach(inv => {
         const job = jobMap.get(inv.jobId);
-        if (job && job.assignedTechnicianId && inv.paymentHistory && inv.paymentHistory.length > 0) {
+        if (job && job.assignedTechnicianId && inv.paymentHistory && Array.isArray(inv.paymentHistory) && inv.paymentHistory.length > 0) {
           const techName = job.technicianName || 'Unknown Tech';
           const current = techRevenueMap.get(techName) || 0;
           // Add all payments for this invoice to technician's earnings
-          const invoicePayments = inv.paymentHistory.reduce((sum, p) => sum + p.amount, 0);
+          const invoicePayments = inv.paymentHistory.reduce((sum, p) => sum + (p?.amount || 0), 0);
           techRevenueMap.set(techName, current + invoicePayments);
         }
       });
@@ -92,25 +112,80 @@ export default function WorkshopDashboard() {
         .slice(0, 3);
 
       // --- Completed Jobs ---
-      const completedJobs = jobs.filter(j => j.status === 'completed').length;
-      const lastMonthCompletedJobs = jobs.filter(j =>
+      const completedJobs = safeJobs.filter(j => j && j.status === 'completed').length;
+      const lastMonthCompletedJobs = safeJobs.filter(j =>
+        j &&
         j.status === 'completed' &&
         j.completedAt &&
         isWithinInterval(j.completedAt, { start: lastMonthStart, end: lastMonthEnd })
       ).length;
 
+      // --- Technician Specific Stats ---
+      const weekStart = startOfWeek(now, { weekStartsOn: 1 }); // Monday start
+      const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
+
+      let techWeeklyAssigned = 0;
+      let techWeeklyCompleted = 0;
+      const techRating = 4.9; // Placeholder for now
+
+      let filteredRecentJobs: Job[] = [];
+
+      if (user.role === 'technician') {
+        const myJobs = safeJobs.filter(j => j && j.assignedTechnicianId === user.id);
+
+        techWeeklyAssigned = myJobs.filter(j =>
+          j && j.createdAt && isWithinInterval(j.createdAt, { start: weekStart, end: weekEnd })
+        ).length;
+
+        techWeeklyCompleted = myJobs.filter(j =>
+          j &&
+          j.status === 'completed' &&
+          j.completedAt && isWithinInterval(j.completedAt, { start: weekStart, end: weekEnd })
+        ).length;
+
+        // For technicians, recent jobs should be their assigned ACTIVE jobs
+        const activeJobs = myJobs.filter(j => j && ['received', 'diagnosed', 'repairing'].includes(j.status));
+        filteredRecentJobs = activeJobs.slice(0, 5);
+      } else {
+        filteredRecentJobs = safeJobs.slice(0, 5);
+      }
+
+      setRecentJobs(filteredRecentJobs);
       setStats({
         totalRevenue,
         lastMonthRevenue,
         technicianRevenue,
         completedJobs,
         lastMonthCompletedJobs,
+        techWeeklyAssigned,
+        techWeeklyCompleted,
+        techRating,
       });
 
-      setRecentJobs(jobs.slice(0, 5));
-
+      // --- Fetch Vehicles for Recent Jobs ---
+      const vehicleMap: Record<string, any> = {};
+      await Promise.all(
+        filteredRecentJobs.map(async (job) => {
+          if (job.vehicleId && job.userId) {
+            // In a real app we might have getVehicleById, but here we might have to get user vehicles
+            // Assuming we can get all vehicles and filter (inefficient) or get by user
+            try {
+              const vehicles = await firebaseService.getVehicles(job.userId);
+              const vehicle = vehicles.find(v => v.id === job.vehicleId);
+              if (vehicle) {
+                vehicleMap[job.id] = vehicle;
+              }
+            } catch (e) {
+              console.log('Error fetching vehicle for job', job.id, e);
+            }
+          }
+        })
+      );
+      setRecentJobVehicles(vehicleMap);
     } catch (error) {
       console.error('Error loading dashboard data:', error);
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -118,10 +193,6 @@ export default function WorkshopDashboard() {
     setRefreshing(true);
     await loadDashboardData();
     setRefreshing(false);
-  };
-
-  const getRoleDashboard = () => {
-    return <AdminDashboard stats={stats} recentJobs={recentJobs} />;
   };
 
   return (
@@ -133,17 +204,32 @@ export default function WorkshopDashboard() {
         style={styles.content}
         contentContainerStyle={styles.contentContainer}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#000" />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.textPrimary} />
         }
       >
-        {getRoleDashboard()}
+        {getRoleDashboard({ user, stats, recentJobs, recentJobVehicles })}
       </ScrollView>
     </View>
   );
 }
 
+function getRoleDashboard({ user, stats, recentJobs, recentJobVehicles }: { user: any, stats: any, recentJobs: Job[], recentJobVehicles: Record<string, any> }) {
+  switch (user?.role) {
+    case 'admin':
+      return <AdminDashboard stats={stats} recentJobs={recentJobs} recentJobVehicles={recentJobVehicles} />;
+    case 'technician':
+      return <TechnicianDashboard stats={stats} recentJobs={recentJobs} recentJobVehicles={recentJobVehicles} />;
+    default:
+      return <Text>Dashboard not available for this role</Text>;
+  }
+}
+
 function DashboardHeader({ user }: { user: any }) {
   const router = useRouter();
+
+
+
+
   return (
     <View style={styles.headerContainer}>
       <SafeAreaView>
@@ -153,14 +239,11 @@ function DashboardHeader({ user }: { user: any }) {
             <Text style={styles.headerName}>{user?.name}</Text>
           </View>
           <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.iconButton}>
-              <Ionicons name="search-outline" size={24} color="#333" />
-            </TouchableOpacity>
             <TouchableOpacity
               style={styles.iconButton}
               onPress={() => router.push('/(workshop)/settings')}
             >
-              <Ionicons name="person-outline" size={24} color="#333" />
+              <Ionicons name="person-circle-outline" size={24} color={Colors.textPrimary} />
             </TouchableOpacity>
           </View>
         </View>
@@ -169,12 +252,81 @@ function DashboardHeader({ user }: { user: any }) {
   );
 }
 
+function TechnicianDashboard({ stats, recentJobs, recentJobVehicles }: { stats: any, recentJobs: Job[], recentJobVehicles: Record<string, any> }) {
+  const router = useRouter();
+
+  return (
+    <View style={styles.contentContainer}>
+      <View style={styles.carouselContainer}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{
+            paddingHorizontal: SIDE_PADDING,
+            paddingBottom: 20,
+          }}
+          decelerationRate="fast"
+          snapToInterval={CARD_WIDTH + CARD_SPACING}
+          snapToAlignment="start"
+        >
+          <View style={styles.slideContainer}>
+            <WeeklyMetricsCard assigned={stats.techWeeklyAssigned} completed={stats.techWeeklyCompleted} />
+          </View>
+        </ScrollView>
+      </View>
+
+      <View style={styles.recentSectionContainer}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Jobs In Progress</Text>
+        </View>
+
+        {recentJobs.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyText}>No active jobs assigned.</Text>
+          </View>
+        ) : (
+          recentJobs.map((job) => (
+            <RecentJobItem key={job.id} job={job} vehicle={recentJobVehicles[job.id]} />
+          ))
+        )}
+      </View>
+    </View>
+  );
+}
+
+function WeeklyMetricsCard({ assigned, completed }: { assigned: number, completed: number }) {
+  return (
+    <View style={styles.blackCard}>
+      <View style={styles.metricHeader}>
+        <Text style={styles.metricTitle}>Weekly Overview</Text>
+      </View>
+
+      <View style={{ flexDirection: 'row', gap: 40, marginTop: 20 }}>
+        <View>
+          <Text style={styles.metricValue}>{assigned}</Text>
+          <Text style={styles.growthLabel}>Assigned</Text>
+        </View>
+        <View>
+          <Text style={styles.metricValue}>{completed}</Text>
+          <Text style={styles.growthLabel}>Completed</Text>
+        </View>
+      </View>
+
+      <View style={styles.metricFooter}>
+        <Text style={{ color: Colors.textSecondary, fontSize: Typography.fontSize.xs }}>Performance this week</Text>
+      </View>
+    </View>
+  );
+}
+
 function AdminDashboard({
   stats,
   recentJobs,
+  recentJobVehicles,
 }: {
   stats: any;
   recentJobs: Job[];
+  recentJobVehicles: Record<string, any>;
 }) {
   const router = useRouter();
   const [activeIndex, setActiveIndex] = useState(0);
@@ -266,7 +418,7 @@ function AdminDashboard({
           </View>
         ) : (
           recentJobs.map((job) => (
-            <RecentJobItem key={job.id} job={job} />
+            <RecentJobItem key={job.id} job={job} vehicle={recentJobVehicles[job.id]} />
           ))
         )}
       </View>
@@ -294,7 +446,7 @@ function MetricCard({
       <View style={styles.metricHeader}>
         <Text style={styles.metricTitle}>{title}</Text>
         <View style={styles.metricIconCircle}>
-          <Ionicons name="arrow-up" size={14} color="#000" style={{ transform: [{ rotate: '45deg' }] }} />
+          <Ionicons name="arrow-up" size={14} color={Colors.textPrimary} style={{ transform: [{ rotate: '45deg' }] }} />
         </View>
       </View>
 
@@ -306,9 +458,9 @@ function MetricCard({
             <Ionicons
               name={isPositive ? "arrow-up" : "arrow-down"}
               size={16}
-              color={isPositive ? "#34C759" : "#FF3B30"}
+              color={isPositive ? Colors.success : Colors.error}
             />
-            <Text style={[styles.growthText, { color: isPositive ? "#34C759" : "#FF3B30" }]}>
+            <Text style={[styles.growthText, { color: isPositive ? Colors.success : Colors.error }]}>
               {Math.abs(growth).toFixed(1)}%
             </Text>
           </View>
@@ -323,7 +475,7 @@ function MetricCard({
                 styles.chartBar,
                 {
                   height: `${height}%`,
-                  backgroundColor: '#fff',
+                  backgroundColor: Colors.surface,
                   opacity: 0.6 + (index / chartData.length) * 0.4
                 }
               ]}
@@ -341,7 +493,7 @@ function TechnicianRevenueCard({ data }: { data: { name: string; amount: number 
       <View style={styles.metricHeader}>
         <Text style={styles.metricTitle}>Technician Revenue</Text>
         <View style={styles.metricIconCircle}>
-          <Ionicons name="people" size={14} color="#000" />
+          <Ionicons name="people" size={14} color={Colors.textPrimary} />
         </View>
       </View>
 
@@ -361,7 +513,7 @@ function TechnicianRevenueCard({ data }: { data: { name: string; amount: number 
   );
 }
 
-function RecentJobItem({ job }: { job: Job }) {
+function RecentJobItem({ job, vehicle }: { job: Job, vehicle?: any }) {
   const router = useRouter();
 
   const getStatusIcon = (status: string) => {
@@ -375,13 +527,15 @@ function RecentJobItem({ job }: { job: Job }) {
   };
 
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'received': return '#FFA500';
-      case 'diagnosed': return '#007AFF';
-      case 'repairing': return '#34C759';
-      case 'completed': return '#30D158';
-      default: return '#666';
+    return StatusColors[status] || Colors.textSecondary;
+  };
+
+  const getIssueLabel = () => {
+    if (job.issues && job.issues.length > 0) {
+      const [first, ...rest] = job.issues;
+      return rest.length > 0 ? `${first} +${rest.length}` : first;
     }
+    return job.description;
   };
 
   return (
@@ -389,18 +543,27 @@ function RecentJobItem({ job }: { job: Job }) {
       style={styles.recentItem}
       onPress={() => router.push(`/(workshop)/job-details?id=${job.id}`)}
     >
-      <View style={[styles.recentIconContainer, { backgroundColor: '#F5F6FA' }]}>
-        <Ionicons name={getStatusIcon(job.status) as any} size={24} color={getStatusColor(job.status)} />
+      {/* Icon/Logo Column */}
+      <View style={[styles.iconBox, { backgroundColor: vehicle ? 'transparent' : getStatusColor(job.status), marginRight: 15 }]}>
+        {vehicle ? (
+          <BrandLogo brand={vehicle.make} size={30} />
+        ) : (
+          <Ionicons name={getStatusIcon(job.status)} size={24} color="#fff" />
+        )}
       </View>
-      <View style={styles.recentInfo}>
-        <Text style={styles.recentTitle}>{job.type === 'service' ? 'Service' : 'Complaint'}</Text>
-        <Text style={styles.recentSubtitle} numberOfLines={1}>
-          {format(job.updatedAt, 'MMM dd, yyyy')} | {job.description}
-        </Text>
-      </View>
-      <View style={[styles.statusBadge, { backgroundColor: getStatusColor(job.status) + '15' }]}>
-        <Text style={[styles.statusText, { color: getStatusColor(job.status) }]}>
-          {job.status.charAt(0).toUpperCase() + job.status.slice(1)}
+
+      <View style={{ flex: 1 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+          <Text style={styles.recentTitle} numberOfLines={1}>{getIssueLabel()}</Text>
+          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(job.status) + '15', marginLeft: 8 }]}>
+            <Text style={[styles.statusText, { color: getStatusColor(job.status) }]}>
+              {job.status.charAt(0).toUpperCase() + job.status.slice(1)}
+            </Text>
+          </View>
+        </View>
+
+        <Text style={styles.tagText}>
+          {vehicle ? `${vehicle.make} ${vehicle.model}` : (job.type === 'service' ? 'Service' : 'Complaint')}
         </Text>
       </View>
     </TouchableOpacity>
@@ -410,13 +573,13 @@ function RecentJobItem({ job }: { job: Job }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F6FA',
+    backgroundColor: Colors.background,
   },
   headerContainer: {
-    backgroundColor: '#fff',
-    paddingHorizontal: 20,
-    paddingBottom: 10,
-    paddingTop: Platform.OS === 'android' ? 40 : 10,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.sm,
+    paddingTop: Platform.OS === 'android' ? 40 : Spacing.sm,
   },
   headerContent: {
     flexDirection: 'row',
@@ -424,23 +587,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerGreeting: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textSecondary,
   },
   headerName: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#000',
+    fontSize: Typography.fontSize.xl,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.textPrimary,
   },
   headerActions: {
     flexDirection: 'row',
-    gap: 15,
+    gap: Spacing.base,
   },
   iconButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#F5F6FA',
+    backgroundColor: Colors.background,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -459,16 +622,12 @@ const styles = StyleSheet.create({
     marginRight: CARD_SPACING,
   },
   blackCard: {
-    backgroundColor: '#000',
-    borderRadius: 30,
-    padding: 24,
+    backgroundColor: Colors.secondary,
+    borderRadius: BorderRadius['3xl'],
+    padding: Spacing.xl,
     height: 200,
     justifyContent: 'space-between',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 10,
+    ...Shadows.xl,
   },
   metricHeader: {
     flexDirection: 'row',
@@ -476,22 +635,22 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   metricTitle: {
-    fontSize: 16,
-    color: '#999',
-    fontWeight: '500',
+    fontSize: Typography.fontSize.base,
+    color: Colors.textTertiary,
+    fontWeight: Typography.fontWeight.medium,
   },
   metricIconCircle: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
   },
   metricValue: {
-    fontSize: 42,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontSize: Typography.fontSize['4xl'],
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.textInverse,
   },
   metricFooter: {
     flexDirection: 'row',
@@ -506,9 +665,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   growthLabel: {
-    color: '#666',
-    fontWeight: '400',
-    fontSize: 12,
+    color: Colors.textSecondary,
+    fontWeight: Typography.fontWeight.regular,
+    fontSize: Typography.fontSize.xs,
     marginTop: 2,
   },
   miniChart: {
@@ -531,80 +690,89 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#D1D1D6',
+    backgroundColor: Colors.borderDark,
   },
   paginationDotActive: {
-    backgroundColor: '#000',
+    backgroundColor: Colors.secondary,
     width: 24,
   },
   recentSectionContainer: {
-    backgroundColor: '#fff',
-    marginHorizontal: 20,
-    borderRadius: 30,
-    padding: 20,
-    paddingBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.lg,
+    paddingBottom: Spacing.sm,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: Spacing.lg,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#000',
+    fontSize: Typography.fontSize.lg,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.textPrimary,
   },
   arrowButton: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#F5F6FA',
+    backgroundColor: Colors.background,
     justifyContent: 'center',
     alignItems: 'center',
   },
   recentItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    paddingVertical: Spacing.base,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderDark,
   },
   recentIconContainer: {
     width: 48,
     height: 48,
-    borderRadius: 16,
+    borderRadius: BorderRadius.lg,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    marginRight: Spacing.base,
+  },
+  iconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: Spacing.base,
   },
   recentInfo: {
     flex: 1,
-    marginRight: 10,
+    marginRight: Spacing.sm,
   },
   recentTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#000',
-    marginBottom: 4,
-  },
-  recentSubtitle: {
-    fontSize: 13,
-    color: '#666',
-    marginBottom: 4,
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.semibold,
+    color: Colors.textPrimary,
+    flex: 1,
+    marginRight: Spacing.sm,
   },
   recentMeta: {
-    fontSize: 12,
-    color: '#999',
+    fontSize: Typography.fontSize.xs,
+    color: Colors.textTertiary,
+  },
+  tagContainer: {
+    backgroundColor: Colors.background,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.sm,
+  },
+  tagText: {
+    fontSize: Typography.fontSize.xs,
+    color: Colors.textSecondary,
+    fontWeight: Typography.fontWeight.medium,
   },
   statusBadge: {
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 4,
     borderRadius: 12,
-    minWidth: 80,
     alignItems: 'center',
   },
   statusText: {
@@ -616,34 +784,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyText: {
-    fontSize: 14,
-    color: '#999',
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textTertiary,
   },
   emptyTextWhite: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textTertiary,
   },
   techList: {
     flex: 1,
     justifyContent: 'center',
-    gap: 12,
+    gap: Spacing.md,
   },
   techRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: '#333',
-    paddingBottom: 8,
+    borderBottomColor: Colors.secondaryLight,
+    paddingBottom: Spacing.sm,
   },
   techName: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '500',
+    color: Colors.textInverse,
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.medium,
   },
   techAmount: {
-    color: '#34C759',
-    fontSize: 16,
-    fontWeight: 'bold',
+    color: Colors.success,
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.bold,
   },
 });

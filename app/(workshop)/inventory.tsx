@@ -57,14 +57,9 @@ export default function InventoryScreen() {
   };
 
   const renderItem = ({ item }: { item: InventoryItem }) => {
-    // Generate a consistent color based on item name char code sum
-    const colors = ['#FFCC00', '#5B68F6', '#34C759', '#FF3B30', '#AF52DE'];
-    const colorIndex = item.name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length;
-    const iconColor = colors[colorIndex];
-
     return (
       <View style={styles.itemCard}>
-        <View style={[styles.iconBox, { backgroundColor: iconColor }]}>
+        <View style={styles.iconBox}>
           <Ionicons name="cube-outline" size={24} color="#fff" />
         </View>
 
@@ -91,13 +86,10 @@ export default function InventoryScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#000" />
-        </TouchableOpacity>
         <Text style={styles.headerTitle}>Inventory</Text>
         <TouchableOpacity onPress={() => router.push('/(workshop)/create-inventory-item')}>
           <View style={styles.addButton}>
-            <Ionicons name="add" size={24} color="#fff" />
+            <Ionicons name="add" size={20} color="#fff" />
           </View>
         </TouchableOpacity>
       </View>
@@ -137,14 +129,16 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f0f0f0',
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
+    flex: 1,
+    textAlign: 'left',
   },
   addButton: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#007AFF',
+    backgroundColor: '#000',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -165,6 +159,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 12,
+    backgroundColor: '#000',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 15,
@@ -192,7 +187,7 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   editButton: {
-    backgroundColor: '#f0f0f0',
+    backgroundColor: '#000',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 6,
@@ -200,7 +195,7 @@ const styles = StyleSheet.create({
   editText: {
     fontSize: 12,
     fontWeight: '500',
-    color: '#333',
+    color: '#fff',
   },
   emptyState: {
     padding: 60,

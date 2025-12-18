@@ -28,9 +28,24 @@ service cloud.firestore {
     }
     
     match /users/{userId} {
-      allow read: if isAuthenticated() && (request.auth.uid == userId || (isStaff() && getUserWorkshopId() == resource.data.workshopId));
+      // Allow read if:
+      // 1. Reading own document (by UID)
+      // 2. Staff reading users in their workshop
+      // 3. User reading a document where email matches their auth email (for signup migration)
+      // Note: Emails are stored in lowercase, so direct comparison works
+      allow read: if isAuthenticated() && (
+        request.auth.uid == userId || 
+        (isStaff() && getUserWorkshopId() == resource.data.workshopId) ||
+        (resource.data.email != null && resource.data.email == request.auth.token.email)
+      );
       allow create: if isAuthenticated() && (request.auth.uid == userId || isStaff());
       allow update: if isAuthenticated() && (request.auth.uid == userId || isStaff());
+      // Allow delete if user is deleting their own pre-created document during signup migration
+      allow delete: if isAuthenticated() && (
+        request.auth.uid == userId || 
+        isStaff() ||
+        (resource.data.email != null && resource.data.email == request.auth.token.email)
+      );
     }
     
     match /workshops/{workshopId} {
@@ -44,7 +59,7 @@ service cloud.firestore {
     match /customerRegistrations/{registrationId} {
       allow read: if true;
       allow create: if isAuthenticated() && (isStaff() && request.resource.data.workshopId == getUserWorkshopId() || request.resource.data.workshopId == request.auth.uid);
-      allow update: if isStaff() && resource.data.workshopId == getUserWorkshopId();
+      allow update: if isAuthenticated() && ( (isStaff() && resource.data.workshopId == getUserWorkshopId()) || (request.resource.data.used == true) );
     }
     
     // Staff invitations must be readable during invite acceptance (before auth),
@@ -56,10 +71,22 @@ service cloud.firestore {
     }
     
     match /vehicles/{vehicleId} {
-      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isStaff());
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid || 
+        isStaff() ||
+        (get(/databases/$(database)/documents/users/$(resource.data.userId)).data.email == request.auth.token.email)
+      );
       allow create: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isStaff());
-      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isStaff());
-      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isStaff());
+      allow update: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid || 
+        isStaff() ||
+        (get(/databases/$(database)/documents/users/$(resource.data.userId)).data.email == request.auth.token.email)
+      );
+      allow delete: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid || 
+        isStaff() ||
+        (get(/databases/$(database)/documents/users/$(resource.data.userId)).data.email == request.auth.token.email)
+      );
     }
     
     match /jobs/{jobId} {
@@ -88,8 +115,8 @@ service cloud.firestore {
     
     match /marketplaceProducts/{productId} {
       allow read: if isAuthenticated();
-      allow create: if isStaff();
-      allow update: if isStaff();
+      allow create: if isAuthenticated() && (isStaff() || getUserData().role == 'vendor');
+      allow update: if isAuthenticated() && (isStaff() || (getUserData().role == 'vendor' && resource.data.vendorId == request.auth.uid));
     }
     
     match /orders/{orderId} {
@@ -101,6 +128,11 @@ service cloud.firestore {
       allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
       allow create: if isAuthenticated();
       allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    match /config/{document} {
+      allow read: if isAuthenticated();
+      allow write: if false;
     }
   }
 }

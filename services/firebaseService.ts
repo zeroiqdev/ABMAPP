@@ -15,8 +15,10 @@ import {
   onSnapshot,
   QueryConstraint,
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, deleteObject, uploadString } from 'firebase/storage';
+import * as FileSystem from 'expo-file-system';
 import { db, storage } from '@/config/firebase';
+import { uploadImageToCloudinary, uploadMultipleImagesToCloudinary } from './cloudinaryService';
 import {
   User,
   Vehicle,
@@ -223,11 +225,20 @@ export const firebaseService = {
   },
 
   async createInvoice(invoice: Omit<Invoice, 'id' | 'createdAt'>): Promise<string> {
-    const docRef = await addDoc(collection(db, 'invoices'), {
+    // Generate invoice ID in format: INV-CUSTOMERID-XXXX
+    // XXXX is last 4 digits of timestamp
+    const timestamp = Date.now().toString();
+    const lastFour = timestamp.slice(-4);
+    const customerId = invoice.userId.slice(0, 8); // Use first 8 chars of customer ID
+    const invoiceId = `INV-${customerId}-${lastFour}`;
+
+    // Use setDoc with custom ID instead of addDoc
+    const docRef = doc(db, 'invoices', invoiceId);
+    await setDoc(docRef, {
       ...invoice,
       createdAt: Timestamp.now(),
     });
-    return docRef.id;
+    return invoiceId;
   },
 
   async updateInvoice(invoiceId: string, data: Partial<Invoice>): Promise<void> {
@@ -389,6 +400,22 @@ export const firebaseService = {
     await updateDoc(doc(db, 'marketplaceProducts', productId), data);
   },
 
+  async uploadMarketplaceImage(imageUri: string, vendorId?: string): Promise<string> {
+    try {
+      // Upload to Cloudinary with marketplace folder and vendor ID
+      // Transformations are applied when displaying images (not during upload)
+      return await uploadImageToCloudinary(
+        imageUri,
+        'marketplace',
+        undefined, // No transformation in upload (unsigned uploads don't support it)
+        vendorId // Organize by vendor: marketplace/vendorId
+      );
+    } catch (error: any) {
+      console.error('Error uploading marketplace image:', JSON.stringify(error, null, 2));
+      throw error;
+    }
+  },
+
   async createOrder(order: Omit<Order, 'id' | 'createdAt'>): Promise<string> {
     const docRef = await addDoc(collection(db, 'orders'), {
       ...order,
@@ -474,16 +501,38 @@ export const firebaseService = {
   },
 
   async uploadFile(fileUri: string, path: string): Promise<string> {
-    const response = await fetch(fileUri);
-    const blob = await response.blob();
-    const storageRef = ref(storage, path);
-    await uploadBytes(storageRef, blob);
-    return await getDownloadURL(storageRef);
+    try {
+      // Extract folder from path (e.g., 'jobs/user123' from 'jobs/user123/image.jpg')
+      const folder = path.split('/').slice(0, -1).join('/') || 'general';
+      
+      // Upload to Cloudinary with folder
+      // Transformations are applied when displaying images (not during upload)
+      // Unsigned uploads don't support transformation parameters
+      return await uploadImageToCloudinary(fileUri, folder, undefined);
+    } catch (error) {
+      console.error('Error uploading file to Cloudinary:', error);
+      throw error;
+    }
   },
 
   async deleteFile(fileUrl: string): Promise<void> {
-    const storageRef = ref(storage, fileUrl);
-    await deleteObject(storageRef);
+    // Check if it's a Cloudinary URL
+    if (fileUrl.includes('cloudinary.com')) {
+      // Cloudinary deletion requires API key/secret setup
+      // For now, we'll just log a warning
+      console.warn('Cloudinary image deletion not implemented. Image will remain in Cloudinary:', fileUrl);
+      // TODO: Implement Cloudinary deletion if needed using deleteImageFromCloudinary
+      return;
+    }
+    
+    // Fallback to Firebase Storage deletion for legacy URLs
+    try {
+      const storageRef = ref(storage, fileUrl);
+      await deleteObject(storageRef);
+    } catch (error) {
+      console.error('Error deleting file from Firebase Storage:', error);
+      // Don't throw - file might already be deleted or URL might be invalid
+    }
   },
 
   subscribeToJobs(
@@ -494,6 +543,28 @@ export const firebaseService = {
       collection(db, 'jobs'),
       where('userId', '==', userId),
       orderBy('updatedAt', 'desc')
+    );
+    return onSnapshot(q, (snapshot) => {
+      const jobs = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate(),
+        updatedAt: doc.data().updatedAt?.toDate(),
+        scheduledDate: doc.data().scheduledDate?.toDate(),
+        completedAt: doc.data().completedAt?.toDate(),
+      })) as Job[];
+      callback(jobs);
+    });
+  },
+
+  subscribeToWorkshopJobs(
+    workshopId: string,
+    callback: (jobs: Job[]) => void
+  ): () => void {
+    const q = query(
+      collection(db, 'jobs'),
+      where('workshopId', '==', workshopId),
+      orderBy('createdAt', 'desc')
     );
     return onSnapshot(q, (snapshot) => {
       const jobs = snapshot.docs.map((doc) => ({
@@ -599,6 +670,22 @@ export const firebaseService = {
         usedAt: data.usedAt?.toDate(),
       } as CustomerRegistration;
     });
+  },
+
+  async getCustomerRegistrationByEmail(email: string, workshopId: string): Promise<CustomerRegistration | null> {
+    try {
+      const registrations = await this.getCustomerRegistrations(workshopId);
+      const normalizedEmail = email.toLowerCase().trim();
+      // Find most recent registration for this email (even if used)
+      const registration = registrations.find(reg => {
+        const normalizedRegEmail = (reg.email || '').toLowerCase().trim();
+        return normalizedRegEmail === normalizedEmail;
+      });
+      return registration || null;
+    } catch (error) {
+      console.error('Error getting registration by email:', error);
+      return null;
+    }
   },
 
   async createStaffInvitation(

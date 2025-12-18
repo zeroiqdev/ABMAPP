@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,32 +8,39 @@ import {
   TextInput,
   Image,
   RefreshControl,
+  Dimensions,
+  Platform,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { firebaseService } from '@/services/firebaseService';
 import { MarketplaceProduct } from '@/types';
+import { useAuthStore } from '@/store/authStore';
 
-const categories = [
+const { width } = Dimensions.get('window');
+const COLUMN_WIDTH = (width - 40) / 2;
+
+const CATEGORIES = [
   'All',
   'Engine',
   'Electrical',
   'Suspension',
-  'Accessories',
   'Brakes',
   'Body Parts',
+  'Interior',
+  'Wheels & Tires',
+  'Accessories',
+  'Tools',
 ];
 
 export default function MarketplaceScreen() {
   const router = useRouter();
+  const { user } = useAuthStore();
   const [products, setProducts] = useState<MarketplaceProduct[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
   const [refreshing, setRefreshing] = useState(false);
-
-  useEffect(() => {
-    loadProducts();
-  }, [selectedCategory, searchTerm]);
+  const [loading, setLoading] = useState(true);
 
   const loadProducts = async () => {
     try {
@@ -45,8 +52,16 @@ export default function MarketplaceScreen() {
       setProducts(productsData);
     } catch (error) {
       console.error('Error loading products:', error);
+    } finally {
+      setLoading(false);
     }
   };
+
+  useFocusEffect(
+    useCallback(() => {
+      loadProducts();
+    }, [selectedCategory, searchTerm])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -57,24 +72,42 @@ export default function MarketplaceScreen() {
   const renderProduct = ({ item }: { item: MarketplaceProduct }) => (
     <TouchableOpacity
       style={styles.productCard}
-      onPress={() => router.push(`/(marketplace)/product-details?id=${item.id}`)}
+      onPress={() => router.push(`/(customer)/product-details?id=${item.id}`)}
+      activeOpacity={0.9}
     >
-      {item.images && item.images.length > 0 && (
-        <Image source={{ uri: item.images[0] }} style={styles.productImage} />
-      )}
+      <View style={styles.imageContainer}>
+        {item.images && item.images.length > 0 ? (
+          <Image source={{ uri: item.images[0] }} style={styles.productImage} />
+        ) : (
+          <View style={[styles.productImage, styles.placeholderImage]}>
+            <Ionicons name="image-outline" size={30} color="#ccc" />
+          </View>
+        )}
+        <TouchableOpacity style={styles.favoriteButton}>
+          <Ionicons name="heart-outline" size={18} color="#fff" />
+        </TouchableOpacity>
+        {item.stock <= 0 && (
+          <View style={styles.outOfStockOverlay}>
+            <Text style={styles.outOfStockText}>SOLD OUT</Text>
+          </View>
+        )}
+      </View>
+
       <View style={styles.productInfo}>
-        <Text style={styles.productName} numberOfLines={2}>
+        <Text style={styles.productName} numberOfLines={1}>
           {item.name}
         </Text>
-        <Text style={styles.productCategory}>{item.category}</Text>
-        <View style={styles.productFooter}>
-          <Text style={styles.productPrice}>₦{item.price.toLocaleString()}</Text>
-          {item.stock > 0 ? (
-            <Text style={styles.inStock}>In Stock</Text>
-          ) : (
-            <Text style={styles.outOfStock}>Out of Stock</Text>
-          )}
+
+        <View style={styles.ratingRow}>
+          <Ionicons name="star" size={16} color="#000" />
+          <Text style={styles.ratingText}>{item.rating || 'New'}</Text>
+          <Text style={styles.ratingSeparator}>|</Text>
+          <View style={styles.soldBadge}>
+            <Text style={styles.soldText}>{item.reviews || 0} sold</Text>
+          </View>
         </View>
+
+        <Text style={styles.productPrice}>₦{item.price.toLocaleString()}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -82,62 +115,96 @@ export default function MarketplaceScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Marketplace</Text>
-        <TouchableOpacity onPress={() => router.push('/(marketplace)/cart')}>
-          <Ionicons name="cart-outline" size={24} color="#000" />
-        </TouchableOpacity>
+        <View style={styles.headerTop}>
+          <View style={styles.menuButton}>
+            <Ionicons name="grid-outline" size={24} color="#000" />
+          </View>
+          <Text style={styles.headerTitle}>Marketplace</Text>
+          <TouchableOpacity
+            style={styles.cartButton}
+            onPress={() => router.push('/(customer)/cart')}
+          >
+            <Ionicons name="bag-handle-outline" size={24} color="#000" />
+            <View style={styles.cartBadge} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <Ionicons name="search-outline" size={20} color="#666" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search parts, tools..."
+            value={searchTerm}
+            onChangeText={setSearchTerm}
+            placeholderTextColor="#999"
+          />
+        </View>
       </View>
 
-      <View style={styles.searchContainer}>
-        <Ionicons name="search-outline" size={20} color="#666" style={styles.searchIcon} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search products..."
-          value={searchTerm}
-          onChangeText={setSearchTerm}
+      <View style={styles.contentContainer}>
+        {/* Categories */}
+        <View style={styles.categoriesWrapper}>
+          <FlatList
+            data={CATEGORIES}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.categoriesList}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={[
+                  styles.categoryChip,
+                  selectedCategory === item && styles.categoryChipActive,
+                ]}
+                onPress={() => setSelectedCategory(item)}
+              >
+                <Text
+                  style={[
+                    styles.categoryText,
+                    selectedCategory === item && styles.categoryTextActive,
+                  ]}
+                >
+                  {item}
+                </Text>
+              </TouchableOpacity>
+            )}
+            keyExtractor={(item) => item}
+          />
+        </View>
+
+        {/* Products List */}
+        <FlatList
+          data={products}
+          renderItem={renderProduct}
+          keyExtractor={(item) => item.id}
+          numColumns={2}
+          contentContainerStyle={styles.productsList}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+          columnWrapperStyle={styles.columnWrapper}
+          showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            <View style={styles.promoBanner}>
+              <View style={styles.promoContent}>
+                <Text style={styles.promoTitle}>New Arrivals</Text>
+                <Text style={styles.promoSubtitle}>High Quality Parts</Text>
+              </View>
+              <View style={styles.promoImagePlaceholder}>
+                <Ionicons name="car-sport-outline" size={60} color="#eee" />
+              </View>
+            </View>
+          }
+          ListEmptyComponent={
+            !loading ? (
+              <View style={styles.emptyState}>
+                <Ionicons name="search" size={64} color="#ccc" />
+                <Text style={styles.emptyText}>No products found</Text>
+              </View>
+            ) : null
+          }
         />
       </View>
-
-      <FlatList
-        data={categories}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        keyExtractor={(item) => item}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={[
-              styles.categoryChip,
-              selectedCategory === item && styles.categoryChipActive,
-            ]}
-            onPress={() => setSelectedCategory(item)}
-          >
-            <Text
-              style={[
-                styles.categoryChipText,
-                selectedCategory === item && styles.categoryChipTextActive,
-              ]}
-            >
-              {item}
-            </Text>
-          </TouchableOpacity>
-        )}
-        contentContainerStyle={styles.categoriesContainer}
-      />
-
-      <FlatList
-        data={products}
-        renderItem={renderProduct}
-        keyExtractor={(item) => item.id}
-        numColumns={2}
-        contentContainerStyle={styles.productsContainer}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="storefront-outline" size={64} color="#ccc" />
-            <Text style={styles.emptyText}>No products found</Text>
-          </View>
-        }
-      />
     </View>
   );
 }
@@ -145,133 +212,249 @@ export default function MarketplaceScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#fff',
   },
   header: {
+    paddingTop: 60,
+    paddingHorizontal: 20,
+    paddingBottom: 15,
+    backgroundColor: '#fff',
+  },
+  headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    paddingTop: 60,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    marginBottom: 20,
+  },
+  menuButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#f5f5f5',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
-    color: '#333',
+  },
+  cartButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#f5f5f5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  cartBadge: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'red',
+    borderWidth: 1,
+    borderColor: '#fff',
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    margin: 15,
+    backgroundColor: '#f5f5f5',
     paddingHorizontal: 15,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#eee',
-  },
-  searchIcon: {
-    marginRight: 10,
+    paddingVertical: 12,
+    borderRadius: 25,
+    gap: 10,
   },
   searchInput: {
     flex: 1,
-    paddingVertical: 12,
     fontSize: 16,
-    color: '#333',
+    color: '#000',
   },
-  categoriesContainer: {
-    paddingHorizontal: 15,
+  contentContainer: {
+    flex: 1,
+  },
+  categoriesWrapper: {
     paddingVertical: 10,
   },
+  categoriesList: {
+    paddingHorizontal: 20,
+    gap: 10,
+  },
   categoryChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 25,
     backgroundColor: '#fff',
-    marginRight: 10,
     borderWidth: 1,
     borderColor: '#eee',
+    marginRight: 8,
   },
   categoryChipActive: {
-    backgroundColor: '#007AFF',
-    borderColor: '#007AFF',
+    backgroundColor: '#000',
+    borderColor: '#000',
   },
-  categoryChipText: {
+  categoryText: {
     fontSize: 14,
-    color: '#666',
+    color: '#000',
     fontWeight: '500',
   },
-  categoryChipTextActive: {
+  categoryTextActive: {
     color: '#fff',
-    fontWeight: '600',
   },
-  productsContainer: {
-    padding: 15,
+  productsList: {
+    paddingHorizontal: 20,
+    paddingBottom: 100,
+  },
+  columnWrapper: {
+    justifyContent: 'space-between',
   },
   productCard: {
-    flex: 1,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    margin: 6,
+    width: COLUMN_WIDTH,
+    marginBottom: 16,
+    backgroundColor: 'transparent',
+    flexDirection: 'column',
+    overflow: 'visible',
+  },
+  imageContainer: {
+    width: '100%',
+    height: COLUMN_WIDTH * 1.0, // Reduced height (square)
+    borderRadius: 20,
+    backgroundColor: '#f5f5f5',
+    marginBottom: 0, // Removed bottom margin from container
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    position: 'relative',
   },
   productImage: {
     width: '100%',
-    height: 150,
-    backgroundColor: '#f0f0f0',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  placeholderImage: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  favoriteButton: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  outOfStockOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 5,
+  },
+  outOfStockText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 12,
   },
   productInfo: {
-    padding: 12,
+    paddingHorizontal: 0,
+    marginTop: 8,
+    flexDirection: 'column',
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  ratingText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000',
+    marginLeft: 4,
+  },
+  ratingSeparator: {
+    marginHorizontal: 8,
+    color: '#ccc',
+    fontSize: 14,
+  },
+  soldBadge: {
+    backgroundColor: '#f0f0f0',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  soldText: {
+    fontSize: 10,
+    color: '#666',
+    fontWeight: '500',
   },
   productName: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: 'bold',
+    color: '#000',
     marginBottom: 4,
   },
-  productCategory: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 4,
+  productPrice: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#000',
   },
-  productFooter: {
+  promoBanner: {
+    backgroundColor: '#000',
+    borderRadius: 20,
+    padding: 24,
+    marginBottom: 30,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 4,
   },
-  productPrice: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#007AFF',
-  },
-  inStock: {
-    fontSize: 12,
-    color: '#30D158',
-    fontWeight: '600',
-  },
-  outOfStock: {
-    fontSize: 12,
-    color: '#FF3B30',
-    fontWeight: '600',
-  },
-  emptyContainer: {
+  promoContent: {
     flex: 1,
+  },
+  promoTitle: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  promoSubtitle: {
+    color: '#ccc',
+    fontSize: 14,
+  },
+  promoImagePlaceholder: {
+    width: 80,
+    height: 80,
+    backgroundColor: '#333',
+    borderRadius: 40,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 60,
+  },
+  fab: {
+    position: 'absolute',
+    bottom: 30,
+    right: 30,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 8,
+  },
+  emptyState: {
+    padding: 40,
+    alignItems: 'center',
   },
   emptyText: {
-    fontSize: 16,
+    marginTop: 10,
     color: '#999',
-    marginTop: 16,
+    fontSize: 16,
   },
 });
-

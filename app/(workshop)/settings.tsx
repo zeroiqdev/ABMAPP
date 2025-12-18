@@ -13,7 +13,8 @@ import { useAuthStore } from '@/store/authStore';
 
 export default function WorkshopSettingsScreen() {
   const router = useRouter();
-  const { user } = useAuthStore();
+  const userRel = useAuthStore();
+  const { user } = userRel;
 
   return (
     <View style={styles.container}>
@@ -72,7 +73,7 @@ export default function WorkshopSettingsScreen() {
             <Switch
               trackColor={{ false: '#ddd', true: '#007AFF' }}
               value={true}
-              onValueChange={() => {}}
+              onValueChange={() => { }}
             />
           </View>
         </View>
@@ -95,6 +96,23 @@ export default function WorkshopSettingsScreen() {
               <Text style={styles.settingDesc}>Update your password</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color="#999" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.settingRow}
+            onPress={async () => {
+              try {
+                await userRel.logout();
+                router.replace('/');
+              } catch (error) {
+                console.error('Logout failed:', error);
+              }
+            }}
+          >
+            <Ionicons name="log-out-outline" size={24} color="#FF3B30" />
+            <View style={styles.settingInfo}>
+              <Text style={[styles.settingLabel, { color: '#FF3B30' }]}>Log Out</Text>
+              <Text style={styles.settingDesc}>Sign out of your account</Text>
+            </View>
           </TouchableOpacity>
         </View>
       </ScrollView>

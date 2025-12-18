@@ -1,6 +1,7 @@
 import { Tabs, Redirect } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
 import { Ionicons } from '@expo/vector-icons';
+import { Colors } from '@/constants/design';
 
 export default function WorkshopLayout() {
   const { user } = useAuthStore();
@@ -11,7 +12,7 @@ export default function WorkshopLayout() {
   }
 
   const workshopRoles = ['admin', 'technician', 'storekeeper', 'accountant', 'service_advisor'];
-  
+
   if (!workshopRoles.includes(user.role)) {
     return <Redirect href="/(customer)/home" />;
   }
@@ -20,19 +21,21 @@ export default function WorkshopLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#007AFF',
-        tabBarInactiveTintColor: '#999',
+        tabBarShowLabel: false,
+        tabBarActiveTintColor: Colors.secondary,
+        tabBarInactiveTintColor: Colors.textSecondary,
         tabBarStyle: {
-          backgroundColor: '#fff',
+          backgroundColor: Colors.surface,
           borderTopWidth: 1,
-          borderTopColor: '#eee',
-          height: 60,
-          paddingBottom: 6,
-          paddingTop: 6,
+          borderTopColor: Colors.border,
+          height: 50,
+          paddingBottom: 4,
+          paddingTop: 4,
+          paddingHorizontal: 10,
         },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '500',
+        tabBarItemStyle: {
+          paddingHorizontal: 0,
+          marginHorizontal: -2,
         },
       }}
     >
@@ -40,8 +43,8 @@ export default function WorkshopLayout() {
         name="dashboard"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="home-outline" size={22} color={color} />
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="home" size={size || 20} color={color} />
           ),
         }}
       />
@@ -49,8 +52,8 @@ export default function WorkshopLayout() {
         name="finance"
         options={{
           title: 'Finance',
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="cash-outline" size={22} color={color} />
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="cash-outline" size={size || 20} color={color} />
           ),
         }}
       />
@@ -58,8 +61,8 @@ export default function WorkshopLayout() {
         name="jobs"
         options={{
           title: 'Jobs',
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="briefcase-outline" size={22} color={color} />
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="briefcase-outline" size={size || 20} color={color} />
           ),
         }}
       />
@@ -67,8 +70,8 @@ export default function WorkshopLayout() {
         name="customers"
         options={{
           title: 'Customer',
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="people-outline" size={22} color={color} />
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="people-outline" size={size || 20} color={color} />
           ),
         }}
       />
@@ -76,8 +79,8 @@ export default function WorkshopLayout() {
         name="inventory"
         options={{
           title: 'Inventory',
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="cube-outline" size={22} color={color} />
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="archive-outline" size={size || 20} color={color} />
           ),
         }}
       />
@@ -85,22 +88,19 @@ export default function WorkshopLayout() {
         name="marketplace"
         options={{
           title: 'Marketplace',
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="storefront-outline" size={22} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: 'Settings',
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="settings-outline" size={22} color={color} />
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="storefront-outline" size={size || 20} color={color} />
           ),
         }}
       />
 
       {/* Hidden screens (not in tab bar) */}
+      <Tabs.Screen
+        name="settings"
+        options={{
+          href: null,
+        }}
+      />
       <Tabs.Screen
         name="job-details"
         options={{
@@ -163,6 +163,18 @@ export default function WorkshopLayout() {
       />
       <Tabs.Screen
         name="vehicle-service-history"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="product-details"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="cart"
         options={{
           href: null,
         }}

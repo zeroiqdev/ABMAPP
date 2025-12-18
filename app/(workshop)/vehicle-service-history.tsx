@@ -60,7 +60,7 @@ export default function VehicleServiceHistoryScreen() {
     switch (status) {
       case 'received': return '#FFA500';
       case 'diagnosed': return '#007AFF';
-      case 'repairing': return '#5856D6';
+      case 'repairing': return '#34C759';
       case 'completed': return '#30D158';
       case 'cancelled': return '#FF3B30';
       default: return '#666';
@@ -106,7 +106,7 @@ export default function VehicleServiceHistoryScreen() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color="#000" />
       </View>
     );
   }
@@ -114,7 +114,18 @@ export default function VehicleServiceHistoryScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => {
+          if (router.canGoBack()) {
+            router.back();
+          } else {
+            // Try to go back to customer details if customerId is available
+            if (customerId) {
+              router.push(`/(workshop)/customer-details?id=${customerId}`);
+            } else {
+              router.push('/(workshop)/customers');
+            }
+          }
+        }}>
           <Ionicons name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Service History</Text>
@@ -305,5 +316,10 @@ const styles = StyleSheet.create({
     color: '#999',
   },
 });
+
+
+
+
+
 
 

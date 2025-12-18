@@ -8,6 +8,7 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +21,17 @@ import { format } from 'date-fns';
 export default function WorkshopJobDetailsScreen() {
   const router = useRouter();
   const { id, new: isNew } = useLocalSearchParams<{ id: string; new?: string }>();
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'received': return '#FFA500';
+      case 'diagnosed': return '#007AFF';
+      case 'repairing': return '#34C759';
+      case 'completed': return '#30D158';
+      default: return '#666';
+    }
+  };
+
   const { user } = useAuthStore();
   const [job, setJob] = useState<Job | null>(null);
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
@@ -29,6 +41,32 @@ export default function WorkshopJobDetailsScreen() {
   const [updating, setUpdating] = useState(false);
   const [notes, setNotes] = useState('');
   const [selectedTechnician, setSelectedTechnician] = useState<string>('');
+  const [showStatusModal, setShowStatusModal] = useState(false);
+
+  const getJobTypeLabel = (type: string) => {
+    switch (type) {
+      case 'service': return 'Service';
+      case 'repair': return 'Repair';
+      case 'service_and_repair': return 'Service & Repair';
+      case 'complaint': return 'Complaint';
+      default: return type;
+    }
+  };
+
+  const getTypeFromIssues = (issues: string[] | undefined) => {
+    if (!issues || issues.length === 0) return 'Repair';
+    
+    const hasServicing = issues.includes('Servicing');
+    const hasOtherIssues = issues.some(issue => issue !== 'Servicing');
+    
+    if (hasServicing && hasOtherIssues) {
+      return 'Service & Repair';
+    } else if (hasServicing) {
+      return 'Service';
+    } else {
+      return 'Repair';
+    }
+  };
 
   useEffect(() => {
     if (isNew !== 'true' && id) {
@@ -141,7 +179,7 @@ export default function WorkshopJobDetailsScreen() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color="#000" />
       </View>
     );
   }
@@ -150,7 +188,13 @@ export default function WorkshopJobDetailsScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()}>
+          <TouchableOpacity onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.push('/(workshop)/jobs');
+            }
+          }}>
             <Ionicons name="arrow-back" size={24} color="#000" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Job Details</Text>
@@ -170,7 +214,7 @@ export default function WorkshopJobDetailsScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => router.push('/(workshop)/jobs')}>
           <Ionicons name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Job Details</Text>
@@ -178,52 +222,55 @@ export default function WorkshopJobDetailsScreen() {
       </View>
 
       <ScrollView style={styles.content}>
-        {/* Status Section */}
-        {job && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Status</Text>
-            <View style={styles.statusCard}>
-              <Text style={styles.currentStatus}>
-                {job.status.charAt(0).toUpperCase() + job.status.slice(1)}
-              </Text>
+        {/* Hero Section */}
+        {job && vehicle && (
+          <View style={styles.heroSection}>
+            <View style={styles.heroHeader}>
+              <View style={styles.statusPill}>
+                <View style={[styles.statusDot, { backgroundColor: getStatusColor(job.status) }]} />
+                <Text style={styles.statusPillText}>{job.status.toUpperCase()}</Text>
+              </View>
               {canUpdateStatus && (
-                <View style={styles.statusButtons}>
-                  {['received', 'diagnosed', 'repairing', 'completed'].map((status) => (
-                    <TouchableOpacity
-                      key={status}
-                      style={[
-                        styles.statusButton,
-                        job.status === status && styles.statusButtonActive,
-                      ]}
-                      onPress={() => updateJobStatus(status as JobStatus)}
-                      disabled={updating}
-                    >
-                      <Text
-                        style={[
-                          styles.statusButtonText,
-                          job.status === status && styles.statusButtonTextActive,
-                        ]}
-                      >
-                        {status.charAt(0).toUpperCase() + status.slice(1)}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                <TouchableOpacity
+                  style={styles.updateStatusButton}
+                  onPress={() => setShowStatusModal(true)}
+                >
+                  <Text style={styles.updateStatusText}>Update Status</Text>
+                </TouchableOpacity>
               )}
             </View>
+
+            <Text style={styles.heroTitle}>
+              {job.issues && job.issues.length > 0
+                ? `${job.issues[0]}${job.issues.length > 1 ? ` +${job.issues.length - 1}` : ''}`
+                : job.description}
+            </Text>
+
+            <View style={styles.metricsRow}>
+              <View style={styles.metricItem}>
+                <Text style={styles.metricLabel}>Vehicle</Text>
+                <Text style={styles.metricValue}>{vehicle.make} {vehicle.model}</Text>
+              </View>
+              <View style={styles.metricDivider} />
+              <View style={styles.metricItem}>
+                <Text style={styles.metricLabel}>Type</Text>
+                <Text style={styles.metricValue}>{getTypeFromIssues(job.issues)}</Text>
+              </View>
+            </View>
+
+
+
           </View>
         )}
 
-        {/* Customer & Vehicle Info */}
-        {customer && vehicle && (
+        {/* Customer Info */}
+        {customer && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Customer & Vehicle</Text>
+            <Text style={styles.sectionTitle}>Customer Details</Text>
             <View style={styles.infoCard}>
-              <InfoRow label="Customer" value={customer.name} />
-              <InfoRow label="Email" value={customer.email} />
+              <InfoRow label="Name" value={customer.name} />
               <InfoRow label="Phone" value={customer.phone} />
-              <InfoRow label="Vehicle" value={`${vehicle.make} ${vehicle.model} (${vehicle.year})`} />
-              <InfoRow label="License Plate" value={vehicle.licensePlate} />
+              <InfoRow label="License Plate" value={vehicle?.licensePlate || ''} />
             </View>
           </View>
         )}
@@ -236,7 +283,7 @@ export default function WorkshopJobDetailsScreen() {
               <View style={styles.infoCard}>
                 <InfoRow
                   label="Type"
-                  value={job.type === 'service' ? 'Service' : 'Complaint'}
+                  value={getJobTypeLabel(job.type)}
                 />
                 <InfoRow
                   label="Created"
@@ -300,6 +347,43 @@ export default function WorkshopJobDetailsScreen() {
           </View>
         )}
       </ScrollView>
+
+      <Modal visible={showStatusModal} transparent animationType="fade">
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowStatusModal(false)}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={(e) => e.stopPropagation()}
+            style={styles.statusModalContent}
+          >
+            <Text style={styles.modalTitle}>Update Job Status</Text>
+            {['received', 'diagnosed', 'repairing', 'completed'].map((status) => (
+              <TouchableOpacity
+                key={status}
+                style={[
+                  styles.statusOption,
+                  job?.status === status && styles.statusOptionSelected,
+                ]}
+                onPress={() => {
+                  updateJobStatus(status as JobStatus);
+                  setShowStatusModal(false);
+                }}
+              >
+                <View style={[styles.statusDot, { backgroundColor: getStatusColor(status) }]} />
+                <Text style={styles.statusOptionText}>
+                  {status.charAt(0).toUpperCase() + status.slice(1)}
+                </Text>
+                {job?.status === status && (
+                  <Ionicons name="checkmark" size={20} color="#000" />
+                )}
+              </TouchableOpacity>
+            ))}
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -350,53 +434,122 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 15,
   },
-  statusCard: {
-    backgroundColor: '#f9f9f9',
-    borderRadius: 12,
-    padding: 15,
-  },
-  currentStatus: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#007AFF',
-    marginBottom: 15,
-  },
-  statusButtons: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  statusButton: {
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 8,
+  heroSection: {
+    padding: 24,
     backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#ddd',
+    marginBottom: 10,
+    alignItems: 'center',
   },
-  statusButtonActive: {
-    backgroundColor: '#007AFF',
-    borderColor: '#007AFF',
+  heroHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
   },
-  statusButtonText: {
-    fontSize: 14,
-    color: '#666',
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    gap: 6,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  statusPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#333',
+    letterSpacing: 0.5,
+  },
+  updateStatusButton: {
+    backgroundColor: '#000',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 5,
+  },
+  updateStatusText: {
+    color: '#fff',
+    fontSize: 10,
     fontWeight: '600',
   },
-  statusButtonTextActive: {
-    color: '#fff',
+  heroTitle: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#000',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  heroSubtitle: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 30,
+  },
+  metricsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 30,
+    marginTop: 10,
+  },
+  metricItem: {
+    alignItems: 'center',
+    paddingHorizontal: 15,
+  },
+  metricLabel: {
+    fontSize: 12,
+    color: '#999',
+    marginBottom: 4,
+    fontWeight: '500',
+  },
+  metricValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000',
+  },
+  metricDivider: {
+    width: 1,
+    height: 30,
+    backgroundColor: '#eee',
+  },
+  actionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+  actionButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#eee',
+    backgroundColor: '#fff',
+  },
+  actionButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#666',
   },
   infoCard: {
-    backgroundColor: '#f9f9f9',
+    backgroundColor: '#fff',
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#eee',
     padding: 15,
   },
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#f5f5f5',
   },
   infoLabel: {
     fontSize: 14,
@@ -409,14 +562,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   descriptionCard: {
-    backgroundColor: '#f9f9f9',
-    borderRadius: 12,
+    backgroundColor: '#fff',
     padding: 15,
+    borderWidth: 1,
+    borderColor: '#eee',
+    borderRadius: 12,
   },
   descriptionText: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#333',
-    lineHeight: 20,
+    lineHeight: 22,
   },
   noTechnician: {
     fontSize: 14,
@@ -424,19 +579,19 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   notesInput: {
-    backgroundColor: '#f9f9f9',
+    backgroundColor: '#fff',
     borderRadius: 12,
     padding: 15,
     fontSize: 14,
     minHeight: 120,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: '#eee',
     marginBottom: 10,
   },
   saveButton: {
-    backgroundColor: '#007AFF',
-    padding: 12,
-    borderRadius: 8,
+    backgroundColor: '#000',
+    padding: 14,
+    borderRadius: 12,
     alignItems: 'center',
   },
   saveButtonText: {
@@ -452,6 +607,49 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     color: '#999',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  statusModalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    width: '100%',
+    maxWidth: 400,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  statusOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  statusOptionSelected: {
+    borderWidth: 1,
+    borderColor: '#000',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    borderBottomWidth: 0,
+    width: '100%',
+    overflow: 'hidden',
+  },
+  statusOptionText: {
+    fontSize: 16,
+    marginLeft: 12,
+    flex: 1,
+    color: '#333',
+    fontWeight: '500',
   },
 });
 

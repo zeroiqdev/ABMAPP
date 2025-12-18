@@ -1,14 +1,22 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { Colors } from '@/constants/design';
 
 export default function CustomerLayout() {
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#007AFF',
-        tabBarInactiveTintColor: '#666',
-        unmountOnBlur: false,
+        tabBarActiveTintColor: Colors.secondary,
+        tabBarInactiveTintColor: Colors.textSecondary,
+        tabBarStyle: {
+          backgroundColor: Colors.surface,
+          borderTopWidth: 1,
+          borderTopColor: Colors.border,
+          height: 50,
+          paddingBottom: 4,
+          paddingTop: 4,
+        },
       }}
     >
       <Tabs.Screen
@@ -21,11 +29,12 @@ export default function CustomerLayout() {
         }}
       />
       <Tabs.Screen
-        name="service"
+        name="invoices"
         options={{
-          title: 'Service',
+          title: 'Invoices',
+          href: '/(customer)/invoices',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="construct" size={size} color={color} />
+            <Ionicons name="receipt" size={size} color={color} />
           ),
         }}
       />
@@ -44,6 +53,16 @@ export default function CustomerLayout() {
           title: 'Account',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="service"
+        options={{
+          href: null,
+          title: 'Service',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="construct" size={size} color={color} />
           ),
         }}
       />
@@ -78,12 +97,6 @@ export default function CustomerLayout() {
         }}
       />
       <Tabs.Screen
-        name="invoices"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
         name="invoice-details"
         options={{
           href: null,
@@ -103,6 +116,24 @@ export default function CustomerLayout() {
       />
       <Tabs.Screen
         name="support"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="vehicle-history"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="product-details"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="cart"
         options={{
           href: null,
         }}

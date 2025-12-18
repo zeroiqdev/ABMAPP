@@ -8,18 +8,25 @@ import {
   Image,
   ActivityIndicator,
   Alert,
+  Dimensions,
+  Platform,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { firebaseService } from '@/services/firebaseService';
 import { MarketplaceProduct } from '@/types';
+import { useAuthStore } from '@/store/authStore';
+
+const { width } = Dimensions.get('window');
 
 export default function ProductDetailsScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { user } = useAuthStore();
   const [product, setProduct] = useState<MarketplaceProduct | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
   useEffect(() => {
     loadProduct();
@@ -27,6 +34,9 @@ export default function ProductDetailsScreen() {
 
   const loadProduct = async () => {
     try {
+      // Ideally we should have getProductById, but getMarketplaceProducts is cached/fast enough for now or we filter client side
+      // Actually let's assume getMarketplaceProducts fetches all or we find it.
+      // Optimisation: Create getProductById in future.
       const products = await firebaseService.getMarketplaceProducts();
       const productData = products.find((p) => p.id === id);
       if (productData) {
@@ -47,7 +57,6 @@ export default function ProductDetailsScreen() {
       return;
     }
 
-    // In a real app, you'd add to cart state/store
     Alert.alert('Success', 'Product added to cart', [
       {
         text: 'Continue Shopping',
@@ -63,7 +72,7 @@ export default function ProductDetailsScreen() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color="#000" />
       </View>
     );
   }
@@ -75,8 +84,6 @@ export default function ProductDetailsScreen() {
           <TouchableOpacity onPress={() => router.back()}>
             <Ionicons name="arrow-back" size={24} color="#000" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Product Details</Text>
-          <View style={{ width: 24 }} />
         </View>
         <View style={styles.emptyState}>
           <Text style={styles.emptyText}>Product not found</Text>
@@ -87,107 +94,136 @@ export default function ProductDetailsScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity style={styles.iconButton} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Product Details</Text>
-        <TouchableOpacity onPress={() => router.push('/(marketplace)/cart')}>
-          <Ionicons name="cart-outline" size={24} color="#000" />
+        <Text style={styles.headerTitle} numberOfLines={1}>{product.name}</Text>
+        <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/(marketplace)/cart')}>
+          <Ionicons name="bag-handle-outline" size={24} color="#000" />
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content}>
-        {/* Product Images */}
-        {product.images && product.images.length > 0 && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageContainer}>
-            {product.images.map((imageUri, index) => (
-              <Image
-                key={index}
-                source={{ uri: imageUri }}
-                style={styles.productImage}
-              />
-            ))}
-          </ScrollView>
-        )}
-
-        {/* Product Info */}
-        <View style={styles.section}>
-          <Text style={styles.productName}>{product.name}</Text>
-          <View style={styles.categoryRow}>
-            <Text style={styles.category}>{product.category}</Text>
-            {product.stock > 0 ? (
-              <View style={styles.stockBadge}>
-                <Text style={styles.stockText}>In Stock</Text>
-              </View>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+        {/* Image Carousel */}
+        <View style={styles.carouselContainer}>
+          <ScrollView
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onScroll={(e) => {
+              const contentOffsetX = e.nativeEvent.contentOffset.x;
+              const index = Math.round(contentOffsetX / width);
+              setCurrentImageIndex(index);
+            }}
+            scrollEventThrottle={16}
+          >
+            {product.images && product.images.length > 0 ? (
+              product.images.map((imageUri, index) => (
+                <Image
+                  key={index}
+                  source={{ uri: imageUri }}
+                  style={styles.carouselImage}
+                />
+              ))
             ) : (
-              <View style={[styles.stockBadge, styles.outOfStockBadge]}>
-                <Text style={[styles.stockText, styles.outOfStockText]}>
-                  Out of Stock
-                </Text>
+              <View style={[styles.carouselImage, styles.placeholderImage]}>
+                <Ionicons name="image-outline" size={64} color="#ccc" />
               </View>
             )}
-          </View>
-          <Text style={styles.price}>₦{product.price.toLocaleString()}</Text>
-        </View>
+          </ScrollView>
 
-        {/* Description */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Description</Text>
-          <Text style={styles.description}>{product.description}</Text>
-        </View>
-
-        {/* Compatibility */}
-        {product.compatibility && product.compatibility.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Compatible With</Text>
-            <View style={styles.compatibilityList}>
-              {product.compatibility.map((item, index) => (
-                <View key={index} style={styles.compatibilityChip}>
-                  <Text style={styles.compatibilityText}>{item}</Text>
-                </View>
+          {/* Pagination Dots */}
+          {product.images && product.images.length > 1 && (
+            <View style={styles.pagination}>
+              {product.images.map((_, index) => (
+                <View
+                  key={index}
+                  style={[
+                    styles.paginationDot,
+                    currentImageIndex === index && styles.paginationDotActive,
+                  ]}
+                />
               ))}
             </View>
-          </View>
-        )}
+          )}
+        </View>
 
-        {/* Quantity Selector */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Quantity</Text>
-          <View style={styles.quantitySelector}>
-            <TouchableOpacity
-              style={styles.quantityButton}
-              onPress={() => setQuantity(Math.max(1, quantity - 1))}
-            >
-              <Ionicons name="remove" size={20} color="#007AFF" />
-            </TouchableOpacity>
-            <Text style={styles.quantityText}>{quantity}</Text>
-            <TouchableOpacity
-              style={styles.quantityButton}
-              onPress={() =>
-                setQuantity(Math.min(product.stock, quantity + 1))
-              }
-            >
-              <Ionicons name="add" size={20} color="#007AFF" />
+        <View style={styles.content}>
+          {/* Title & Stats */}
+          <View style={styles.titleRow}>
+            <Text style={styles.productName}>{product.name}</Text>
+            <TouchableOpacity>
+              <Ionicons name="heart-outline" size={24} color="#000" />
             </TouchableOpacity>
           </View>
-          <Text style={styles.stockInfo}>
-            {product.stock} available in stock
-          </Text>
+
+          <View style={styles.statsRow}>
+            <View style={styles.ratingBadge}>
+              <Ionicons name="star" size={12} color="#000" />
+              <Text style={styles.ratingText}>{product.rating || 'New'}</Text>
+            </View>
+            <Text style={styles.soldCount}>{product.soldCount || 0} sold</Text>
+            {product.condition && (
+              <Text style={styles.conditionText}>{product.condition === 'new' ? 'New' : 'Used'}</Text>
+            )}
+          </View>
+
+          <View style={styles.divider} />
+
+          {/* Description */}
+          <Text style={styles.sectionTitle}>Description</Text>
+          <Text style={styles.description}>{product.description}</Text>
+
+          {/* Compatibility */}
+          {product.compatibility && product.compatibility.length > 0 && (
+            <View style={styles.compatibilitySection}>
+              <Text style={styles.sectionTitle}>Compatibility</Text>
+              <View style={styles.compatibilityList}>
+                {product.compatibility.map((item, index) => (
+                  <View key={index} style={styles.compatibilityChip}>
+                    <Text style={styles.compatibilityText}>{item}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Quantity */}
+          <View style={styles.quantitySection}>
+            <Text style={styles.sectionTitle}>Quantity</Text>
+            <View style={styles.quantityControl}>
+              <TouchableOpacity
+                style={styles.quantityBtn}
+                onPress={() => setQuantity(Math.max(1, quantity - 1))}
+              >
+                <Ionicons name="remove" size={20} color="#000" />
+              </TouchableOpacity>
+              <Text style={styles.quantityValue}>{quantity}</Text>
+              <TouchableOpacity
+                style={styles.quantityBtn}
+                onPress={() => setQuantity(Math.min(product.stock, quantity + 1))}
+              >
+                <Ionicons name="add" size={20} color="#000" />
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
       </ScrollView>
 
-      {/* Add to Cart Button */}
+      {/* Footer */}
       <View style={styles.footer}>
+        <View style={styles.priceContainer}>
+          <Text style={styles.totalLabel}>Total Price</Text>
+          <Text style={styles.totalPrice}>₦{(product.price * quantity).toLocaleString()}</Text>
+        </View>
         <TouchableOpacity
-          style={[
-            styles.addToCartButton,
-            product.stock === 0 && styles.addToCartButtonDisabled,
-          ]}
+          style={[styles.addToCartButton, product.stock === 0 && styles.disabledButton]}
           onPress={handleAddToCart}
           disabled={product.stock === 0}
         >
-          <Ionicons name="cart" size={20} color="#fff" />
+          <Ionicons name="bag-handle" size={20} color="#fff" />
           <Text style={styles.addToCartText}>Add to Cart</Text>
         </TouchableOpacity>
       </View>
@@ -198,7 +234,7 @@ export default function ProductDetailsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#fff',
   },
   loadingContainer: {
     flex: 1,
@@ -209,84 +245,130 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
     paddingTop: 60,
+    paddingHorizontal: 20,
+    paddingBottom: 10,
     backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    zIndex: 10,
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontSize: 18,
+    fontWeight: '600',
+    flex: 1,
+    textAlign: 'center',
+    marginHorizontal: 10,
+  },
+  iconButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 20,
+    backgroundColor: '#f9f9f9',
+  },
+  carouselContainer: {
+    height: width, // Square images
+    marginBottom: 20,
+    position: 'relative',
+  },
+  carouselImage: {
+    width: width,
+    height: width,
+    resizeMode: 'cover',
+    backgroundColor: '#f5f5f5',
+  },
+  placeholderImage: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pagination: {
+    position: 'absolute',
+    bottom: 20,
+    flexDirection: 'row',
+    alignSelf: 'center',
+    gap: 8,
+  },
+  paginationDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+  },
+  paginationDotActive: {
+    backgroundColor: '#000',
+    width: 20,
   },
   content: {
-    flex: 1,
+    paddingHorizontal: 20,
   },
-  imageContainer: {
-    backgroundColor: '#fff',
-    marginBottom: 10,
-  },
-  productImage: {
-    width: 400,
-    height: 400,
-    backgroundColor: '#f0f0f0',
-  },
-  section: {
-    padding: 20,
-    backgroundColor: '#fff',
+  titleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: 10,
   },
   productName: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 8,
+    color: '#000',
+    flex: 1,
+    marginRight: 10,
   },
-  categoryRow: {
+  statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginBottom: 12,
+    gap: 15,
+    marginBottom: 20,
   },
-  category: {
-    fontSize: 14,
+  ratingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#f5f5f5',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  ratingText: {
+    fontWeight: 'bold',
+    fontSize: 12,
+  },
+  soldCount: {
     color: '#666',
     backgroundColor: '#f5f5f5',
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
-  },
-  stockBadge: {
-    backgroundColor: '#E8F5E9',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  outOfStockBadge: {
-    backgroundColor: '#FFEBEE',
-  },
-  stockText: {
     fontSize: 12,
-    color: '#30D158',
-    fontWeight: '600',
   },
-  outOfStockText: {
-    color: '#FF3B30',
+  conditionText: {
+    color: '#666',
+    backgroundColor: '#f5f5f5',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    fontSize: 12,
+    textTransform: 'capitalize',
   },
-  price: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#007AFF',
+  divider: {
+    height: 1,
+    backgroundColor: '#eee',
+    marginVertical: 20,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 12,
+    marginBottom: 10,
+    color: '#000',
   },
   description: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#666',
-    lineHeight: 20,
+    lineHeight: 24,
+    marginBottom: 20,
+  },
+  compatibilitySection: {
+    marginBottom: 20,
   },
   compatibilityList: {
     flexDirection: 'row',
@@ -294,62 +376,90 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   compatibilityChip: {
-    backgroundColor: '#E3F2FD',
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    paddingVertical: 8,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 20,
   },
   compatibilityText: {
-    fontSize: 12,
-    color: '#007AFF',
-    fontWeight: '500',
+    fontSize: 14,
+    color: '#333',
   },
-  quantitySelector: {
+  quantitySection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  quantityControl: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+    borderRadius: 25,
+    gap: 15,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  quantityBtn: {
+    width: 30,
+    height: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 15,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  quantityValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  footer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#fff',
+    padding: 20,
+    paddingBottom: 40,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 20,
-    marginBottom: 10,
   },
-  quantityButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#f5f5f5',
-    justifyContent: 'center',
-    alignItems: 'center',
+  priceContainer: {
+    flex: 1,
   },
-  quantityText: {
-    fontSize: 18,
-    fontWeight: '600',
-    minWidth: 40,
-    textAlign: 'center',
-  },
-  stockInfo: {
+  totalLabel: {
     fontSize: 12,
-    color: '#666',
+    color: '#999',
+    marginBottom: 4,
   },
-  footer: {
-    padding: 20,
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
+  totalPrice: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#000',
   },
   addToCartButton: {
+    flex: 2,
+    backgroundColor: '#000',
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#007AFF',
-    padding: 16,
-    borderRadius: 12,
-    gap: 10,
+    alignItems: 'center',
+    paddingVertical: 16,
+    borderRadius: 30,
+    gap: 8,
   },
-  addToCartButtonDisabled: {
+  disabledButton: {
     backgroundColor: '#ccc',
   },
   addToCartText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
   },
   emptyState: {
     flex: 1,
@@ -361,4 +471,3 @@ const styles = StyleSheet.create({
     color: '#999',
   },
 });
-

@@ -47,6 +47,28 @@ export default function RegisterCustomerScreen() {
 
     setLoading(true);
     try {
+      // Check if customer already exists
+      const existingCustomers = await firebaseService.getUsersByRole('customer', user.workshopId);
+      const emailExists = existingCustomers.some(
+        c => c.email.toLowerCase() === email.toLowerCase().trim()
+      );
+
+      if (emailExists) {
+        Alert.alert('Error', 'A customer with this email already exists.');
+        setLoading(false);
+        return;
+      }
+
+      // Create the customer in users collection first
+      await firebaseService.createCustomer({
+        email: email.toLowerCase().trim(),
+        name,
+        phone,
+        role: 'customer',
+        workshopId: user.workshopId,
+      } as any);
+
+      // Then create the registration code for account setup
       const result = await firebaseService.createCustomerRegistration(
         email,
         name,
@@ -56,8 +78,8 @@ export default function RegisterCustomerScreen() {
       );
       setRegistrationCode(result.registrationCode);
       Alert.alert(
-        'Customer Registered',
-        `Registration code: ${result.registrationCode}\n\nShare this code with the customer to complete their registration.`,
+        'Customer Created',
+        `Customer has been added to your list.\n\nRegistration code: ${result.registrationCode}\n\nShare this code with the customer to complete their account setup.`,
         [
           {
             text: 'Copy Code',
@@ -73,7 +95,7 @@ export default function RegisterCustomerScreen() {
               setName('');
               setEmail('');
               setPhone('');
-              router.back();
+              router.push('/(workshop)/customers');
             },
           },
         ]
@@ -91,7 +113,7 @@ export default function RegisterCustomerScreen() {
       style={styles.container}
     >
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => router.push('/(workshop)/customers')}>
           <Ionicons name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Register Customer</Text>
@@ -137,7 +159,7 @@ export default function RegisterCustomerScreen() {
               disabled={loading}
             >
               <Text style={styles.buttonText}>
-                {loading ? 'Registering...' : 'Generate Registration Code'}
+                {loading ? 'Creating...' : 'Create'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -191,7 +213,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   button: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#000',
     padding: 15,
     borderRadius: 8,
     alignItems: 'center',

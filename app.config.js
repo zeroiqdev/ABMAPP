@@ -106,7 +106,10 @@ export default {
       firebaseMessagingSenderId: getEnv('EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID'),
       firebaseAppId: getEnv('EXPO_PUBLIC_FIREBASE_APP_ID'),
       paystackPublicKey: getEnv('EXPO_PUBLIC_PAYSTACK_PUBLIC_KEY'),
-      flutterwavePublicKey: getEnv('EXPO_PUBLIC_FLUTTERWAVE_PUBLIC_KEY')
+      flutterwavePublicKey: getEnv('EXPO_PUBLIC_FLUTTERWAVE_PUBLIC_KEY'),
+      cloudinaryCloudName: getEnv('EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME'),
+      cloudinaryUploadPreset: getEnv('EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET'),
+      apiBaseUrl: getEnv('EXPO_PUBLIC_API_BASE_URL')
     }
   }
 };

@@ -254,13 +254,13 @@ export default function CreateInventoryItemScreen() {
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()}>
+                <TouchableOpacity onPress={() => router.push('/(workshop)/inventory')}>
                     <Ionicons name="arrow-back" size={24} color="#000" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>{id ? 'Edit Item' : 'New Item'}</Text>
                 <TouchableOpacity onPress={handleSave} disabled={loading}>
                     {loading ? (
-                        <ActivityIndicator size="small" color="#5B68F6" />
+                        <ActivityIndicator size="small" color="#000" />
                     ) : (
                         <View style={styles.saveButtonHeader}>
                             <Ionicons name="checkmark" size={24} color="#fff" />
@@ -317,7 +317,7 @@ export default function CreateInventoryItemScreen() {
                         <View style={styles.summaryDivider} />
                         <View style={styles.summaryItem}>
                             <Text style={styles.summaryLabel}>Adding</Text>
-                            <Text style={[styles.summaryValue, { color: '#5B68F6' }]}>+{newUnitIds.length}</Text>
+                            <Text style={styles.summaryValue}>+{newUnitIds.length}</Text>
                         </View>
                         <View style={styles.summaryDivider} />
                         <View style={styles.summaryItem}>
@@ -334,7 +334,7 @@ export default function CreateInventoryItemScreen() {
                                 onPress={() => handleNewQuantityChange(-1)}
                                 disabled={newUnitIds.length === 0}
                             >
-                                <Ionicons name="remove" size={20} color={newUnitIds.length === 0 ? "#ccc" : "#5B68F6"} />
+                                <Ionicons name="remove" size={20} color={newUnitIds.length === 0 ? "#ccc" : "#000"} />
                             </TouchableOpacity>
 
                             <View style={styles.quantityDisplay}>
@@ -345,7 +345,7 @@ export default function CreateInventoryItemScreen() {
                                 style={styles.quantityButton}
                                 onPress={() => handleNewQuantityChange(1)}
                             >
-                                <Ionicons name="add" size={20} color="#5B68F6" />
+                                <Ionicons name="add" size={20} color="#000" />
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -442,7 +442,7 @@ const styles = StyleSheet.create({
         width: 32,
         height: 32,
         borderRadius: 16,
-        backgroundColor: '#5B68F6',
+        backgroundColor: '#000',
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -503,7 +503,7 @@ const styles = StyleSheet.create({
     summaryValue: {
         fontSize: 18,
         fontWeight: '700',
-        color: '#333',
+        color: '#000',
     },
     summaryDivider: {
         width: 1,
@@ -523,7 +523,7 @@ const styles = StyleSheet.create({
         height: 44,
         borderRadius: 12,
         borderWidth: 1,
-        borderColor: '#5B68F6',
+        borderColor: '#000',
         backgroundColor: '#fff',
         justifyContent: 'center',
         alignItems: 'center',
@@ -584,7 +584,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
     },
     saveButton: {
-        backgroundColor: '#5B68F6',
+        backgroundColor: '#000',
         padding: 18,
         borderRadius: 12,
         alignItems: 'center',
