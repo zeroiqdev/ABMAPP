@@ -116,9 +116,7 @@ export default function MarketplaceScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          <View style={styles.menuButton}>
-            <Ionicons name="grid-outline" size={24} color="#000" />
-          </View>
+
           <Text style={styles.headerTitle}>Marketplace</Text>
           <TouchableOpacity
             style={styles.cartButton}
@@ -184,17 +182,7 @@ export default function MarketplaceScreen() {
           }
           columnWrapperStyle={styles.columnWrapper}
           showsVerticalScrollIndicator={false}
-          ListHeaderComponent={
-            <View style={styles.promoBanner}>
-              <View style={styles.promoContent}>
-                <Text style={styles.promoTitle}>New Arrivals</Text>
-                <Text style={styles.promoSubtitle}>High Quality Parts</Text>
-              </View>
-              <View style={styles.promoImagePlaceholder}>
-                <Ionicons name="car-sport-outline" size={60} color="#eee" />
-              </View>
-            </View>
-          }
+          ListHeaderComponent={null}
           ListEmptyComponent={
             !loading ? (
               <View style={styles.emptyState}>

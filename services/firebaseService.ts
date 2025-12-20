@@ -1,3 +1,4 @@
+
 import {
   collection,
   doc,
@@ -14,6 +15,8 @@ import {
   Timestamp,
   onSnapshot,
   QueryConstraint,
+  writeBatch,
+  arrayUnion,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject, uploadString } from 'firebase/storage';
 import * as FileSystem from 'expo-file-system';
@@ -32,6 +35,7 @@ import {
   Notification,
   CustomerRegistration,
   StaffInvitation,
+  ChatMessage,
 } from '@/types';
 
 export const firebaseService = {
@@ -213,6 +217,9 @@ export const firebaseService = {
         createdAt: data.createdAt?.toDate(),
         paymentDate: data.paymentDate?.toDate(),
         dueDate: data.dueDate?.toDate(),
+        approvedAt: data.approvedAt?.toDate(),
+        status: data.status || 'draft', // Backwards compatibility
+        approvedBy: data.approvedBy,
         amountPaid: data.amountPaid || 0,
         paymentHistory: data.paymentHistory
           ? data.paymentHistory.map((record: any) => ({
@@ -224,18 +231,46 @@ export const firebaseService = {
     }) as Invoice[];
   },
 
+  async getInvoice(invoiceId: string): Promise<Invoice | null> {
+    const docRef = doc(db, 'invoices', invoiceId);
+    const docSnap = await getDoc(docRef);
+
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      return {
+        id: docSnap.id,
+        ...data,
+        createdAt: data.createdAt?.toDate(),
+        paymentDate: data.paymentDate?.toDate(),
+        dueDate: data.dueDate?.toDate(),
+        approvedAt: data.approvedAt?.toDate(),
+        status: data.status || 'draft',
+        approvedBy: data.approvedBy,
+        amountPaid: data.amountPaid || 0,
+        paymentHistory: data.paymentHistory
+          ? data.paymentHistory.map((record: any) => ({
+            ...record,
+            date: record.date?.toDate() || new Date(),
+          }))
+          : [],
+      } as Invoice;
+    }
+    return null;
+  },
+
   async createInvoice(invoice: Omit<Invoice, 'id' | 'createdAt'>): Promise<string> {
     // Generate invoice ID in format: INV-CUSTOMERID-XXXX
     // XXXX is last 4 digits of timestamp
     const timestamp = Date.now().toString();
     const lastFour = timestamp.slice(-4);
     const customerId = invoice.userId.slice(0, 8); // Use first 8 chars of customer ID
-    const invoiceId = `INV-${customerId}-${lastFour}`;
+    const invoiceId = `INV - ${customerId} -${lastFour} `;
 
     // Use setDoc with custom ID instead of addDoc
     const docRef = doc(db, 'invoices', invoiceId);
     await setDoc(docRef, {
       ...invoice,
+      status: 'draft', // Default status
       createdAt: Timestamp.now(),
     });
     return invoiceId;
@@ -249,6 +284,9 @@ export const firebaseService = {
     if (updateData.paymentDate) {
       updateData.paymentDate = Timestamp.fromDate(updateData.paymentDate);
     }
+    if (updateData.approvedAt) {
+      updateData.approvedAt = Timestamp.fromDate(updateData.approvedAt);
+    }
     if (updateData.paymentHistory) {
       updateData.paymentHistory = updateData.paymentHistory.map((record: any) => ({
         ...record,
@@ -256,6 +294,96 @@ export const firebaseService = {
       }));
     }
     await updateDoc(doc(db, 'invoices', invoiceId), updateData);
+  },
+
+  async approveInvoice(invoiceId: string, approvedBy: string, explicitDueDate?: Date): Promise<void> {
+    const now = new Date();
+    let dueDate = explicitDueDate;
+
+    if (!dueDate) {
+      dueDate = new Date();
+      dueDate.setDate(now.getDate() + 7); // Default 7 days if not provided
+    }
+
+    await this.updateInvoice(invoiceId, {
+      status: 'approved',
+      approvedBy,
+      approvedAt: now,
+      dueDate: dueDate,
+    });
+  },
+
+  async checkAndSendInvoiceReminders(userId: string): Promise<void> {
+    try {
+      const user = await this.getUser(userId);
+      if (!user?.workshopId) return;
+
+      const invoices = await this.getInvoices(undefined, user.workshopId);
+      const approvedInvoices = invoices.filter(inv => inv.status === 'approved' && (!inv.amountPaid || inv.amountPaid < (inv.items || []).reduce((sum, item) => sum + item.total, 0)));
+
+      const now = new Date();
+      const batch = [];
+
+      for (const invoice of approvedInvoices) {
+        if (!invoice.dueDate) continue;
+
+        const diffTime = invoice.dueDate.getTime() - now.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        const invoiceTotal = (invoice.items || []).reduce((sum, item) => sum + item.total, 0);
+
+        // Check if we should remind (7, 2, or 1 days before due)
+        if ([7, 2, 1].includes(diffDays)) {
+          // Check if we already sent a reminder TODAY for this invoice
+          // Since we don't have a complex query, we'll check local storage or a simpler heuristic
+          // ideally we'd store 'lastReminderSent' on the invoice, but let's check notifications
+          // Optimization: Fetch only recent notifications for this user?
+          // For now, let's keep it simple: If we are effectively spamming, we need 'lastReminderDate' on invoice.
+
+          // Let's assume we can add a field to invoice locally to track this without schema change if we use 'any'
+          // or we just query notifications.
+
+          const notificationsRef = collection(db, 'notifications');
+          const q = query(
+            notificationsRef,
+            where('userId', '==', invoice.userId),
+            where('metadata.invoiceId', '==', invoice.id),
+            where('metadata.type', '==', 'invoice_reminder'),
+            orderBy('createdAt', 'desc'),
+            limit(1)
+          );
+
+          const snapshot = await getDocs(q);
+          let alreadySentToday = false;
+
+          if (!snapshot.empty) {
+            const lastNotif = snapshot.docs[0].data();
+            const lastDate = lastNotif.createdAt?.toDate();
+            if (lastDate) {
+              const isToday = lastDate.toDateString() === now.toDateString();
+              if (isToday) alreadySentToday = true;
+            }
+          }
+
+          if (!alreadySentToday) {
+            const notificationData = {
+              userId: invoice.userId,
+              title: 'Invoice Payment Reminder',
+              body: `Invoice #${invoice.id} for ₦${invoiceTotal.toLocaleString()} is due in ${diffDays} day${diffDays > 1 ? 's' : ''}.`,
+              read: false,
+              createdAt: Timestamp.now(),
+              metadata: {
+                invoiceId: invoice.id,
+                type: 'invoice_reminder'
+              }
+            };
+            await addDoc(collection(db, 'notifications'), notificationData);
+            console.log(`Sent reminder for invoice ${invoice.id}`);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error checking invoice reminders:', error);
+    }
   },
 
   async getInventoryItems(workshopId: string): Promise<InventoryItem[]> {
@@ -504,7 +632,7 @@ export const firebaseService = {
     try {
       // Extract folder from path (e.g., 'jobs/user123' from 'jobs/user123/image.jpg')
       const folder = path.split('/').slice(0, -1).join('/') || 'general';
-      
+
       // Upload to Cloudinary with folder
       // Transformations are applied when displaying images (not during upload)
       // Unsigned uploads don't support transformation parameters
@@ -524,7 +652,7 @@ export const firebaseService = {
       // TODO: Implement Cloudinary deletion if needed using deleteImageFromCloudinary
       return;
     }
-    
+
     // Fallback to Firebase Storage deletion for legacy URLs
     try {
       const storageRef = ref(storage, fileUrl);
@@ -763,5 +891,60 @@ export const firebaseService = {
         expiresAt: data.expiresAt?.toDate(),
       } as StaffInvitation;
     });
+  },
+
+  async sendJobMessage(jobId: string, message: Omit<ChatMessage, 'id' | 'jobId' | 'createdAt'>): Promise<string> {
+    const docRef = await addDoc(collection(db, 'jobs', jobId, 'messages'), {
+      ...message,
+      jobId,
+      createdAt: Timestamp.now(),
+    });
+    return docRef.id;
+  },
+
+  subscribeToJobMessages(jobId: string, callback: (messages: ChatMessage[]) => void): () => void {
+    const q = query(
+      collection(db, 'jobs', jobId, 'messages'),
+      orderBy('createdAt', 'asc')
+    );
+    return onSnapshot(q, (snapshot) => {
+      const messages = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate(),
+      })) as ChatMessage[];
+      callback(messages);
+    });
+  },
+
+  async markMessagesAsRead(jobId: string, messageIds: string[], userId: string): Promise<void> {
+    if (messageIds.length === 0) return;
+
+    const batch = writeBatch(db);
+    messageIds.forEach((msgId) => {
+      const msgRef = doc(db, 'jobs', jobId, 'messages', msgId);
+      batch.update(msgRef, {
+        readBy: arrayUnion(userId)
+      });
+    });
+
+    await batch.commit();
+  },
+
+  async uploadChatImage(imageUri: string, jobId: string): Promise<string> {
+    try {
+      // Upload to Cloudinary with folder specific to job
+      return await uploadImageToCloudinary(
+        imageUri,
+        'chat_images',
+        undefined,
+        `jobs / ${jobId} `
+      );
+    } catch (error: any) {
+      // Fallback to Firebase Storage if Cloudinary fails (optional, but good for robustness)
+      // For now, re-throw or use existing uploadFile
+      console.error('Cloudinary upload failed, falling back logic could be here', error);
+      throw error;
+    }
   },
 };

@@ -18,7 +18,7 @@ export default function InvoicesScreen() {
   const { user } = useAuthStore();
   const router = useRouter();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [filter, setFilter] = useState<'all' | 'pending' | 'paid'>('all');
+  const [filter, setFilter] = useState<'all' | 'pending' | 'paid' | 'partially_paid'>('all');
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
@@ -30,12 +30,15 @@ export default function InvoicesScreen() {
 
     try {
       const invoicesData = await firebaseService.getInvoices(user.id);
-      let filtered = invoicesData;
-      
+      // Filter out drafts and void invoices
+      let filtered = invoicesData.filter(inv => inv.status === 'approved' || inv.status === undefined); // Backward compatibility
+
       if (filter === 'pending') {
-        filtered = invoicesData.filter((inv) => inv.paymentStatus === 'pending');
+        filtered = filtered.filter((inv) => inv.paymentStatus === 'pending');
       } else if (filter === 'paid') {
-        filtered = invoicesData.filter((inv) => inv.paymentStatus === 'paid');
+        filtered = filtered.filter((inv) => inv.paymentStatus === 'paid');
+      } else if (filter === 'partially_paid') {
+        filtered = filtered.filter((inv) => inv.paymentStatus === 'partially_paid');
       }
 
       setInvoices(filtered);
@@ -54,52 +57,69 @@ export default function InvoicesScreen() {
     switch (status) {
       case 'paid': return '#30D158';
       case 'pending': return '#FFA500';
+      case 'partially_paid': return '#5856D6';
       case 'failed': return '#FF3B30';
-      case 'refunded': return '#999';
       default: return '#666';
     }
   };
 
-  const renderInvoice = ({ item }: { item: Invoice }) => (
-    <TouchableOpacity
-      style={styles.invoiceCard}
-      onPress={() => router.push(`/(customer)/invoice-details?id=${item.id}`)}
-    >
-      <View style={styles.invoiceHeader}>
-        <View>
-          <Text style={styles.invoiceNumber}>Invoice #{item.id.slice(0, 8)}</Text>
-          <Text style={styles.invoiceDate}>
-            {format(item.createdAt, 'MMM dd, yyyy')}
-          </Text>
+  const renderInvoice = ({ item }: { item: Invoice }) => {
+    const amountPaid = item.amountPaid || 0;
+    const remaining = item.total - amountPaid;
+
+    return (
+      <TouchableOpacity
+        style={styles.invoiceCard}
+        onPress={() => router.push(`/(customer)/invoice-details?id=${item.id}`)}
+      >
+        <View style={styles.invoiceHeader}>
+          <View>
+            <Text
+              style={styles.invoiceNumber}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              Invoice #{item.id}
+            </Text>
+            <Text style={styles.invoiceDate}>
+              {format(item.createdAt, 'MMM dd, yyyy')}
+            </Text>
+          </View>
+          <View
+            style={[
+              styles.statusBadge,
+              { backgroundColor: getPaymentStatusColor(item.paymentStatus) + '20' },
+            ]}
+          >
+            <Text
+              style={[
+                styles.statusText,
+                { color: getPaymentStatusColor(item.paymentStatus) },
+              ]}
+            >
+              {item.paymentStatus === 'partially_paid'
+                ? 'Partially Paid'
+                : item.paymentStatus.charAt(0).toUpperCase() + item.paymentStatus.slice(1)}
+            </Text>
+          </View>
         </View>
-        <View
-          style={[
-            styles.statusBadge,
-            { backgroundColor: getPaymentStatusColor(item.paymentStatus) },
-          ]}
-        >
-          <Text style={styles.statusText}>
-            {item.paymentStatus.charAt(0).toUpperCase() + item.paymentStatus.slice(1)}
-          </Text>
+        <View style={styles.invoiceAmount}>
+          <Text style={styles.amountLabel}>Total Amount</Text>
+          <Text style={styles.amountValue}>₦{item.total.toLocaleString()}</Text>
         </View>
-      </View>
-      <View style={styles.invoiceAmount}>
-        <Text style={styles.amountLabel}>Total Amount</Text>
-        <Text style={styles.amountValue}>₦{item.total.toLocaleString()}</Text>
-      </View>
-      {item.dueDate && item.paymentStatus === 'pending' && (
-        <View style={styles.dueDateRow}>
-          <Ionicons name="time-outline" size={16} color="#FFA500" />
-          <Text style={styles.dueDateText}>
-            Due: {format(item.dueDate, 'MMM dd, yyyy')}
-          </Text>
-        </View>
-      )}
-      <View style={styles.invoiceFooter}>
-        <Ionicons name="chevron-forward" size={20} color="#999" />
-      </View>
-    </TouchableOpacity>
-  );
+        {amountPaid > 0 && (
+          <View style={styles.paymentInfo}>
+            <Text style={styles.paidText}>Paid: ₦{amountPaid.toLocaleString()}</Text>
+            <Text style={[styles.remainingText, remaining < 0 && { color: '#30D158' }]}>
+              {remaining < 0
+                ? `Overpayment: ₦${Math.abs(remaining).toLocaleString()}`
+                : `Remaining: ₦${remaining.toLocaleString()}`}
+            </Text>
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -107,53 +127,31 @@ export default function InvoicesScreen() {
         <Text style={styles.headerTitle}>Invoices</Text>
       </View>
 
-      {/* Filter Tabs */}
+      {/* Filter Pills */}
       <View style={styles.filterContainer}>
-        <TouchableOpacity
-          style={[styles.filterTab, filter === 'all' && styles.filterTabActive]}
-          onPress={() => setFilter('all')}
-        >
-          <Text
+        {(['all', 'pending', 'paid', 'partially_paid'] as const).map((filterOption) => (
+          <TouchableOpacity
+            key={filterOption}
             style={[
-              styles.filterText,
-              filter === 'all' && styles.filterTextActive,
+              styles.filterPill,
+              filter === filterOption && styles.filterPillActive,
             ]}
+            onPress={() => setFilter(filterOption)}
           >
-            All
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.filterTab,
-            filter === 'pending' && styles.filterTabActive,
-          ]}
-          onPress={() => setFilter('pending')}
-        >
-          <Text
-            style={[
-              styles.filterText,
-              filter === 'pending' && styles.filterTextActive,
-            ]}
-          >
-            Pending
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.filterTab,
-            filter === 'paid' && styles.filterTabActive,
-          ]}
-          onPress={() => setFilter('paid')}
-        >
-          <Text
-            style={[
-              styles.filterText,
-              filter === 'paid' && styles.filterTextActive,
-            ]}
-          >
-            Paid
-          </Text>
-        </TouchableOpacity>
+            <Text
+              style={[
+                styles.filterText,
+                filter === filterOption && styles.filterTextActive,
+              ]}
+            >
+              {filterOption === 'all'
+                ? 'All'
+                : filterOption === 'partially_paid'
+                  ? 'Partially Paid'
+                  : filterOption.charAt(0).toUpperCase() + filterOption.slice(1)}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
       <FlatList
@@ -186,6 +184,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   headerTitle: {
     fontSize: 24,
@@ -194,24 +195,22 @@ const styles = StyleSheet.create({
   filterContainer: {
     flexDirection: 'row',
     padding: 15,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
     gap: 10,
   },
-  filterTab: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 8,
-    backgroundColor: '#f5f5f5',
-    alignItems: 'center',
+  filterPill: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#eee',
   },
-  filterTabActive: {
-    backgroundColor: '#007AFF',
+  filterPillActive: {
+    backgroundColor: '#000',
+    borderColor: '#000',
   },
   filterText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
     color: '#666',
   },
@@ -243,10 +242,18 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#333',
     marginBottom: 4,
+    maxWidth: 200,
+  },
+  invoiceCustomer: {
+    fontSize: 14,
+    color: '#000',
+    marginTop: 2,
+    fontWeight: '500',
   },
   invoiceDate: {
     fontSize: 12,
-    color: '#999',
+    color: '#000',
+    marginTop: 4,
   },
   statusBadge: {
     paddingHorizontal: 12,
@@ -254,7 +261,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   statusText: {
-    color: '#fff',
     fontSize: 12,
     fontWeight: '600',
   },
@@ -262,30 +268,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
   },
   amountLabel: {
     fontSize: 14,
-    color: '#666',
+    color: '#000',
   },
   amountValue: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#007AFF',
+    color: '#000',
   },
-  dueDateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 10,
+  paymentInfo: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
   },
-  dueDateText: {
+  paidText: {
     fontSize: 12,
-    color: '#FFA500',
-    fontWeight: '500',
+    color: '#000',
+    marginBottom: 4,
   },
-  invoiceFooter: {
-    alignItems: 'flex-end',
+  remainingText: {
+    fontSize: 12,
+    color: '#000',
   },
   emptyState: {
     padding: 60,

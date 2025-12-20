@@ -39,6 +39,16 @@ export default function CustomerLayout() {
         }}
       />
       <Tabs.Screen
+        name="maintenance"
+        options={{
+          title: 'Maintenance',
+          href: '/(customer)/maintenance',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="construct" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="marketplace"
         options={{
           title: 'Marketplace',
@@ -88,6 +98,13 @@ export default function CustomerLayout() {
         name="bookings"
         options={{
           href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="tow-request"
+        options={{
+          href: null,
+          tabBarStyle: { display: 'none' }, // Ensure tab bar is hidden when on this screen if desired, or just hide from menu
         }}
       />
       <Tabs.Screen

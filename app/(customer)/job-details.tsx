@@ -11,18 +11,29 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { firebaseService } from '@/services/firebaseService';
-import { Job, Vehicle } from '@/types';
+import { ChatMessage, Job, Vehicle } from '@/types';
 import { format } from 'date-fns';
+import JobChat from '@/components/JobChat';
+import { useAuthStore } from '@/store/authStore';
+import { Colors } from '@/constants/design';
 
 export default function JobDetailsScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { user } = useAuthStore();
   const [job, setJob] = useState<Job | null>(null);
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
   const [loading, setLoading] = useState(true);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [chatVisible, setChatVisible] = useState(false);
 
   useEffect(() => {
     loadJobDetails();
+    // Subscribe to messages
+    const unsubscribe = firebaseService.subscribeToJobMessages(id, (msgs) => {
+      setMessages(msgs);
+    });
+    return () => unsubscribe();
   }, [id]);
 
   const loadJobDetails = async () => {
@@ -30,11 +41,10 @@ export default function JobDetailsScreen() {
       const jobData = await firebaseService.getJob(id);
       if (jobData) {
         setJob(jobData);
+        // ... (fetch vehicle logic remains same, will be kept by replacement context or re-added if overwritten)
         const vehicles = await firebaseService.getVehicles(jobData.userId);
         const jobVehicle = vehicles.find((v) => v.id === jobData.vehicleId);
-        if (jobVehicle) {
-          setVehicle(jobVehicle);
-        }
+        if (jobVehicle) setVehicle(jobVehicle);
       }
     } catch (error) {
       console.error('Error loading job details:', error);
@@ -49,33 +59,17 @@ export default function JobDetailsScreen() {
       case 'diagnosed': return '#007AFF';
       case 'repairing': return '#34C759';
       case 'completed': return '#30D158';
-      case 'cancelled': return '#FF3B30';
       default: return '#666';
     }
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'received': return 'time-outline';
-      case 'diagnosed': return 'checkmark-circle-outline';
-      case 'repairing': return 'build-outline';
-      case 'completed': return 'checkmark-done-circle';
-      case 'cancelled': return 'close-circle';
-      default: return 'help-circle';
-    }
-  };
-
-  const statusSteps = [
-    { key: 'received', label: 'Received' },
-    { key: 'diagnosed', label: 'Diagnosed' },
-    { key: 'repairing', label: 'Repairing' },
-    { key: 'completed', label: 'Completed' },
-  ];
+  const currentStatusIndex = statusSteps.findIndex((s) => s.key === job?.status);
+  const unreadCount = user ? messages.filter(m => !m.readBy.includes(user.id)).length : 0;
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color="#000" />
       </View>
     );
   }
@@ -97,8 +91,6 @@ export default function JobDetailsScreen() {
     );
   }
 
-  const currentStatusIndex = statusSteps.findIndex((s) => s.key === job.status);
-
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -106,75 +98,35 @@ export default function JobDetailsScreen() {
           <Ionicons name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Job Details</Text>
-        <View style={{ width: 24 }} />
+        <TouchableOpacity style={styles.chatButton} onPress={() => setChatVisible(true)}>
+          <Ionicons name="chatbubble-outline" size={24} color="#000" />
+          {unreadCount > 0 && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.content}>
-        {/* Status Badge */}
-        <View style={styles.statusSection}>
-          <View
-            style={[
-              styles.statusBadge,
-              { backgroundColor: getStatusColor(job.status) },
-            ]}
-          >
-            <Ionicons
-              name={getStatusIcon(job.status) as any}
-              size={20}
-              color="#fff"
-            />
-            <Text style={styles.statusText}>
-              {job.status.charAt(0).toUpperCase() + job.status.slice(1)}
-            </Text>
-          </View>
-        </View>
 
-        {/* Progress Timeline */}
-        <View style={styles.timelineSection}>
-          <Text style={styles.sectionTitle}>Progress</Text>
-          {statusSteps.map((step, index) => {
-            const isCompleted = index <= currentStatusIndex;
-            const isCurrent = index === currentStatusIndex;
-            return (
-              <View key={step.key} style={styles.timelineItem}>
-                <View
-                  style={[
-                    styles.timelineDot,
-                    isCompleted && styles.timelineDotCompleted,
-                    isCurrent && styles.timelineDotCurrent,
-                  ]}
-                >
-                  {isCompleted && (
-                    <Ionicons name="checkmark" size={12} color="#fff" />
-                  )}
-                </View>
-                {index < statusSteps.length - 1 && (
-                  <View
-                    style={[
-                      styles.timelineLine,
-                      isCompleted && styles.timelineLineCompleted,
-                    ]}
-                  />
-                )}
-                <View style={styles.timelineContent}>
-                  <Text
-                    style={[
-                      styles.timelineLabel,
-                      isCompleted && styles.timelineLabelCompleted,
-                    ]}
-                  >
-                    {step.label}
-                  </Text>
-                </View>
-              </View>
-            );
-          })}
-        </View>
 
         {/* Vehicle Info */}
         {vehicle && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Vehicle Information</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
+              <Text style={{ fontSize: 18, fontWeight: 'bold' }}>Vehicle Information</Text>
+              <View
+                style={[
+                  styles.statusBadge,
+                  { backgroundColor: getStatusColor(job.status) + '15', paddingVertical: 4, paddingHorizontal: 10 },
+                ]}
+              >
+                <Text style={[styles.statusText, { color: getStatusColor(job.status), fontSize: 12 }]}>
+                  {job.status.charAt(0).toUpperCase() + job.status.slice(1)}
+                </Text>
+              </View>
+            </View>
             <View style={styles.infoCard}>
               <InfoRow label="Make" value={vehicle.make} />
               <InfoRow label="Model" value={vehicle.model} />
@@ -191,7 +143,7 @@ export default function JobDetailsScreen() {
           <View style={styles.infoCard}>
             <InfoRow
               label="Type"
-              value={job.type === 'service' ? 'Service' : 'Complaint'}
+              value={job.type.charAt(0).toUpperCase() + job.type.slice(1).replace(/_/g, ' ')}
             />
             {job.scheduledDate && (
               <InfoRow
@@ -266,9 +218,26 @@ export default function JobDetailsScreen() {
           </View>
         )}
       </ScrollView>
+
+      {user && (
+        <JobChat
+          jobId={id}
+          currentUser={user}
+          visible={chatVisible}
+          onClose={() => setChatVisible(false)}
+          messages={messages}
+        />
+      )}
     </View>
   );
 }
+
+const statusSteps = [
+  { key: 'received', label: 'Received' },
+  { key: 'diagnosed', label: 'Diagnosed' },
+  { key: 'repairing', label: 'Repairing' },
+  { key: 'completed', label: 'Completed' },
+];
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
@@ -303,24 +272,41 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
   },
+  chatButton: {
+    padding: 4,
+  },
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#FF3B30',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
   content: {
     flex: 1,
   },
   statusSection: {
     padding: 20,
-    alignItems: 'center',
   },
   statusBadge: {
-    flexDirection: 'row',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
-    gap: 8,
+    justifyContent: 'center',
   },
   statusText: {
-    color: '#fff',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
   },
   timelineSection: {
@@ -443,6 +429,33 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     color: '#999',
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    paddingBottom: 10,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  tab: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  activeTab: {
+    borderBottomColor: Colors.primary,
+  },
+  tabText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#666',
+  },
+  activeTabText: {
+    color: Colors.primary,
+    fontWeight: '600',
   },
 });
 

@@ -55,7 +55,10 @@ export default {
     ],
     ios: {
       supportsTablet: true,
-      bundleIdentifier: "com.abmtek.abmapp"
+      bundleIdentifier: "com.abmtek.abmapp",
+      config: {
+        googleMapsApiKey: getEnv('EXPO_PUBLIC_GOOGLE_MAPS_API_KEY')
+      }
     },
     android: {
       adaptiveIcon: {
@@ -63,11 +66,18 @@ export default {
         backgroundColor: "#ffffff"
       },
       package: "com.abmtek.abmapp",
+      config: {
+        googleMaps: {
+          apiKey: getEnv('EXPO_PUBLIC_GOOGLE_MAPS_API_KEY')
+        }
+      },
       permissions: [
         "CAMERA",
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE",
-        "NOTIFICATIONS"
+        "NOTIFICATIONS",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
       ]
     },
     web: {

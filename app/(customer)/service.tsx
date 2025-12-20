@@ -318,7 +318,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xl,
   },
   label: {
-    fontSize: Typography.fontSize.md,
+    fontSize: Typography.fontSize.base,
     fontWeight: Typography.fontWeight.bold,
     color: Colors.textPrimary,
     marginBottom: Spacing.sm,
@@ -334,7 +334,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   dropdownText: {
-    fontSize: Typography.fontSize.md,
+    fontSize: Typography.fontSize.base,
     color: Colors.textPrimary,
   },
   dropdownList: {
@@ -354,7 +354,7 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.borderLight,
   },
   dropdownItemText: {
-    fontSize: Typography.fontSize.md,
+    fontSize: Typography.fontSize.base,
     color: Colors.textPrimary,
   },
   issueChipsContainer: {
@@ -371,16 +371,16 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   issueChipActive: {
-    backgroundColor: Colors.primary + '15', // 15% opacity hex
-    borderColor: Colors.primary,
+    backgroundColor: '#f0f0f0',
+    borderColor: '#000',
   },
   issueChipText: {
     fontSize: Typography.fontSize.sm,
     color: Colors.textSecondary,
   },
   issueChipTextActive: {
-    color: Colors.primary,
-    fontWeight: Typography.fontWeight.semibold,
+    color: '#000',
+    fontWeight: '600',
   },
   issueHint: {
     fontSize: Typography.fontSize.xs,
@@ -393,28 +393,31 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
     padding: Spacing.md,
-    fontSize: Typography.fontSize.md,
+    fontSize: Typography.fontSize.base,
     minHeight: 120,
   },
   submitButton: {
-    backgroundColor: Colors.primary,
+    backgroundColor: '#000',
     padding: Spacing.md,
     borderRadius: BorderRadius.md,
     alignItems: 'center',
+    justifyContent: 'center',
     marginTop: Spacing.sm,
     marginBottom: Spacing['3xl'],
+    width: '70%',
+    alignSelf: 'center',
   },
   submitButtonDisabled: {
     opacity: 0.7,
   },
   submitButtonText: {
     color: Colors.textInverse,
-    fontSize: Typography.fontSize.md,
+    fontSize: Typography.fontSize.base,
     fontWeight: Typography.fontWeight.bold,
   },
   emptyText: {
     marginTop: Spacing.md,
-    fontSize: Typography.fontSize.md,
+    fontSize: Typography.fontSize.base,
     color: Colors.textSecondary,
   },
   addButton: {

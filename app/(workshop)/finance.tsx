@@ -49,7 +49,7 @@ export default function FinanceScreen() {
   const [customerNamesMap, setCustomerNamesMap] = useState<Record<string, string>>({});
   const [dateFilter, setDateFilter] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null });
   const [showDateFilterModal, setShowDateFilterModal] = useState(false);
-  const [activeDatePicker, setActiveDatePicker] = useState<'start' | 'end' | null>(null);
+  const [activeDatePicker, setActiveDatePicker] = useState<'start' | 'end' | 'due' | null>(null);
   const [showPaymentSuccessModal, setShowPaymentSuccessModal] = useState(false);
   const [recordedPaymentAmount, setRecordedPaymentAmount] = useState<number>(0);
 
@@ -57,6 +57,10 @@ export default function FinanceScreen() {
     loadInvoices();
     if (user?.workshopId) {
       loadInventory();
+    }
+    if (user?.id) {
+      // Run reminder check silently in background
+      firebaseService.checkAndSendInvoiceReminders(user.id);
     }
   }, [user]);
 
@@ -174,6 +178,7 @@ export default function FinanceScreen() {
     setSelectedInvoice(invoice);
     setEditingItems([...invoice.items]);
     setEditingDueDate(invoice.dueDate || null);
+    setActiveDatePicker(null);
     setEditingItemIndex(null);
     setShowAddItem(false);
     setNewItem({ description: '', quantity: '1', unitPrice: '' });
@@ -197,7 +202,47 @@ export default function FinanceScreen() {
 
   const canEditInvoice = () => {
     if (!selectedInvoice) return false;
-    return (selectedInvoice.amountPaid || 0) === 0;
+    // Cannot edit if paid (even partially) OR if approved (unless it's just to record payment)
+    // Actually, canEditInvoice controls item editing. Payment is separate.
+    // Locking edits after approval:
+    return (selectedInvoice.amountPaid || 0) === 0 && (selectedInvoice.status === 'draft' || !selectedInvoice.status);
+  };
+
+  const handleApproveInvoice = async () => {
+    if (!selectedInvoice) return;
+
+    if (!editingDueDate) {
+      Alert.alert('Required', 'Please select a Due Date before approving the invoice.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await firebaseService.approveInvoice(selectedInvoice.id, user?.name || 'Staff', editingDueDate);
+
+      // Reload invoices
+      await loadInvoices();
+
+      // Update local selection
+      const updatedInvoices = await firebaseService.getInvoices(undefined, user?.workshopId);
+      const updatedInvoice = updatedInvoices.find(inv => inv.id === selectedInvoice.id);
+      if (updatedInvoice) {
+        setSelectedInvoice(updatedInvoice);
+        setEditingItems([...updatedInvoice.items]);
+      }
+
+      const isTowInvoice = selectedInvoice.items.some(i => i.description.toLowerCase().includes('tow'));
+      const successMessage = isTowInvoice
+        ? 'Invoice approved.'
+        : 'Invoice approved. Customer can now view it.';
+
+      Alert.alert('Success', successMessage);
+    } catch (error) {
+      console.error('Error approving invoice:', error);
+      Alert.alert('Error', 'Failed to approve invoice');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleEditItem = (index: number, field: 'description' | 'quantity' | 'unitPrice', value: string) => {
@@ -283,12 +328,18 @@ export default function FinanceScreen() {
       const subtotal = items.reduce((sum, item) => sum + item.total, 0);
       const total = subtotal + (selectedInvoice.vat || 0) - (selectedInvoice.discount || 0);
 
-      await firebaseService.updateInvoice(selectedInvoice.id, {
+      const updateData: any = {
         items: items,
         subtotal,
         total,
-        dueDate: editingDueDate || undefined,
-      });
+      };
+
+      // Only update due date if it's being edited and has a value
+      if (editingDueDate) {
+        updateData.dueDate = editingDueDate;
+      }
+
+      await firebaseService.updateInvoice(selectedInvoice.id, updateData);
 
       // Reload the invoice to get updated data
       const updatedInvoices = await firebaseService.getInvoices(undefined, user?.workshopId);
@@ -328,6 +379,7 @@ export default function FinanceScreen() {
       // Open payment modal for partial payment
       // Temporarily hide invoice modal to show payment modal on top
       setShowInvoiceModal(false);
+      setActiveDatePicker(null);
       setTimeout(() => {
         setShowPaymentModal(true);
       }, 300);
@@ -423,6 +475,7 @@ export default function FinanceScreen() {
 
       if (closeModal) {
         setShowInvoiceModal(false);
+        setActiveDatePicker(null);
       }
     } catch (error) {
       if (showAlert) {
@@ -681,12 +734,18 @@ export default function FinanceScreen() {
         visible={showInvoiceModal}
         animationType="slide"
         presentationStyle="pageSheet"
-        onRequestClose={() => setShowInvoiceModal(false)}
+        onRequestClose={() => {
+          setShowInvoiceModal(false);
+          setActiveDatePicker(null);
+        }}
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Invoice Details</Text>
-            <TouchableOpacity onPress={() => setShowInvoiceModal(false)}>
+            <TouchableOpacity onPress={() => {
+              setShowInvoiceModal(false);
+              setActiveDatePicker(null);
+            }}>
               <Ionicons name="close" size={24} color="#000" />
             </TouchableOpacity>
           </View>
@@ -702,6 +761,22 @@ export default function FinanceScreen() {
                   <View style={styles.detailItem}>
                     <Text style={styles.detailLabel}>Customer</Text>
                     <Text style={styles.detailValue}>{customerName || 'Loading...'}</Text>
+                  </View>
+                </View>
+                <View style={[styles.detailRow, { marginTop: 15 }]}>
+                  <View style={styles.detailItem}>
+                    <Text style={styles.detailLabel}>Status</Text>
+                    <View style={[styles.statusBadge, { alignSelf: 'flex-start', marginLeft: 0, marginTop: 4 }]}>
+                      <Text style={styles.statusText}>
+                        {(selectedInvoice.status || 'draft').toUpperCase()}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.detailItem}>
+                    <Text style={styles.detailLabel}>Due Date</Text>
+                    <Text style={styles.detailValue}>
+                      {selectedInvoice.dueDate ? format(selectedInvoice.dueDate, 'MMM dd, yyyy') : 'N/A'}
+                    </Text>
                   </View>
                 </View>
               </View>
@@ -937,6 +1012,59 @@ export default function FinanceScreen() {
                 )}
               </View>
 
+              {/* Due Date Selection - Prerequisite for Approval */}
+              {(selectedInvoice.status === 'draft' || !selectedInvoice.status) && (
+                <View style={styles.dueDateSection}>
+                  <Text style={styles.sectionTitle}>Due Date (Required)</Text>
+                  <TouchableOpacity
+                    style={[styles.dateInput, !editingDueDate && styles.dateInputError]}
+                    onPress={() => {
+                      setActiveDatePicker('due');
+                      if (Platform.OS === 'android') {
+                        setShowDatePicker(true);
+                      }
+                    }}
+                  >
+                    <Text style={styles.dateInputText}>
+                      {editingDueDate ? format(editingDueDate, 'MMM dd, yyyy') : 'Select Due Date'}
+                    </Text>
+                    <Ionicons name="calendar-outline" size={20} color="#000" />
+                  </TouchableOpacity>
+                  {activeDatePicker === 'due' && (Platform.OS === 'ios' || showDatePicker) && (
+                    <View>
+                      {Platform.OS === 'ios' && (
+                        <View style={styles.datePickerToolbar}>
+                          <TouchableOpacity
+                            onPress={() => setActiveDatePicker(null)}
+                            style={styles.datePickerDoneButton}
+                          >
+                            <Text style={styles.datePickerDoneText}>Done</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                      <DateTimePicker
+                        value={editingDueDate || new Date()}
+                        mode="date"
+                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                        minimumDate={new Date()}
+                        themeVariant="light"
+                        onChange={(event, selectedDate) => {
+                          if (Platform.OS === 'android') {
+                            setShowDatePicker(false);
+                            setActiveDatePicker(null);
+                          }
+                          if (selectedDate) {
+                            setEditingDueDate(selectedDate);
+                            // Do not close on iOS, wait for Done button
+                          }
+                        }}
+                        style={Platform.OS === 'ios' ? { backgroundColor: 'white' } : undefined}
+                      />
+                    </View>
+                  )}
+                </View>
+              )}
+
               {selectedInvoice.paymentHistory &&
                 selectedInvoice.paymentHistory.length > 0 && (
                   <View style={styles.paymentHistorySection}>
@@ -960,13 +1088,31 @@ export default function FinanceScreen() {
                 )}
 
 
+              {/* Locked Message */}
               {!canEditInvoice() && (
                 <View style={styles.lockedMessage}>
                   <Ionicons name="lock-closed-outline" size={20} color="#FFA500" />
                   <Text style={styles.lockedText}>
-                    Invoice cannot be edited after payment has been recorded
+                    {selectedInvoice.status === 'approved'
+                      ? 'Invoice is approved and locked'
+                      : 'Invoice cannot be edited after payment has been recorded'}
                   </Text>
                 </View>
+              )}
+
+              {/* Approve Button for Drafts */}
+              {(selectedInvoice.status === 'draft' || !selectedInvoice.status) && (
+                <TouchableOpacity
+                  style={styles.approveButton}
+                  onPress={handleApproveInvoice}
+                >
+                  <Ionicons name="checkmark-circle-outline" size={24} color="#fff" style={{ marginRight: 8 }} />
+                  <Text style={styles.approveButtonText}>
+                    {selectedInvoice.items.some(i => i.description.toLowerCase().includes('tow'))
+                      ? 'Approve'
+                      : 'Approve & Send'}
+                  </Text>
+                </TouchableOpacity>
               )}
 
               {!showAddItem && (
@@ -1015,10 +1161,10 @@ export default function FinanceScreen() {
             </ScrollView>
           )}
         </View>
-      </Modal>
+      </Modal >
 
       {/* Payment Modal */}
-      <Modal
+      < Modal
         visible={showPaymentModal}
         animationType="slide"
         transparent={true}
@@ -1031,7 +1177,8 @@ export default function FinanceScreen() {
           setTimeout(() => {
             setShowInvoiceModal(true);
           }, 100);
-        }}
+        }
+        }
       >
         <TouchableOpacity
           style={styles.paymentModalOverlay}
@@ -1101,10 +1248,10 @@ export default function FinanceScreen() {
             </View>
           </TouchableOpacity>
         </TouchableOpacity>
-      </Modal>
+      </Modal >
 
       {/* Date Filter Modal */}
-      <Modal
+      < Modal
         visible={showDateFilterModal}
         animationType="slide"
         transparent={true}
@@ -1214,10 +1361,10 @@ export default function FinanceScreen() {
             </View>
           </View>
         </View>
-      </Modal>
+      </Modal >
 
       {/* Payment Success Modal */}
-      <Modal
+      < Modal
         visible={showPaymentSuccessModal}
         transparent={true}
         animationType="fade"
@@ -1246,10 +1393,10 @@ export default function FinanceScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      </Modal >
 
 
-    </View>
+    </View >
   );
 }
 
@@ -1599,8 +1746,24 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     backgroundColor: '#f0f0f0',
     borderRadius: 8,
-    padding: 4,
+    padding: 2,
   },
+  approveButton: {
+    backgroundColor: '#30D158',
+    padding: 16,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    marginTop: 10,
+  },
+  approveButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+
   addItemTab: {
     flex: 1,
     flexDirection: 'row',
@@ -2008,6 +2171,22 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  datePickerToolbar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    backgroundColor: '#f0f0f0',
+    padding: 10,
+    borderTopLeftRadius: 10,
+    borderTopRightRadius: 10,
+  },
+  datePickerDoneButton: {
+    paddingHorizontal: 15,
+  },
+  datePickerDoneText: {
+    color: '#000',
+    fontWeight: '600',
+    fontSize: 16,
   },
 });
 

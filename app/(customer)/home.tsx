@@ -206,15 +206,11 @@ export default function CustomerHomeScreen() {
             onPress={() => {
               setActiveTab('tow');
               // Navigate to tow request screen
-              router.push('/(customer)/book-service?type=tow');
+              router.push('/(customer)/tow-request');
             }}
           >
-            <Ionicons
-              name="car-outline"
-              size={18}
-              color={activeTab === 'tow' ? Colors.textInverse : Colors.textSecondary}
-            />
-            <Text style={[styles.tabText, activeTab === 'tow' && styles.tabTextActive]}>
+
+            <Text style={[styles.tabText, activeTab === 'tow' && styles.tabTextActive]} numberOfLines={1}>
               Request Tow
             </Text>
           </TouchableOpacity>
@@ -226,12 +222,8 @@ export default function CustomerHomeScreen() {
               router.push('/(customer)/service');
             }}
           >
-            <Ionicons
-              name="construct-outline"
-              size={18}
-              color={activeTab === 'repairs' ? Colors.textInverse : Colors.textSecondary}
-            />
-            <Text style={[styles.tabText, activeTab === 'repairs' && styles.tabTextActive]}>
+
+            <Text style={[styles.tabText, activeTab === 'repairs' && styles.tabTextActive]} numberOfLines={1}>
               Request Repair
             </Text>
           </TouchableOpacity>
@@ -243,12 +235,8 @@ export default function CustomerHomeScreen() {
               router.push('/(marketplace)/orders');
             }}
           >
-            <Ionicons
-              name="bag-outline"
-              size={18}
-              color={activeTab === 'orders' ? Colors.textInverse : Colors.textSecondary}
-            />
-            <Text style={[styles.tabText, activeTab === 'orders' && styles.tabTextActive]}>
+
+            <Text style={[styles.tabText, activeTab === 'orders' && styles.tabTextActive]} numberOfLines={1}>
               Orders
             </Text>
           </TouchableOpacity>
@@ -499,12 +487,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.base,
+    paddingHorizontal: 4, // Reduced from Spacing.base to fit text
     borderRadius: BorderRadius.md,
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
-    gap: 6,
+    gap: 4, // Reduced gap
   },
   tabActive: {
     backgroundColor: Colors.secondary,

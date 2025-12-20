@@ -45,7 +45,7 @@ export interface Job {
   userId: string;
   vehicleId: string;
   workshopId: string;
-  type: 'service' | 'complaint' | 'repair' | 'service_and_repair';
+  type: 'service' | 'complaint' | 'repair' | 'service_and_repair' | 'tow';
   issues?: string[]; // Selected issue categories
   description: string;
   status: JobStatus;
@@ -92,6 +92,9 @@ export interface Invoice {
   dueDate?: Date;
   amountPaid?: number;
   paymentHistory?: PaymentRecord[];
+  status: 'draft' | 'approved' | 'void';
+  approvedAt?: Date;
+  approvedBy?: string;
   createdAt: Date;
 }
 
@@ -220,3 +223,14 @@ export interface StaffInvitation {
   expiresAt?: Date;
 }
 
+export interface ChatMessage {
+  id: string;
+  jobId: string;
+  senderId: string;
+  senderName: string;
+  senderRole: UserRole;
+  text?: string;
+  imageUrl?: string;
+  createdAt: Date;
+  readBy: string[];
+}

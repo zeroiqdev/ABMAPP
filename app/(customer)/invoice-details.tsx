@@ -7,12 +7,12 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  Modal,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { firebaseService } from '@/services/firebaseService';
-import { paymentService } from '@/services/paymentService';
-import { Invoice, Job } from '@/types';
+import { Invoice, Job, User } from '@/types';
 import { format } from 'date-fns';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -22,8 +22,9 @@ export default function InvoiceDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [job, setJob] = useState<Job | null>(null);
+  const [customer, setCustomer] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [processingPayment, setProcessingPayment] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   useEffect(() => {
     loadInvoiceDetails();
@@ -31,63 +32,43 @@ export default function InvoiceDetailsScreen() {
 
   const loadInvoiceDetails = async () => {
     try {
-      const invoices = await firebaseService.getInvoices();
-      const invoiceData = invoices.find((inv) => inv.id === id);
-      
+      if (!id) return;
+      const invoiceData = await firebaseService.getInvoice(id);
+
       if (invoiceData) {
         setInvoice(invoiceData);
+
+
+        // Fetch Job
         if (invoiceData.jobId) {
-          const jobData = await firebaseService.getJob(invoiceData.jobId);
-          if (jobData) {
-            setJob(jobData);
+          try {
+            const jobData = await firebaseService.getJob(invoiceData.jobId);
+            if (jobData) {
+              setJob(jobData);
+            }
+          } catch (jobError) {
+            console.log('Error fetching job details (non-fatal):', jobError);
+            // Non-fatal error, continue loading other details
+          }
+        }
+
+        // Fetch Customer (User)
+        if (invoiceData.userId) {
+          try {
+            const userData = await firebaseService.getUser(invoiceData.userId);
+            if (userData) {
+              setCustomer(userData);
+            }
+          } catch (userError) {
+            console.log('Error fetching customer details (non-fatal):', userError);
           }
         }
       }
     } catch (error) {
-      console.error('Error loading invoice details:', error);
+      console.error('Error loading invoice main details:', error);
+      Alert.alert('Error', 'Failed to load invoice details');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handlePayment = async () => {
-    if (!invoice) return;
-
-    setProcessingPayment(true);
-    try {
-      const reference = paymentService.generatePaymentReference();
-      const paymentData = {
-        amount: invoice.total,
-        email: invoice.userId,
-        reference,
-        metadata: {
-          invoiceId: invoice.id,
-          jobId: invoice.jobId,
-        },
-      };
-
-      const result = await paymentService.initializePaystackPayment(paymentData);
-
-      if (result.success) {
-        Alert.alert(
-          'Payment Initiated',
-          'Please complete the payment in the next screen.',
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                router.push(`/(customer)/payment?invoiceId=${invoice.id}&reference=${reference}`);
-              },
-            },
-          ]
-        );
-      } else {
-        Alert.alert('Error', result.message);
-      }
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Payment initialization failed');
-    } finally {
-      setProcessingPayment(false);
     }
   };
 
@@ -95,75 +76,104 @@ export default function InvoiceDetailsScreen() {
     if (!invoice) return;
 
     try {
-      const html = generateInvoiceHTML(invoice, job);
+      const html = generateInvoiceHTML(invoice, job, customer);
       const { uri } = await Print.printToFileAsync({ html });
       await Sharing.shareAsync(uri);
     } catch (error: any) {
       Alert.alert('Error', 'Failed to generate invoice PDF');
+      console.error('Error generating PDF:', error);
     }
   };
 
-  const generateInvoiceHTML = (inv: Invoice, jobData: Job | null) => {
+  const generateInvoiceHTML = (inv: Invoice, job: Job | null, customer: User | null) => {
+    const amountPaid = inv.amountPaid || 0;
+    const balanceDue = inv.total - amountPaid;
+    const paymentHistory = inv.paymentHistory || [];
+
     return `
       <!DOCTYPE html>
       <html>
         <head>
           <meta charset="utf-8">
-          <title>Invoice #${inv.id.slice(0, 8)}</title>
           <style>
             body { font-family: Arial, sans-serif; padding: 20px; }
             .header { text-align: center; margin-bottom: 30px; }
-            .invoice-info { margin-bottom: 20px; }
-            table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-            th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
-            .total { text-align: right; font-weight: bold; }
+            .invoice-info { display: flex; justify-content: space-between; margin-bottom: 30px; }
+            .items-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+            .items-table th, .items-table td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
+            .items-table th { background-color: #f5f5f5; }
+            .total-section { text-align: right; margin-top: 20px; }
+            .balance-box { background: #f5f5f5; padding: 15px; margin-top: 20px; text-align: center; }
+            .payment-history { margin-top: 30px; }
+            .payment-item { padding: 8px; border-bottom: 1px solid #eee; }
           </style>
         </head>
         <body>
           <div class="header">
-            <h1>ABM Workshop</h1>
-            <h2>Invoice #${inv.id.slice(0, 8)}</h2>
+            <h1>INVOICE</h1>
+            <p>Invoice #${inv.id}</p>
           </div>
           <div class="invoice-info">
-            <p><strong>Date:</strong> ${format(inv.createdAt, 'MMM dd, yyyy')}</p>
-            <p><strong>Status:</strong> ${inv.paymentStatus}</p>
-            ${inv.dueDate ? `<p><strong>Due Date:</strong> ${format(inv.dueDate, 'MMM dd, yyyy')}</p>` : ''}
+            <div>
+              <p><strong>Customer:</strong> ${customer?.name || 'Customer'}</p>
+              <p><strong>Date:</strong> ${format(inv.createdAt, 'MMM dd, yyyy')}</p>
+              ${inv.dueDate ? `<p><strong>Due Date:</strong> ${format(inv.dueDate, 'MMM dd, yyyy')}</p>` : ''}
+            </div>
           </div>
-          <table>
+          <table class="items-table">
             <thead>
               <tr>
                 <th>Description</th>
-                <th>Quantity</th>
+                <th>Qty</th>
                 <th>Unit Price</th>
                 <th>Total</th>
               </tr>
             </thead>
             <tbody>
-              ${inv.items.map(item => `
+              ${inv.items.map(
+      (item) => `
                 <tr>
                   <td>${item.description}</td>
                   <td>${item.quantity}</td>
                   <td>₦${item.unitPrice.toLocaleString()}</td>
                   <td>₦${item.total.toLocaleString()}</td>
                 </tr>
-              `).join('')}
+              `
+    ).join('')}
             </tbody>
           </table>
-          <div class="total">
+          <div class="total-section">
             <p>Subtotal: ₦${inv.subtotal.toLocaleString()}</p>
-            <p>VAT: ₦${inv.vat.toLocaleString()}</p>
-            <p>Discount: ₦${inv.discount.toLocaleString()}</p>
-            <p style="font-size: 18px;">Total: ₦${inv.total.toLocaleString()}</p>
+            ${inv.vat > 0 ? `<p>VAT: ₦${inv.vat.toLocaleString()}</p>` : ''}
+            ${inv.discount > 0 ? `<p>Discount: -₦${inv.discount.toLocaleString()}</p>` : ''}
+            <p><strong>Total: ₦${inv.total.toLocaleString()}</strong></p>
+            ${amountPaid > 0 ? `<p>Amount Paid: ₦${amountPaid.toLocaleString()}</p>` : ''}
+          </div>
+          <div class="balance-box">
+            <div><strong>${balanceDue < 0 ? 'Overpayment' : 'Balance Due'}</strong></div>
+            <div style="font-size: 24px; font-weight: bold; color: ${balanceDue < 0 ? '#30D158' : '#000'}">
+              ₦${Math.abs(balanceDue).toLocaleString()}
+            </div>
           </div>
         </body>
       </html>
     `;
   };
 
+  const getPaymentStatusColor = (status: string) => {
+    switch (status) {
+      case 'paid': return '#30D158';
+      case 'pending': return '#FFA500';
+      case 'partially_paid': return '#5856D6';
+      case 'failed': return '#FF3B30';
+      default: return '#666';
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color="#000" />
       </View>
     );
   }
@@ -192,120 +202,174 @@ export default function InvoiceDetailsScreen() {
           <Ionicons name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Invoice Details</Text>
-        <TouchableOpacity onPress={handleDownload}>
-          <Ionicons name="download-outline" size={24} color="#007AFF" />
+        <TouchableOpacity onPress={handleDownload} style={styles.downloadButton}>
+          <Text style={styles.downloadButtonText}>Download</Text>
+          <Ionicons name="download-outline" size={20} color="#000" />
         </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.content}>
-        {/* Invoice Header */}
-        <View style={styles.section}>
-          <View style={styles.invoiceHeaderCard}>
-            <Text style={styles.invoiceNumber}>Invoice #{invoice.id.slice(0, 8)}</Text>
-            <View
-              style={[
-                styles.statusBadge,
-                {
-                  backgroundColor:
-                    invoice.paymentStatus === 'paid' ? '#30D158' : '#FFA500',
-                },
-              ]}
-            >
-              <Text style={styles.statusText}>
-                {invoice.paymentStatus.charAt(0).toUpperCase() +
-                  invoice.paymentStatus.slice(1)}
+
+        {/* Invoice Info Card */}
+        <View style={styles.invoiceCard}>
+          <View style={styles.invoiceHeader}>
+            <View>
+              <Text style={styles.invoiceNumber}>Invoice #{invoice.id.slice(0, 8)}</Text>
+              <Text style={styles.invoiceDate}>{format(invoice.createdAt, 'MMM dd, yyyy')}</Text>
+              {invoice.dueDate && (
+                <Text style={[styles.invoiceDate, { color: '#FF3B30', marginTop: 4 }]}>
+                  Due: {format(invoice.dueDate, 'MMM dd, yyyy')}
+                </Text>
+              )}
+            </View>
+            <View style={[styles.statusBadge, { backgroundColor: getPaymentStatusColor(invoice.paymentStatus) + '20' }]}>
+              <Text style={[styles.statusText, { color: getPaymentStatusColor(invoice.paymentStatus) }]}>
+                {invoice.paymentStatus.replace('_', ' ').toUpperCase()}
               </Text>
             </View>
           </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Date</Text>
-            <Text style={styles.infoValue}>
-              {format(invoice.createdAt, 'MMM dd, yyyy')}
-            </Text>
+
+          <View style={styles.invoiceAmount}>
+            <Text style={styles.amountLabel}>Total Amount</Text>
+            <Text style={styles.amountValue}>₦{invoice.total.toLocaleString()}</Text>
           </View>
-          {invoice.dueDate && (
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Due Date</Text>
-              <Text style={styles.infoValue}>
-                {format(invoice.dueDate, 'MMM dd, yyyy')}
-              </Text>
+
+          {(invoice.amountPaid || 0) > 0 && (
+            <View style={styles.paymentInfo}>
+              <Text style={styles.paidText}>Paid: ₦{(invoice.amountPaid || 0).toLocaleString()}</Text>
+              <Text style={styles.remainingText}>Remaining: ₦{Math.max(0, invoice.total - (invoice.amountPaid || 0)).toLocaleString()}</Text>
             </View>
           )}
         </View>
 
-        {/* Invoice Items */}
+        {/* Items Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Items</Text>
-          <View style={styles.itemsCard}>
+          <View style={styles.itemsSection}>
             {invoice.items.map((item, index) => (
               <View key={index} style={styles.itemRow}>
-                <View style={styles.itemDetails}>
-                  <Text style={styles.itemDescription}>{item.description}</Text>
-                  <Text style={styles.itemQuantity}>
-                    Qty: {item.quantity} × ₦{item.unitPrice.toLocaleString()}
-                  </Text>
+                <View style={styles.itemInfoContainer}>
+                  <View style={styles.itemInfo}>
+                    <Text style={styles.itemDescription}>{item.description}</Text>
+                    <Text style={styles.itemDetails}>
+                      {item.quantity} × ₦{item.unitPrice.toLocaleString()} = ₦{item.total.toLocaleString()}
+                    </Text>
+                  </View>
                 </View>
-                <Text style={styles.itemTotal}>
-                  ₦{item.total.toLocaleString()}
-                </Text>
               </View>
             ))}
           </View>
         </View>
 
-        {/* Invoice Summary */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Summary</Text>
-          <View style={styles.summaryCard}>
+        {/* Summary Section */}
+        <View style={styles.summarySection}>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Subtotal:</Text>
+            <Text style={styles.summaryValue}>
+              ₦{invoice.subtotal.toLocaleString()}
+            </Text>
+          </View>
+          {invoice.vat > 0 && (
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Subtotal</Text>
-              <Text style={styles.summaryValue}>
-                ₦{invoice.subtotal.toLocaleString()}
-              </Text>
+              <Text style={styles.summaryLabel}>VAT:</Text>
+              <Text style={styles.summaryValue}>₦{invoice.vat.toLocaleString()}</Text>
             </View>
+          )}
+          {invoice.discount > 0 && (
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>VAT</Text>
-              <Text style={styles.summaryValue}>
-                ₦{invoice.vat.toLocaleString()}
-              </Text>
+              <Text style={styles.summaryLabel}>Discount:</Text>
+              <Text style={styles.summaryValue}>-₦{invoice.discount.toLocaleString()}</Text>
             </View>
-            {invoice.discount > 0 && (
+          )}
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Total:</Text>
+            <Text style={styles.summaryValue}>
+              ₦{invoice.total.toLocaleString()}
+            </Text>
+          </View>
+          {(invoice.amountPaid || 0) > 0 && (
+            <>
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Discount</Text>
+                <Text style={styles.summaryLabel}>Amount Paid:</Text>
                 <Text style={styles.summaryValue}>
-                  -₦{invoice.discount.toLocaleString()}
+                  ₦{(invoice.amountPaid || 0).toLocaleString()}
                 </Text>
               </View>
-            )}
-            <View style={[styles.summaryRow, styles.totalRow]}>
-              <Text style={styles.totalLabel}>Total</Text>
-              <Text style={styles.totalValue}>
-                ₦{invoice.total.toLocaleString()}
-              </Text>
-            </View>
-          </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>
+                  {(invoice.total - (invoice.amountPaid || 0)) < 0 ? 'Overpayment:' : 'Balance Due:'}
+                </Text>
+                <Text style={[styles.summaryValue, (invoice.total - (invoice.amountPaid || 0)) < 0 ? { color: '#30D158' } : styles.balanceDue]}>
+                  ₦
+                  {Math.abs(invoice.total - (invoice.amountPaid || 0)).toLocaleString()}
+                </Text>
+              </View>
+            </>
+          )}
         </View>
 
         {/* Payment Button */}
-        {invoice.paymentStatus === 'pending' && (
-          <View style={styles.section}>
+        {invoice.paymentStatus !== 'paid' && (
+          <TouchableOpacity
+            style={styles.payButton}
+            onPress={() => setShowPaymentModal(true)}
+          >
+            <Text style={styles.payButtonText}>Pay Now</Text>
+          </TouchableOpacity>
+        )}
+
+      </ScrollView>
+
+      {/* Bank Details Modal */}
+      <Modal
+        visible={showPaymentModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowPaymentModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Bank Transfer</Text>
+              <TouchableOpacity onPress={() => setShowPaymentModal(false)}>
+                <Ionicons name="close" size={24} color="#000" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.bankDetailsContainer}>
+              <Text style={styles.bankLabel}>Account Name</Text>
+              <Text style={styles.bankValue}>ABM TEK Solutions</Text>
+
+              <Text style={styles.bankLabel}>Bank Name</Text>
+              <Text style={styles.bankValue}>Moniepoint MFB</Text>
+
+              <Text style={styles.bankLabel}>Account Number</Text>
+              <View style={styles.accountNumberContainer}>
+                <Text style={styles.accountNumber}>1234567890</Text>
+                <TouchableOpacity onPress={() => {
+                  // Copy logic could be here
+                  Alert.alert('Copied', 'Account number copied to clipboard');
+                }}>
+                  <Ionicons name="copy-outline" size={20} color="#000" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.instructionContainer}>
+                <Ionicons name="information-circle-outline" size={20} color="#666" />
+                <Text style={styles.instructionText}>
+                  Please use your Invoice #{invoice.id.slice(0, 8)} as the payment reference.
+                </Text>
+              </View>
+            </View>
+
             <TouchableOpacity
-              style={styles.payButton}
-              onPress={handlePayment}
-              disabled={processingPayment}
+              style={styles.doneButton}
+              onPress={() => setShowPaymentModal(false)}
             >
-              {processingPayment ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <>
-                  <Ionicons name="card-outline" size={20} color="#fff" />
-                  <Text style={styles.payButtonText}>Pay Now</Text>
-                </>
-              )}
+              <Text style={styles.doneButtonText}>I've made the transfer</Text>
             </TouchableOpacity>
           </View>
-        )}
-      </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -334,29 +398,57 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
   },
+  downloadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 8,
+    borderWidth: 1,
+    borderColor: '#eee',
+    borderRadius: 8,
+  },
+  downloadButtonText: {
+    marginRight: 8,
+    fontWeight: '600',
+    fontSize: 14,
+  },
   content: {
     flex: 1,
+    padding: 15,
   },
   section: {
-    padding: 20,
-    backgroundColor: '#fff',
-    marginBottom: 10,
+    marginBottom: 20,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 15,
   },
-  invoiceHeaderCard: {
+  invoiceCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  invoiceHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 15,
   },
   invoiceNumber: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontSize: 16,
+    fontWeight: '600',
     color: '#333',
+    marginBottom: 4,
+  },
+  invoiceDate: {
+    fontSize: 12,
+    color: '#666',
   },
   statusBadge: {
     paddingHorizontal: 12,
@@ -364,103 +456,188 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   statusText: {
-    color: '#fff',
     fontSize: 12,
     fontWeight: '600',
   },
-  infoRow: {
+  invoiceAmount: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    alignItems: 'center',
   },
-  infoLabel: {
+  amountLabel: {
     fontSize: 14,
     color: '#666',
   },
-  infoValue: {
-    fontSize: 14,
+  amountValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
     color: '#000',
-    fontWeight: '600',
   },
-  itemsCard: {
-    backgroundColor: '#f9f9f9',
+  paymentInfo: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  paidText: {
+    fontSize: 12,
+    color: '#30D158',
+    fontWeight: '500',
+  },
+  remainingText: {
+    fontSize: 12,
+    color: '#FF3B30',
+    fontWeight: '500',
+  },
+
+  // Item Styles
+  itemsSection: {
+    backgroundColor: '#fff',
     borderRadius: 12,
     padding: 15,
   },
   itemRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
+    marginBottom: 15,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
+    paddingBottom: 15,
   },
-  itemDetails: {
+  itemInfoContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  itemInfo: {
     flex: 1,
   },
   itemDescription: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#000',
     marginBottom: 4,
   },
-  itemQuantity: {
-    fontSize: 12,
+  itemDetails: {
+    fontSize: 14,
     color: '#666',
   },
-  itemTotal: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#007AFF',
-  },
-  summaryCard: {
-    backgroundColor: '#f9f9f9',
-    borderRadius: 12,
+
+  // Summary Styles
+  summarySection: {
+    backgroundColor: '#fff',
     padding: 15,
+    borderRadius: 12,
+    marginBottom: 20,
   },
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 10,
+    marginBottom: 10,
   },
   summaryLabel: {
     fontSize: 14,
     color: '#666',
   },
   summaryValue: {
-    fontSize: 14,
-    color: '#000',
+    fontSize: 16,
     fontWeight: '600',
+    color: '#000',
   },
-  totalRow: {
-    borderTopWidth: 2,
-    borderTopColor: '#007AFF',
-    marginTop: 10,
-    paddingTop: 15,
-  },
-  totalLabel: {
+  balanceDue: {
+    color: '#FF3B30',
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
   },
-  totalValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#007AFF',
-  },
+
+  // Pay Button
   payButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#007AFF',
+    backgroundColor: '#000',
     padding: 16,
     borderRadius: 12,
-    gap: 8,
+    alignItems: 'center',
+    marginBottom: 30,
   },
   payButtonText: {
     color: '#fff',
     fontSize: 16,
+    fontWeight: 'bold',
+  },
+
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    width: '100%',
+    maxWidth: 340,
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  bankDetailsContainer: {
+    marginBottom: 20,
+  },
+  bankLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 4,
+  },
+  bankValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000',
+    marginBottom: 15,
+  },
+  accountNumberContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 15,
+  },
+  accountNumber: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    letterSpacing: 2,
+  },
+  instructionContainer: {
+    flexDirection: 'row',
+    gap: 10,
+    backgroundColor: '#f0f9ff',
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'flex-start',
+  },
+  instructionText: {
+    fontSize: 12,
+    color: '#007AFF',
+    flex: 1,
+    lineHeight: 18,
+  },
+  doneButton: {
+    backgroundColor: '#000',
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  doneButtonText: {
+    color: '#fff',
     fontWeight: '600',
   },
   emptyState: {

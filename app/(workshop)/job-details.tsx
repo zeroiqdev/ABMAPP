@@ -15,8 +15,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
 import { notificationService } from '@/services/notificationService';
-import { Job, Vehicle, User, JobStatus } from '@/types';
+import { ChatMessage, Job, Vehicle, User, JobStatus } from '@/types';
 import { format } from 'date-fns';
+import JobChat from '@/components/JobChat';
+import { Colors } from '@/constants/design';
 
 export default function WorkshopJobDetailsScreen() {
   const router = useRouter();
@@ -42,6 +44,8 @@ export default function WorkshopJobDetailsScreen() {
   const [notes, setNotes] = useState('');
   const [selectedTechnician, setSelectedTechnician] = useState<string>('');
   const [showStatusModal, setShowStatusModal] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [chatVisible, setChatVisible] = useState(false);
 
   const getJobTypeLabel = (type: string) => {
     switch (type) {
@@ -49,16 +53,17 @@ export default function WorkshopJobDetailsScreen() {
       case 'repair': return 'Repair';
       case 'service_and_repair': return 'Service & Repair';
       case 'complaint': return 'Complaint';
+      case 'tow': return 'Tow Service';
       default: return type;
     }
   };
 
   const getTypeFromIssues = (issues: string[] | undefined) => {
     if (!issues || issues.length === 0) return 'Repair';
-    
+
     const hasServicing = issues.includes('Servicing');
     const hasOtherIssues = issues.some(issue => issue !== 'Servicing');
-    
+
     if (hasServicing && hasOtherIssues) {
       return 'Service & Repair';
     } else if (hasServicing) {
@@ -71,6 +76,11 @@ export default function WorkshopJobDetailsScreen() {
   useEffect(() => {
     if (isNew !== 'true' && id) {
       loadJobDetails();
+      // Subscribe to messages
+      const unsubscribe = firebaseService.subscribeToJobMessages(id, (msgs) => {
+        setMessages(msgs);
+      });
+      return () => unsubscribe();
     } else {
       setLoading(false);
     }
@@ -210,6 +220,7 @@ export default function WorkshopJobDetailsScreen() {
   const canUpdateStatus = ['admin', 'service_advisor'].includes(user?.role || '');
   const canAssignTechnician = ['admin', 'service_advisor'].includes(user?.role || '');
   const isTechnician = user?.role === 'technician';
+  const unreadCount = user ? messages.filter(m => !m.readBy.includes(user.id)).length : 0;
 
   return (
     <View style={styles.container}>
@@ -218,7 +229,14 @@ export default function WorkshopJobDetailsScreen() {
           <Ionicons name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Job Details</Text>
-        <View style={{ width: 24 }} />
+        <TouchableOpacity style={styles.chatButton} onPress={() => setChatVisible(true)}>
+          <Ionicons name="chatbubble-outline" size={24} color="#000" />
+          {unreadCount > 0 && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.content}>
@@ -257,9 +275,6 @@ export default function WorkshopJobDetailsScreen() {
                 <Text style={styles.metricValue}>{getTypeFromIssues(job.issues)}</Text>
               </View>
             </View>
-
-
-
           </View>
         )}
 
@@ -348,6 +363,16 @@ export default function WorkshopJobDetailsScreen() {
         )}
       </ScrollView>
 
+      {user && id && (
+        <JobChat
+          jobId={id}
+          currentUser={user}
+          visible={chatVisible}
+          onClose={() => setChatVisible(false)}
+          messages={messages}
+        />
+      )}
+
       <Modal visible={showStatusModal} transparent animationType="fade">
         <TouchableOpacity
           style={styles.modalOverlay}
@@ -419,6 +444,26 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 20,
+    fontWeight: 'bold',
+  },
+  chatButton: {
+    padding: 4,
+  },
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#FF3B30',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 10,
     fontWeight: 'bold',
   },
   content: {
@@ -652,4 +697,5 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 });
+
 

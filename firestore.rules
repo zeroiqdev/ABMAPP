@@ -24,7 +24,7 @@ service cloud.firestore {
     
     function getUserWorkshopId() {
       let userData = getUserData();
-      return userData != null ? userData.workshopId : null;
+      return (userData != null && userData.keys().hasAny(['workshopId'])) ? userData.workshopId : null;
     }
     
     match /users/{userId} {
@@ -33,11 +33,9 @@ service cloud.firestore {
       // 2. Staff reading users in their workshop
       // 3. User reading a document where email matches their auth email (for signup migration)
       // Note: Emails are stored in lowercase, so direct comparison works
-      allow read: if isAuthenticated() && (
-        request.auth.uid == userId || 
-        (isStaff() && getUserWorkshopId() == resource.data.workshopId) ||
-        (resource.data.email != null && resource.data.email == request.auth.token.email)
-      );
+      allow read: if resource == null || (isAuthenticated() && request.auth.uid == userId);
+      allow read: if resource != null && isStaff() && getUserWorkshopId() == resource.data.workshopId;
+      allow read: if resource != null && isAuthenticated() && resource.data.email != null && resource.data.email == request.auth.token.email;
       allow create: if isAuthenticated() && (request.auth.uid == userId || isStaff());
       allow update: if isAuthenticated() && (request.auth.uid == userId || isStaff());
       // Allow delete if user is deleting their own pre-created document during signup migration
@@ -90,14 +88,31 @@ service cloud.firestore {
     }
     
     match /jobs/{jobId} {
-      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || (isStaff() && resource.data.workshopId == getUserWorkshopId()));
+      allow read: if resource == null || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow read: if resource != null && isStaff() && resource.data.workshopId == getUserWorkshopId();
       allow create: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isStaff());
       allow update: if isStaff() && resource.data.workshopId == getUserWorkshopId();
+
+      match /messages/{messageId} {
+        allow read: if isAuthenticated() && (
+          get(/databases/$(database)/documents/jobs/$(jobId)).data.userId == request.auth.uid ||
+          (isStaff() && get(/databases/$(database)/documents/jobs/$(jobId)).data.workshopId == getUserWorkshopId())
+        );
+        allow create: if isAuthenticated() && (
+          get(/databases/$(database)/documents/jobs/$(jobId)).data.userId == request.auth.uid ||
+          (isStaff() && get(/databases/$(database)/documents/jobs/$(jobId)).data.workshopId == getUserWorkshopId())
+        );
+        allow update: if isAuthenticated() && (
+          get(/databases/$(database)/documents/jobs/$(jobId)).data.userId == request.auth.uid ||
+          (isStaff() && get(/databases/$(database)/documents/jobs/$(jobId)).data.workshopId == getUserWorkshopId())
+        );
+      }
     }
     
     match /invoices/{invoiceId} {
-      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || (isStaff() && resource.data.workshopId == getUserWorkshopId()));
-      allow create: if isStaff() && request.resource.data.workshopId == getUserWorkshopId();
+      allow read: if resource == null || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow read: if resource != null && isStaff() && resource.data.workshopId == getUserWorkshopId();
+      allow create: if (isStaff() && request.resource.data.workshopId == getUserWorkshopId()) || (isAuthenticated() && request.resource.data.userId == request.auth.uid);
       allow update: if isStaff() && resource.data.workshopId == getUserWorkshopId();
     }
     
@@ -125,9 +140,9 @@ service cloud.firestore {
     }
     
     match /notifications/{notificationId} {
-      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isStaff());
       allow create: if isAuthenticated();
-      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isStaff());
     }
 
     match /config/{document} {

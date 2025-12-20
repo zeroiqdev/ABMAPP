@@ -89,7 +89,7 @@ export default function OrdersScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => router.push('/(customer)/home')}>
           <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>My Orders</Text>
@@ -214,4 +214,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
+
 
