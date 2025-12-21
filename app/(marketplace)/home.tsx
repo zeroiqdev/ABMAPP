@@ -183,17 +183,6 @@ export default function MarketplaceHomeScreen() {
           }
           columnWrapperStyle={styles.columnWrapper}
           showsVerticalScrollIndicator={false}
-          ListHeaderComponent={
-            <View style={styles.promoBanner}>
-              <View style={styles.promoContent}>
-                <Text style={styles.promoTitle}>New Arrivals</Text>
-                <Text style={styles.promoSubtitle}>Discover top quality parts</Text>
-              </View>
-              <View style={styles.promoImagePlaceholder}>
-                <Ionicons name="car-sport-outline" size={60} color="#eee" />
-              </View>
-            </View>
-          }
           ListEmptyComponent={
             !loading ? (
               <View style={styles.emptyState}>

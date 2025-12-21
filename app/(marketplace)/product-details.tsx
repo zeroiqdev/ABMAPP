@@ -10,12 +10,14 @@ import {
   Alert,
   Dimensions,
   Platform,
+  Animated,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { firebaseService } from '@/services/firebaseService';
 import { MarketplaceProduct } from '@/types';
 import { useAuthStore } from '@/store/authStore';
+import { useCartStore } from '@/store/cartStore';
 
 const { width } = Dimensions.get('window');
 
@@ -23,10 +25,13 @@ export default function ProductDetailsScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuthStore();
+  const addItem = useCartStore((state) => state.addItem);
   const [product, setProduct] = useState<MarketplaceProduct | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [loading, setLoading] = useState(true);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [showToast, setShowToast] = useState(false);
+  const toastOpacity = useState(new Animated.Value(0))[0];
 
   useEffect(() => {
     loadProduct();
@@ -49,6 +54,25 @@ export default function ProductDetailsScreen() {
     }
   };
 
+  const showToastNotification = () => {
+    setShowToast(true);
+    Animated.sequence([
+      Animated.timing(toastOpacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.delay(2000),
+      Animated.timing(toastOpacity, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setShowToast(false);
+    });
+  };
+
   const handleAddToCart = () => {
     if (!product) return;
 
@@ -57,16 +81,11 @@ export default function ProductDetailsScreen() {
       return;
     }
 
-    Alert.alert('Success', 'Product added to cart', [
-      {
-        text: 'Continue Shopping',
-        onPress: () => router.back(),
-      },
-      {
-        text: 'View Cart',
-        onPress: () => router.push('/(marketplace)/cart'),
-      },
-    ]);
+    // Add to cart store
+    addItem(product, quantity);
+    
+    // Show toast notification
+    showToastNotification();
   };
 
   if (loading) {
@@ -227,6 +246,29 @@ export default function ProductDetailsScreen() {
           <Text style={styles.addToCartText}>Add to Cart</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Toast Notification */}
+      {showToast && (
+        <Animated.View
+          style={[
+            styles.toast,
+            {
+              opacity: toastOpacity,
+              transform: [
+                {
+                  translateY: toastOpacity.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [-50, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          <Ionicons name="checkmark-circle" size={24} color="#fff" />
+          <Text style={styles.toastText}>Added to cart</Text>
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -469,5 +511,29 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     color: '#999',
+  },
+  toast: {
+    position: 'absolute',
+    top: 100,
+    left: 20,
+    right: 20,
+    backgroundColor: '#000',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 10,
+    zIndex: 1000,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  toastText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

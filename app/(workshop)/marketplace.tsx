@@ -179,19 +179,6 @@ export default function MarketplaceScreen() {
           }
           columnWrapperStyle={styles.columnWrapper}
           showsVerticalScrollIndicator={false}
-          ListHeaderComponent={
-            <View style={styles.promoBanner}>
-              <View style={styles.promoContent}>
-                <Text style={styles.promoTitle}>New Arrivals</Text>
-                <Text style={styles.promoSubtitle}>Summer Collection</Text>
-                {/* Reusing text from design sample, though 'Summer Collection' 
-                     might be weird for auto parts. Let's adapt it.*/}
-              </View>
-              <View style={styles.promoImagePlaceholder}>
-                <Ionicons name="car-sport-outline" size={60} color="#eee" />
-              </View>
-            </View>
-          }
           ListEmptyComponent={
             !loading ? (
               <View style={styles.emptyState}>

@@ -568,8 +568,22 @@ export const firebaseService = {
     })) as Order[];
 
     if (vendorId) {
+      // Filter orders to only include those with products from this vendor
+      const vendorProductIds = new Set<string>();
+      
+      // Get all products for this vendor
+      const vendorProductsQuery = query(
+        collection(db, 'marketplaceProducts'),
+        where('vendorId', '==', vendorId)
+      );
+      const vendorProductsSnapshot = await getDocs(vendorProductsQuery);
+      vendorProductsSnapshot.docs.forEach((doc) => {
+        vendorProductIds.add(doc.id);
+      });
+
+      // Filter orders to only include those with at least one product from this vendor
       orders = orders.filter((order) =>
-        order.products.some(() => true)
+        order.products.some((item) => vendorProductIds.has(item.productId))
       );
     }
 

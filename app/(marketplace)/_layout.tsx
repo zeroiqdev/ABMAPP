@@ -38,6 +38,15 @@ export default function MarketplaceLayout() {
         }}
       />
       <Tabs.Screen
+        name="orders"
+        options={{
+          title: 'Orders',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="receipt-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{
           title: 'Settings',
@@ -51,7 +60,6 @@ export default function MarketplaceLayout() {
       <Tabs.Screen name="product-details" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="cart" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="checkout" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="orders" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="vendor-dashboard" options={{ href: null }} />
     </Tabs>
   );

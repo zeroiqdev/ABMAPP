@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
     View,
     Text,
@@ -10,50 +10,33 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { MarketplaceProduct } from '@/types';
-
-interface CartItem {
-    product: MarketplaceProduct;
-    quantity: number;
-}
+import { useCartStore, CartItem } from '@/store/cartStore';
 
 export default function CartScreen() {
     const router = useRouter();
-    const [cartItems, setCartItems] = useState<CartItem[]>([]); // In real app, this would come from a store
+    const cartItems = useCartStore((state) => state.items);
+    const updateQuantity = useCartStore((state) => state.updateQuantity);
+    const removeItem = useCartStore((state) => state.removeItem);
+    const getTotal = useCartStore((state) => state.getTotal);
 
-    const updateQuantity = (productId: string, newQuantity: number) => {
-        if (newQuantity <= 0) {
-            removeItem(productId);
-            return;
-        }
-        setCartItems((items) =>
-            items.map((item) =>
-                item.product.id === productId
-                    ? { ...item, quantity: newQuantity }
-                    : item
-            )
-        );
+    const handleUpdateQuantity = (productId: string, newQuantity: number) => {
+        updateQuantity(productId, newQuantity);
     };
 
-    const removeItem = (productId: string) => {
+    const handleRemoveItem = (productId: string) => {
         Alert.alert('Remove Item', 'Are you sure you want to remove this item?', [
             { text: 'Cancel', style: 'cancel' },
             {
                 text: 'Remove',
                 style: 'destructive',
                 onPress: () => {
-                    setCartItems((items) =>
-                        items.filter((item) => item.product.id !== productId)
-                    );
+                    removeItem(productId);
                 },
             },
         ]);
     };
 
-    const subtotal = cartItems.reduce(
-        (sum, item) => sum + item.product.price * item.quantity,
-        0
-    );
+    const subtotal = getTotal();
     const shipping: number = 0; // Free shipping or calculate based on location
     const total = subtotal + shipping;
 
@@ -75,14 +58,14 @@ export default function CartScreen() {
                 <View style={styles.quantityControls}>
                     <TouchableOpacity
                         style={styles.quantityButton}
-                        onPress={() => updateQuantity(item.product.id, item.quantity - 1)}
+                        onPress={() => handleUpdateQuantity(item.product.id, item.quantity - 1)}
                     >
                         <Ionicons name="remove" size={16} color="#007AFF" />
                     </TouchableOpacity>
                     <Text style={styles.quantityText}>{item.quantity}</Text>
                     <TouchableOpacity
                         style={styles.quantityButton}
-                        onPress={() => updateQuantity(item.product.id, item.quantity + 1)}
+                        onPress={() => handleUpdateQuantity(item.product.id, item.quantity + 1)}
                     >
                         <Ionicons name="add" size={16} color="#007AFF" />
                     </TouchableOpacity>
@@ -93,7 +76,7 @@ export default function CartScreen() {
                     ₦{(item.product.price * item.quantity).toLocaleString()}
                 </Text>
                 <TouchableOpacity
-                    onPress={() => removeItem(item.product.id)}
+                    onPress={() => handleRemoveItem(item.product.id)}
                     style={styles.removeButton}
                 >
                     <Ionicons name="trash-outline" size={20} color="#FF3B30" />

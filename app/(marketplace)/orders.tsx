@@ -6,6 +6,7 @@ import {
   FlatList,
   TouchableOpacity,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,6 +22,7 @@ export default function OrdersScreen() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const isVendor = user?.role === 'vendor';
 
   useEffect(() => {
     loadOrders();
@@ -29,7 +31,9 @@ export default function OrdersScreen() {
   const loadOrders = async () => {
     if (!user) return;
     try {
-      const userOrders = await firebaseService.getOrders(user.id);
+      const userOrders = isVendor
+        ? await firebaseService.getOrders(undefined, user.id)
+        : await firebaseService.getOrders(user.id);
       setOrders(userOrders);
     } catch (error) {
       console.error('Error loading orders:', error);
@@ -59,8 +63,50 @@ export default function OrdersScreen() {
     }
   };
 
+  const handleStatusUpdate = async (orderId: string, newStatus: Order['status']) => {
+    try {
+      await firebaseService.updateOrder(orderId, { status: newStatus });
+      await loadOrders();
+      Alert.alert('Success', 'Order status updated successfully');
+    } catch (error) {
+      console.error('Error updating order status:', error);
+      Alert.alert('Error', 'Failed to update order status');
+    }
+  };
+
+  const showStatusOptions = (order: Order) => {
+    const statusOptions: { label: string; value: Order['status'] }[] = [];
+    
+    if (order.status === 'pending') {
+      statusOptions.push({ label: 'Confirm Order', value: 'confirmed' });
+      statusOptions.push({ label: 'Cancel Order', value: 'cancelled' });
+    } else if (order.status === 'confirmed') {
+      statusOptions.push({ label: 'Mark as Shipped', value: 'shipped' });
+      statusOptions.push({ label: 'Cancel Order', value: 'cancelled' });
+    } else if (order.status === 'shipped') {
+      statusOptions.push({ label: 'Mark as Delivered', value: 'delivered' });
+    }
+
+    if (statusOptions.length === 0) return;
+
+    Alert.alert(
+      'Update Order Status',
+      'Select new status:',
+      [
+        ...statusOptions.map((option) => ({
+          text: option.label,
+          onPress: () => handleStatusUpdate(order.id, option.value),
+        })),
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
+
   const renderOrder = ({ item }: { item: Order }) => (
-    <TouchableOpacity style={styles.orderCard}>
+    <TouchableOpacity 
+      style={styles.orderCard}
+      onPress={isVendor ? () => showStatusOptions(item) : undefined}
+    >
       <View style={styles.orderHeader}>
         <View>
           <Text style={styles.orderId}>Order #{item.id.slice(0, 8)}</Text>
@@ -78,10 +124,31 @@ export default function OrdersScreen() {
         <Text style={styles.itemsCount}>
           {item.products.length} item{item.products.length !== 1 ? 's' : ''}
         </Text>
+        {item.products.map((product, index) => (
+          <Text key={index} style={styles.productName}>
+            • {product.productName} (x{product.quantity})
+          </Text>
+        ))}
       </View>
+      {item.shippingAddress && (
+        <View style={styles.shippingInfo}>
+          <Text style={styles.shippingLabel}>Shipping Address:</Text>
+          <Text style={styles.shippingText}>{item.shippingAddress}</Text>
+        </View>
+      )}
       <View style={styles.orderFooter}>
-        <Text style={styles.orderTotal}>${item.total.toFixed(2)}</Text>
-        <Ionicons name="chevron-forward" size={20} color={Colors.textTertiary} />
+        <Text style={styles.orderTotal}>₦{item.total.toLocaleString()}</Text>
+        {isVendor && (
+          <TouchableOpacity
+            style={styles.updateButton}
+            onPress={() => showStatusOptions(item)}
+          >
+            <Text style={styles.updateButtonText}>Update Status</Text>
+          </TouchableOpacity>
+        )}
+        {!isVendor && (
+          <Ionicons name="chevron-forward" size={20} color={Colors.textTertiary} />
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -89,10 +156,8 @@ export default function OrdersScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.push('/(customer)/home')}>
-          <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>My Orders</Text>
+        <View style={{ width: 24 }} />
+        <Text style={styles.headerTitle}>{isVendor ? 'Orders' : 'My Orders'}</Text>
         <View style={{ width: 24 }} />
       </View>
 
@@ -111,7 +176,11 @@ export default function OrdersScreen() {
             <View style={styles.emptyState}>
               <Ionicons name="bag-outline" size={64} color={Colors.textTertiary} />
               <Text style={styles.emptyText}>No orders yet</Text>
-              <Text style={styles.emptySubtext}>Your marketplace orders will appear here</Text>
+              <Text style={styles.emptySubtext}>
+                {isVendor 
+                  ? 'Orders for your products will appear here'
+                  : 'Your marketplace orders will appear here'}
+              </Text>
             </View>
           }
         />
@@ -181,6 +250,29 @@ const styles = StyleSheet.create({
   itemsCount: {
     fontSize: Typography.fontSize.sm,
     color: Colors.textSecondary,
+    marginBottom: Spacing.xs,
+  },
+  productName: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textSecondary,
+    marginTop: Spacing.xs,
+  },
+  shippingInfo: {
+    marginTop: Spacing.md,
+    marginBottom: Spacing.md,
+    paddingTop: Spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  shippingLabel: {
+    fontSize: Typography.fontSize.xs,
+    fontWeight: Typography.fontWeight.semibold,
+    color: Colors.textSecondary,
+    marginBottom: Spacing.xs,
+  },
+  shippingText: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textPrimary,
   },
   orderFooter: {
     flexDirection: 'row',
@@ -194,6 +286,17 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.lg,
     fontWeight: Typography.fontWeight.bold,
     color: Colors.primary,
+  },
+  updateButton: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.sm,
+  },
+  updateButtonText: {
+    color: '#fff',
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.semibold,
   },
   emptyState: {
     flex: 1,
@@ -214,5 +317,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
+
 
 
