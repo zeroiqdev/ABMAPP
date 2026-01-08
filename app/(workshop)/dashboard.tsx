@@ -12,6 +12,7 @@ import {
   StatusBar,
   Image,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,8 +20,12 @@ import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
 import { User, Vehicle, Job, Invoice } from '@/types';
 import { BrandLogo } from '@/components/BrandLogo';
+import { MonthPickerModal } from '@/components/MonthPickerModal';
 import { format, subMonths, addMonths, startOfMonth, endOfMonth, isWithinInterval, startOfWeek, endOfWeek, differenceInMonths, sub } from 'date-fns';
 import { Colors, Typography, Spacing, BorderRadius, Shadows, StatusColors } from '@/constants/design';
+import { AppConfig } from '@/constants/config';
+
+
 
 const { width } = Dimensions.get('window');
 const CARD_SPACING = 16; // Changed from 15
@@ -200,7 +205,7 @@ export default function WorkshopDashboard() {
 
       // ... recent jobs logic same ...
       let filteredRecentJobs: Job[] = [];
-      if (user.role === 'admin') {
+      if (user.role === 'admin' || user.role === 'super_admin') {
         filteredRecentJobs = safeJobs
           .sort((a, b) => (getJobDate(b.createdAt).getTime() || 0) - (getJobDate(a.createdAt).getTime() || 0))
           .slice(0, 5);
@@ -274,7 +279,8 @@ export default function WorkshopDashboard() {
 function getRoleDashboard({ user, stats, recentJobs, recentJobVehicles, onOpenMonthPicker }: { user: any, stats: any, recentJobs: Job[], recentJobVehicles: Record<string, any>, onOpenMonthPicker: () => void }) {
   switch (user?.role) {
     case 'admin':
-      return <AdminDashboard stats={stats} recentJobs={recentJobs} recentJobVehicles={recentJobVehicles} onOpenMonthPicker={onOpenMonthPicker} />;
+    case 'super_admin':
+      return <AdminDashboard user={user} stats={stats} recentJobs={recentJobs} recentJobVehicles={recentJobVehicles} onOpenMonthPicker={onOpenMonthPicker} />;
     case 'technician':
       return <TechnicianDashboard stats={stats} recentJobs={recentJobs} recentJobVehicles={recentJobVehicles} onOpenMonthPicker={onOpenMonthPicker} />;
     default:
@@ -360,11 +366,11 @@ function TechnicianDashboard({ stats, recentJobs, recentJobVehicles, onOpenMonth
 function WeeklyMetricsCard({ assigned, completed, onPressIcon }: { assigned: number, completed: number, onPressIcon?: () => void }) {
   return (
     <View style={styles.blackCard}>
-      <View style={styles.metricHeader}>
+      <View style={[styles.metricHeader, { alignItems: 'center' }]}>
         <Text style={styles.metricTitle}>Weekly Overview</Text>
         {onPressIcon && (
-          <TouchableOpacity onPress={onPressIcon} style={styles.metricIconCircle}>
-            <Ionicons name="calendar-outline" size={16} color={Colors.textPrimary} />
+          <TouchableOpacity onPress={onPressIcon} style={[styles.metricIconCircle, { backgroundColor: '#000' }]}>
+            <Ionicons name="calendar-outline" size={16} color="#fff" />
           </TouchableOpacity>
         )}
       </View>
@@ -388,11 +394,13 @@ function WeeklyMetricsCard({ assigned, completed, onPressIcon }: { assigned: num
 }
 
 function AdminDashboard({
+  user,
   stats,
   recentJobs,
   recentJobVehicles,
   onOpenMonthPicker,
 }: {
+  user: any;
   stats: any;
   recentJobs: Job[];
   recentJobVehicles: Record<string, any>;
@@ -472,6 +480,43 @@ function AdminDashboard({
           ))}
         </View>
       </View>
+
+      {user?.workshopId === AppConfig.MASTER_WORKSHOP_ID && (
+        <View style={{ paddingHorizontal: SIDE_PADDING, marginBottom: 20 }}>
+          <TouchableOpacity
+            style={{
+              backgroundColor: '#000',
+              padding: 20,
+              borderRadius: 20,
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+            onPress={() => router.push('/(workshop)/marketplace-orders')}
+          >
+            <View>
+              <Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold' }}>
+                Marketplace Orders
+              </Text>
+              <Text style={{ color: '#ccc', fontSize: 14, marginTop: 4 }}>
+                Manage & Process Payouts
+              </Text>
+            </View>
+            <View
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: '#333',
+                justifyContent: 'center',
+                alignItems: 'center',
+              }}
+            >
+              <Ionicons name="cube-outline" size={24} color="#fff" />
+            </View>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <View style={styles.recentSectionContainer}>
         <View style={styles.sectionHeader}>
@@ -687,9 +732,12 @@ function RecentJobItem({ job, vehicle }: { job: Job, vehicle?: any }) {
       onPress={() => router.push(`/(workshop)/job-details?id=${job.id}`)}
     >
       {/* Icon/Logo Column */}
-      <View style={[styles.iconBox, { backgroundColor: vehicle ? 'transparent' : getStatusColor(job.status), marginRight: 15 }]}>
+      {/* Icon/Logo Column */}
+      <View style={[styles.iconBox, { backgroundColor: (vehicle || job.vehicleId) ? 'transparent' : getStatusColor(job.status), marginRight: 15 }]}>
         {vehicle ? (
           <BrandLogo brand={vehicle.make} size={30} />
+        ) : job.vehicleId ? (
+          <ActivityIndicator color={Colors.textPrimary} size="small" />
         ) : (
           <Ionicons name={getStatusIcon(job.status)} size={24} color="#fff" />
         )}
@@ -713,121 +761,7 @@ function RecentJobItem({ job, vehicle }: { job: Job, vehicle?: any }) {
   );
 }
 
-const MonthPickerModal = ({
-  visible,
-  dateRange,
-  onRangeChange,
-  onClose
-}: {
-  visible: boolean;
-  dateRange: { start: Date; end: Date };
-  onRangeChange: (range: { start: Date; end: Date }) => void;
-  onClose: () => void;
-}) => {
-  const [mode, setMode] = useState<'single' | 'range'>('single');
-  const [tempRange, setTempRange] = useState(dateRange);
 
-  useEffect(() => {
-    if (visible) {
-      setTempRange(dateRange);
-      // Infer mode. If start and end are same month, probably single.
-      // But user might want range Jan-Jan explicitly? No, that's single.
-      if (format(dateRange.start, 'MMM yyyy') === format(dateRange.end, 'MMM yyyy')) {
-        setMode('single');
-      } else {
-        setMode('range');
-      }
-    }
-  }, [visible, dateRange]);
-
-  const handleMonthChange = (direction: 'prev' | 'next', type: 'start' | 'end' | 'single') => {
-    setTempRange(prev => {
-      let baseDate = type === 'end' ? prev.end : prev.start; // for 'single' use start
-      if (type === 'single') baseDate = prev.start;
-
-      const newDate = direction === 'prev' ? subMonths(baseDate, 1) : addMonths(baseDate, 1);
-
-      if (type === 'single') {
-        return { start: newDate, end: newDate };
-      } else if (type === 'start') {
-        // Enforce start <= end
-        const newStart = newDate > prev.end ? prev.end : newDate;
-        return { ...prev, start: newStart };
-      } else {
-        // Enforce end >= start
-        const newEnd = newDate < prev.start ? prev.start : newDate;
-        return { ...prev, end: newEnd };
-      }
-    });
-  };
-
-  const handleApply = () => {
-    onRangeChange(tempRange);
-    onClose();
-  };
-
-  const MonthSelector = ({ label, date, type }: { label?: string, date: Date, type: 'start' | 'end' | 'single' }) => (
-    <View style={styles.monthSelectorRow}>
-      {label && <Text style={styles.monthSelectorLabel}>{label}</Text>}
-      <View style={styles.monthPickerHeader}>
-        <TouchableOpacity onPress={() => handleMonthChange('prev', type)} style={styles.monthPickerNavButton}>
-          <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
-        <Text style={styles.monthPickerTitle}>{format(date, 'MMMM yyyy')}</Text>
-        <TouchableOpacity onPress={() => handleMonthChange('next', type)} style={styles.monthPickerNavButton}>
-          <Ionicons name="chevron-forward" size={24} color={Colors.textPrimary} />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-
-  return (
-    <Modal
-      animationType="fade"
-      transparent={true}
-      visible={visible}
-      onRequestClose={onClose}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.monthPickerContainer}>
-          <View style={styles.toggleContainer}>
-            <TouchableOpacity
-              style={[styles.toggleButton, mode === 'single' && styles.toggleButtonActive]}
-              onPress={() => {
-                setMode('single');
-                setTempRange({ start: tempRange.start, end: tempRange.start });
-              }}
-            >
-              <Text style={[styles.toggleText, mode === 'single' && styles.toggleTextActive]}>Single Month</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.toggleButton, mode === 'range' && styles.toggleButtonActive]}
-              onPress={() => setMode('range')}
-            >
-              <Text style={[styles.toggleText, mode === 'range' && styles.toggleTextActive]}>Period</Text>
-            </TouchableOpacity>
-          </View>
-
-          {mode === 'single' ? (
-            <MonthSelector date={tempRange.start} type="single" />
-          ) : (
-            <View style={{ width: '100%' }}>
-              <MonthSelector label="From" date={tempRange.start} type="start" />
-              <MonthSelector label="To" date={tempRange.end} type="end" />
-            </View>
-          )}
-
-          <TouchableOpacity style={styles.monthPickerSelectButton} onPress={handleApply}>
-            <Text style={styles.monthPickerSelectButtonText}>Apply Filter</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.monthPickerCancelButton} onPress={onClose}>
-            <Text style={styles.monthPickerCancelButtonText}>Cancel</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
-  );
-};
 
 const styles = StyleSheet.create({
   container: {
@@ -1086,34 +1020,10 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 5,
   },
-  monthPickerHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    width: '100%',
-    marginBottom: 20,
-  },
-  monthPickerNavButton: {
-    padding: 10,
-  },
   monthPickerTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#000',
-  },
-  monthPickerSelectButton: {
-    backgroundColor: '#000',
-    paddingVertical: 12,
-    paddingHorizontal: 30,
-    borderRadius: 25,
-    marginTop: 10,
-    width: '100%',
-    alignItems: 'center',
-  },
-  monthPickerSelectButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
   },
   monthPickerCancelButton: {
     paddingVertical: 12,
@@ -1123,48 +1033,7 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 16,
   },
-  toggleContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#f0f0f0',
-    borderRadius: 25,
-    padding: 4,
-    marginBottom: 20,
-    width: '100%',
-  },
-  toggleButton: {
-    flex: 1,
-    paddingVertical: 8,
-    alignItems: 'center',
-    borderRadius: 20,
-  },
-  toggleButtonActive: {
-    backgroundColor: '#fff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  toggleText: {
-    fontSize: 14,
-    color: '#666',
-    fontWeight: '500',
-  },
-  toggleTextActive: {
-    color: '#000',
-    fontWeight: '600',
-  },
-  monthSelectorRow: {
-    width: '100%',
-    marginBottom: 10,
-  },
-  monthSelectorLabel: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    marginBottom: 4,
-    fontWeight: '600',
-    marginLeft: 10,
-  },
+
 
   statusText: {
     fontSize: 12,

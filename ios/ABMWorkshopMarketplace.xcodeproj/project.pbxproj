@@ -295,11 +295,13 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = org.name.ABMWorkshopMarketplace;
-				PRODUCT_NAME = ABMWorkshopMarketplace;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.abmtek.abmapp";
+				PRODUCT_NAME = "ABMWorkshopMarketplace";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";
+				TARGETED_DEVICE_FAMILY = "1,2";
+				CODE_SIGN_ENTITLEMENTS = ABMWorkshopMarketplace/ABMWorkshopMarketplace.entitlements;
 			};
 			name = Debug;
 		};
@@ -319,10 +321,12 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = org.name.ABMWorkshopMarketplace;
-				PRODUCT_NAME = ABMWorkshopMarketplace;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.abmtek.abmapp";
+				PRODUCT_NAME = "ABMWorkshopMarketplace";
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";
+				TARGETED_DEVICE_FAMILY = "1,2";
+				CODE_SIGN_ENTITLEMENTS = ABMWorkshopMarketplace/ABMWorkshopMarketplace.entitlements;
 			};
 			name = Release;
 		};

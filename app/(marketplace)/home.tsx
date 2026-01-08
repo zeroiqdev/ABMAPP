@@ -117,6 +117,9 @@ export default function MarketplaceHomeScreen() {
   );
 
   if (user?.role === 'vendor') {
+    if (user.vendorStatus === 'pending_details' || user.vendorStatus === 'rejected' || user.vendorStatus === 'pending_approval') {
+      return <View style={{ flex: 1, backgroundColor: '#fff' }} />;
+    }
     return <VendorHome />;
   }
 

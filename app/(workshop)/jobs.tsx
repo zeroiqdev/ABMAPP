@@ -183,8 +183,10 @@ function JobCard({ job }: { job: Job }) {
       style={styles.itemCard}
       onPress={handlePress}
     >
-      <View style={[styles.iconBox, { backgroundColor: vehicle ? 'transparent' : getStatusColor(job.status) }]}>
-        {vehicle ? (
+      <View style={[styles.iconBox, { backgroundColor: (vehicle || loading) ? 'transparent' : getStatusColor(job.status) }]}>
+        {loading && job.vehicleId ? (
+          <ActivityIndicator color="#000" size="small" />
+        ) : vehicle ? (
           <BrandLogo brand={vehicle.make} size={30} />
         ) : (
           <Ionicons name="car-sport-outline" size={24} color="#fff" />

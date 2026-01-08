@@ -10,23 +10,54 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
 
 export default function SignupScreen() {
+  const router = useRouter();
+  const params = useLocalSearchParams();
+  const initialEmail = params.email as string;
+
   const [email, setEmail] = useState('');
   const [registrationCode, setRegistrationCode] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const { registerCustomerAccount, loading, user } = useAuthStore();
-  const router = useRouter();
+  const { registerCustomerAccount, acceptStaffInvite, loading, user } = useAuthStore();
+
+  useEffect(() => {
+    if (initialEmail) {
+      setEmail(initialEmail);
+    }
+  }, [initialEmail]);
 
   useEffect(() => {
     if (user) {
+      console.log('[Signup] User created:', user.email, 'Role:', user.role, 'VendorStatus:', user.vendorStatus);
+
+      const workshopRoles = ['admin', 'technician', 'storekeeper', 'accountant', 'service_advisor'];
+
+      // CRITICAL: If role is vendor, go directly to registration form - never customer app, never home screen
+      if (user.role === 'vendor') {
+        // All vendors (invited or otherwise) go to registration form first
+        // Only approved vendors (active status) should see home screen, but that's handled by marketplace layout
+        router.replace('/(marketplace)/vendor-registration');
+        return;
+      }
+
+      // Also check vendorStatus as a fallback (in case role isn't set correctly)
+      if (user.vendorStatus) {
+        // This is a vendor - redirect to registration form, never customer app
+        router.replace('/(marketplace)/vendor-registration');
+        return;
+      }
+
       if (user.role === 'customer') {
         router.replace('/(customer)/home');
-      } else if (user.role === 'vendor') {
-        router.replace('/(marketplace)/home');
+      } else if (workshopRoles.includes(user.role)) {
+        router.replace('/(workshop)/dashboard');
+      } else {
+        // Fallback
+        router.replace('/(auth)/login');
       }
     }
   }, [user, router]);
@@ -143,6 +174,13 @@ export default function SignupScreen() {
                 <Text style={styles.loginLink}>Sign In</Text>
               </TouchableOpacity>
             </View>
+
+            <TouchableOpacity
+              style={styles.staffLinkContainer}
+              onPress={() => router.push('/(auth)/staff-invite')}
+            >
+              <Text style={styles.staffLinkText}>Are you a Vendor or Staff? Register here</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
@@ -214,6 +252,17 @@ const styles = StyleSheet.create({
     color: '#000',
     fontSize: 14,
     fontWeight: '600',
+  },
+  staffLinkContainer: {
+    marginTop: 20,
+    alignItems: 'center',
+    padding: 10,
+  },
+  staffLinkText: {
+    color: '#000',
+    fontSize: 14,
+    fontWeight: '500',
+    textDecorationLine: 'underline',
   },
 });
 

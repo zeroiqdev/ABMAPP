@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,10 +12,28 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '@/config/firebase';
 
 export default function WorkshopSettingsScreen() {
   const router = useRouter();
   const { user, logout } = useAuthStore();
+
+  const [permissions, setPermissions] = useState<any>(null);
+
+  useEffect(() => {
+    const fetchPermissions = async () => {
+      if (user?.workshopId && user?.role && user.role !== 'admin' && user.role !== 'super_admin') {
+        try {
+          const allPerms = await firebaseService.getWorkshopPermissions(user.workshopId);
+          setPermissions(allPerms[user.role] || {});
+        } catch (error) {
+          console.error(error);
+        }
+      }
+    };
+    fetchPermissions();
+  }, [user]);
 
   const handleLogout = async () => {
     Alert.alert(
@@ -99,8 +117,29 @@ export default function WorkshopSettingsScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Super Admin Access */}
+        {user?.role === 'super_admin' && (
+          <View style={[styles.section, { marginTop: 40 }]}>
+            <Text style={styles.sectionTitle}>Administration</Text>
+
+            <TouchableOpacity
+              style={styles.settingRow}
+              onPress={() => router.push('/(super-admin)/dashboard')}
+            >
+              <View style={styles.iconContainer}>
+                <Ionicons name="settings" size={22} color="#000" />
+              </View>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Manage Workshops</Text>
+                <Text style={styles.settingDesc}>Manage workshops and subscriptions</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Workshop Settings - Admin Only */}
-        {(user?.role === 'admin' || user?.role === 'service_advisor') && (
+        {(user?.role === 'admin' || user?.role === 'super_admin' || permissions?.canManageSettings) && (
           <View style={[styles.section, { marginTop: 40 }]}>
             <Text style={styles.sectionTitle}>Team & Access</Text>
 

@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
 
+
 export default function ProfileScreen() {
   const { user, logout } = useAuthStore();
   const router = useRouter();
@@ -47,7 +48,8 @@ export default function ProfileScreen() {
         onPress: async () => {
           try {
             await logout();
-            router.replace('/(auth)/login');
+            await logout();
+            router.replace('/');
           } catch (error: any) {
             Alert.alert('Error', error.message);
           }
@@ -64,15 +66,6 @@ export default function ProfileScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Profile</Text>
-        {editing ? (
-          <TouchableOpacity onPress={handleSave}>
-            <Text style={styles.saveButton}>Save</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity onPress={() => setEditing(true)}>
-            <Ionicons name="create-outline" size={24} color="#007AFF" />
-          </TouchableOpacity>
-        )}
       </View>
 
       <ScrollView
@@ -132,6 +125,39 @@ export default function ProfileScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Settings</Text>
           <View style={styles.settingsCard}>
+            {user?.connectedWorkshopIds && user.connectedWorkshopIds.length > 1 && (
+              <TouchableOpacity
+                style={styles.settingRow}
+                onPress={() => {
+                  Alert.alert(
+                    'Switch Workshop',
+                    'Select a workshop to switch to',
+                    user.connectedWorkshopIds!.map(id => ({
+                      text: id === user.workshopId ? `${id} (Active)` : id,
+                      onPress: () => {
+                        if (id !== user.workshopId) {
+                          useAuthStore.getState().switchWorkshop(id);
+                          Alert.alert('Success', `Switched to ${id}`);
+                        }
+                      },
+                      style: id === user.workshopId ? 'cancel' : 'default'
+                    } as any)).concat([{ text: 'Cancel', style: 'cancel', onPress: () => { } } as any])
+                  );
+                }}
+              >
+                <View style={styles.settingInfo}>
+                  <Ionicons name="business-outline" size={24} color="#666" />
+                  <View style={styles.settingText}>
+                    <Text style={styles.settingLabel}>Switch Workshop</Text>
+                    <Text style={styles.settingDesc}>
+                      Current: {user.workshopId}
+                    </Text>
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#999" />
+              </TouchableOpacity>
+            )}
+
             <View style={styles.settingRow}>
               <View style={styles.settingInfo}>
                 <Ionicons name="notifications-outline" size={24} color="#666" />
@@ -145,7 +171,7 @@ export default function ProfileScreen() {
               <Switch
                 value={notificationsEnabled}
                 onValueChange={setNotificationsEnabled}
-                trackColor={{ false: '#ddd', true: '#007AFF' }}
+                trackColor={{ false: '#ddd', true: '#000' }}
               />
             </View>
             <View style={styles.settingRow}>
@@ -161,7 +187,7 @@ export default function ProfileScreen() {
               <Switch
                 value={emailNotifications}
                 onValueChange={setEmailNotifications}
-                trackColor={{ false: '#ddd', true: '#007AFF' }}
+                trackColor={{ false: '#ddd', true: '#000' }}
               />
             </View>
           </View>
@@ -201,9 +227,12 @@ export default function ProfileScreen() {
         {/* Logout */}
         <View style={styles.section}>
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-            <Ionicons name="log-out-outline" size={24} color="#FF3B30" />
+            <Ionicons name="log-out-outline" size={24} color="#fff" />
             <Text style={styles.logoutText}>Logout</Text>
           </TouchableOpacity>
+
+          {/* Rescue Button for Admins stuck in Customer App */}
+
         </View>
       </ScrollView>
     </View>
@@ -351,15 +380,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#fff',
-    borderWidth: 2,
-    borderColor: '#FF3B30',
+    backgroundColor: '#000',
     borderRadius: 12,
     padding: 16,
     gap: 10,
   },
   logoutText: {
-    color: '#FF3B30',
+    color: '#fff',
     fontSize: 16,
     fontWeight: '600',
   },

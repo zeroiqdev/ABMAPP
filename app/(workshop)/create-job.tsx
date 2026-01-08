@@ -1503,7 +1503,7 @@ const styles = StyleSheet.create({
     },
     closeText: {
         fontSize: 16,
-        color: '#007AFF',
+        color: '#000',
     },
     addText: {
         fontSize: 16,

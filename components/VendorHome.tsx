@@ -6,8 +6,8 @@ import { useAuthStore } from '@/store/authStore';
 import { Order } from '@/types';
 import { format, subMonths, addMonths, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 import { Ionicons } from '@expo/vector-icons';
-
-import { DateRangeFilter } from '@/components/DateRangeFilter';
+import { MonthPickerModal } from '@/components/MonthPickerModal';
+import { Colors } from '@/constants/design';
 
 const { width } = Dimensions.get('window');
 
@@ -17,13 +17,17 @@ export const VendorHome = () => {
     const [allOrders, setAllOrders] = useState<Order[]>([]);
     const [filteredOrders, setFilteredOrders] = useState<Order[]>([]);
     const [recentOrders, setRecentOrders] = useState<Order[]>([]);
-    const [selectedDate, setSelectedDate] = useState(new Date());
+    const [dateRange, setDateRange] = useState({
+        start: startOfMonth(new Date()),
+        end: endOfMonth(new Date())
+    });
+    const [pickerVisible, setPickerVisible] = useState(false);
 
     const [vendorStats, setVendorStats] = useState({
+        revenue: 0,
         all: 0,
         pending: 0,
         shipped: 0,
-        cancelled: 0,
     });
 
     useEffect(() => {
@@ -36,9 +40,9 @@ export const VendorHome = () => {
     }, [user]);
 
     useEffect(() => {
-        // Filter orders by selected month
-        const start = startOfMonth(selectedDate);
-        const end = endOfMonth(selectedDate);
+        // Filter orders by date range
+        const start = dateRange.start;
+        const end = dateRange.end;
 
         const monthlyOrders = allOrders.filter(o =>
             o.createdAt && isWithinInterval(o.createdAt, { start, end })
@@ -46,16 +50,22 @@ export const VendorHome = () => {
 
         setFilteredOrders(monthlyOrders);
 
+        // Calculate Revenue (Accepted orders: confirmed, shipped, delivered, completed, shipment_verified)
+        const acceptedOrders = monthlyOrders.filter(o =>
+            ['confirmed', 'shipped', 'delivered', 'completed', 'shipment_verified'].includes(o.status)
+        );
+        const revenue = acceptedOrders.reduce((sum, order) => sum + (order.total || 0), 0);
+
         setVendorStats({
+            revenue,
             all: monthlyOrders.length,
             pending: monthlyOrders.filter(o => o.status === 'pending').length,
             shipped: monthlyOrders.filter(o => o.status === 'shipped').length,
-            cancelled: monthlyOrders.filter(o => o.status === 'cancelled').length,
         });
 
-        // Recent orders within this month
+        // Recent orders within this range
         setRecentOrders(monthlyOrders.slice(0, 5));
-    }, [allOrders, selectedDate]);
+    }, [allOrders, dateRange]);
 
     const getStatusColor = (status: string) => {
         switch (status) {
@@ -99,16 +109,32 @@ export const VendorHome = () => {
             <View style={styles.header}>
                 <View style={styles.headerTop}>
                     <View>
-                        <Text style={styles.headerTitle}>Vendor Dashboard</Text>
                         <Text style={styles.headerSubtitle}>Welcome back, {user?.name}</Text>
                     </View>
-                    <DateRangeFilter selectedDate={selectedDate} onDateChange={setSelectedDate} />
                 </View>
             </View>
 
             <View style={styles.dashboardContainer}>
-                <Text style={styles.sectionTitle}>Overview</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
+                    <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Overview</Text>
+                    <TouchableOpacity
+                        style={styles.dateSelector}
+                        onPress={() => setPickerVisible(true)}
+                    >
+                        <Ionicons name="calendar-outline" size={16} color="#000" />
+                        <Text style={styles.dateText}>
+                            {format(dateRange.start, 'MMM yyyy') === format(dateRange.end, 'MMM yyyy')
+                                ? format(dateRange.start, 'MMM yyyy')
+                                : `${format(dateRange.start, 'MMM yyyy')} - ${format(dateRange.end, 'MMM yyyy')}`}
+                        </Text>
+                        <Ionicons name="chevron-down" size={16} color="#000" />
+                    </TouchableOpacity>
+                </View>
                 <View style={styles.statsGrid}>
+                    <View style={[styles.statCard, { backgroundColor: '#000' }]}>
+                        <Text style={styles.statLabel}>Revenue</Text>
+                        <Text style={styles.statValue}>₦{vendorStats.revenue.toLocaleString()}</Text>
+                    </View>
                     <View style={styles.statCard}>
                         <Text style={styles.statLabel}>Total Orders</Text>
                         <Text style={styles.statValue}>{vendorStats.all}</Text>
@@ -121,16 +147,16 @@ export const VendorHome = () => {
                         <Text style={styles.statLabel}>Shipped</Text>
                         <Text style={styles.statValue}>{vendorStats.shipped}</Text>
                     </View>
-                    <View style={styles.statCard}>
-                        <Text style={styles.statLabel}>Cancelled</Text>
-                        <Text style={styles.statValue}>{vendorStats.cancelled}</Text>
-                    </View>
                 </View>
             </View>
 
             <View style={styles.recentOrdersContainer}>
                 <View style={styles.recentOrdersHeader}>
-                    <Text style={styles.sectionTitle}>Orders in {format(selectedDate, 'MMMM')}</Text>
+                    <Text style={styles.sectionTitle}>
+                        Orders {format(dateRange.start, 'MMM yyyy') === format(dateRange.end, 'MMM yyyy')
+                            ? `in ${format(dateRange.start, 'MMMM')}`
+                            : `(${format(dateRange.start, 'MMM')} - ${format(dateRange.end, 'MMM')})`}
+                    </Text>
                     <TouchableOpacity onPress={() => router.push('/(marketplace)/orders')}>
                         <Text style={styles.viewAllText}>View All</Text>
                     </TouchableOpacity>
@@ -143,6 +169,13 @@ export const VendorHome = () => {
                 )}
             </View>
             <View style={{ height: 100 }} />
+
+            <MonthPickerModal
+                visible={pickerVisible}
+                dateRange={dateRange}
+                onRangeChange={setDateRange}
+                onClose={() => setPickerVisible(false)}
+            />
         </ScrollView>
     );
 };
@@ -265,5 +298,19 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         color: '#999',
         marginTop: 20,
+    },
+    dateSelector: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#f5f5f5',
+        borderRadius: 20,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        gap: 8,
+    },
+    dateText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#000',
     },
 });

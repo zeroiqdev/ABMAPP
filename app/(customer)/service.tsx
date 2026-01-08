@@ -110,7 +110,7 @@ export default function ServiceScreen() {
       }
 
       // Create job with 'received' status so admin sees it
-      await firebaseService.createJob({
+      const jobId = await firebaseService.createJob({
         userId: user.id,
         vehicleId: selectedVehicle.id,
         workshopId: user.workshopId || 'default-workshop', // Fallback if not set
@@ -128,7 +128,8 @@ export default function ServiceScreen() {
         user.id,
         'Request Received',
         'Your repair request has been submitted successfully.',
-        'job_update'
+        'job_update',
+        { jobId, vehicleId: selectedVehicle.id }
       );
 
       Alert.alert('Success', 'Your request has been sent to the workshop.', [

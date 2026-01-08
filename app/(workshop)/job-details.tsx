@@ -46,6 +46,21 @@ export default function WorkshopJobDetailsScreen() {
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatVisible, setChatVisible] = useState(false);
+  const [permissions, setPermissions] = useState<any>({});
+
+  useEffect(() => {
+    const fetchPermissions = async () => {
+      if (user?.workshopId && user?.role) {
+        try {
+          const allPerms = await firebaseService.getWorkshopPermissions(user.workshopId);
+          setPermissions(allPerms[user.role] || {});
+        } catch (error) {
+          console.error("Failed to fetch permissions", error);
+        }
+      }
+    };
+    fetchPermissions();
+  }, [user]);
 
   const getJobTypeLabel = (type: string) => {
     switch (type) {
@@ -140,7 +155,8 @@ export default function WorkshopJobDetailsScreen() {
           job.userId,
           'Job Status Updated',
           `Your job status has been updated to: ${newStatus}`,
-          'job_update'
+          'job_update',
+          { jobId: job.id, vehicleId: job.vehicleId }
         );
       }
 
@@ -218,7 +234,8 @@ export default function WorkshopJobDetailsScreen() {
     );
   }
 
-  const canUpdateStatus = ['admin', 'service_advisor'].includes(user?.role || '');
+  const isAssignedTech = job?.assignedTechnicianId === user?.id;
+  const canUpdateStatus = ['admin', 'service_advisor'].includes(user?.role || '') || permissions?.canManageJobs || isAssignedTech;
   const canAssignTechnician = ['admin', 'service_advisor'].includes(user?.role || '');
   const isTechnician = user?.role === 'technician';
   const unreadCount = user ? messages.filter(m => !m.readBy.includes(user.id)).length : 0;

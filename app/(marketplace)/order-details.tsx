@@ -91,7 +91,8 @@ export default function OrderDetailsScreen() {
         switch (status) {
             case 'pending': return Colors.warning;
             case 'confirmed': return Colors.info;
-            case 'shipped': return Colors.primary; // Or a specific shipping color
+            case 'shipped': return Colors.primary;
+            case 'shipment_verified': return '#9C27B0';
             case 'delivered': return Colors.success;
             case 'cancelled': return Colors.error;
             default: return '#666';
@@ -141,7 +142,7 @@ export default function OrderDetailsScreen() {
                             <View style={[styles.statusDot, { backgroundColor: getStatusColor(order.status) }]} />
                             <Text style={styles.statusPillText}>{order.status.toUpperCase()}</Text>
                         </View>
-                        {isVendor && (
+                        {(!isVendor || (isVendor && order.status === 'confirmed')) && (
                             <TouchableOpacity
                                 style={styles.updateStatusButton}
                                 onPress={() => setShowStatusModal(true)}
@@ -228,7 +229,10 @@ export default function OrderDetailsScreen() {
                         style={styles.statusModalContent}
                     >
                         <Text style={styles.modalTitle}>Update Order Status</Text>
-                        {['pending', 'confirmed', 'shipped', 'delivered', 'cancelled'].map((status) => (
+                        {(isVendor
+                            ? (order.status === 'confirmed' ? ['shipped'] : [])
+                            : ['pending', 'confirmed', 'shipped', 'shipment_verified', 'delivered', 'cancelled']
+                        ).map((status) => (
                             <TouchableOpacity
                                 key={status}
                                 style={[
@@ -242,13 +246,18 @@ export default function OrderDetailsScreen() {
                             >
                                 <View style={[styles.statusDot, { backgroundColor: getStatusColor(status) }]} />
                                 <Text style={styles.statusOptionText}>
-                                    {status.charAt(0).toUpperCase() + status.slice(1)}
+                                    {status === 'shipment_verified' ? 'Shipment Verified' : status.charAt(0).toUpperCase() + status.slice(1)}
                                 </Text>
                                 {order.status === status && (
                                     <Ionicons name="checkmark" size={20} color="#000" />
                                 )}
                             </TouchableOpacity>
                         ))}
+                        {isVendor && order.status !== 'confirmed' && (
+                            <Text style={{ textAlign: 'center', color: '#666', marginTop: 10 }}>
+                                {order.status === 'pending' ? 'Wait for payment confirmation.' : 'No actions available.'}
+                            </Text>
+                        )}
                     </TouchableOpacity>
                 </TouchableOpacity>
             </Modal>

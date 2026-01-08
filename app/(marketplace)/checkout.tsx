@@ -16,23 +16,37 @@ import { useCartStore } from '@/store/cartStore';
 import { firebaseService } from '@/services/firebaseService';
 import { paymentService } from '@/services/paymentService';
 import { Order } from '@/types';
+import { Colors } from '@/constants/design';
 
 export default function CheckoutScreen() {
   const router = useRouter();
-  const { user } = useAuthStore();
+  const { user, isGuest, guestEmail, setGuestEmail } = useAuthStore();
   const { items: cartItems, getTotal, clearCart } = useCartStore();
   const [deliveryMethod, setDeliveryMethod] = useState<'delivery' | 'pickup'>('delivery');
+  const [paymentMethod, setPaymentMethod] = useState<'card' | 'monnify'>('card');
   const [shippingAddress, setShippingAddress] = useState('');
   const [phone, setPhone] = useState(user?.phone || '');
+  const [guestEmailInput, setGuestEmailInput] = useState(guestEmail || ''); // Initialize with stored guest email
   const [processing, setProcessing] = useState(false);
+  const [monnifyDetails, setMonnifyDetails] = useState<any>(null);
 
   const subtotal = getTotal();
   const shipping = deliveryMethod === 'delivery' ? 1000 : 0;
   const total = subtotal + shipping;
 
   const handleCheckout = async () => {
-    if (!user) {
+    // Determine effective user info
+    const effectiveEmail = user?.email || guestEmailInput;
+    const effectiveName = user?.name || (isGuest ? 'Guest' : '');
+
+    if (!user && !isGuest) {
+      // Should not happen with new flow, but fallback
       Alert.alert('Error', 'Please login to continue');
+      return;
+    }
+
+    if (!effectiveEmail || !effectiveEmail.includes('@')) {
+      Alert.alert('Error', 'Please provide a valid email address');
       return;
     }
 
@@ -41,10 +55,15 @@ export default function CheckoutScreen() {
       return;
     }
 
+    // Save guest email if valid and we are in guest mode
+    if (isGuest && effectiveEmail) {
+      setGuestEmail(effectiveEmail);
+    }
+
     setProcessing(true);
     try {
       const order: Omit<Order, 'id' | 'createdAt'> = {
-        userId: user.id,
+        userId: user?.id || 'guest',
         products: cartItems.map((item) => ({
           productId: item.product.id,
           productName: item.product.name,
@@ -57,9 +76,9 @@ export default function CheckoutScreen() {
         status: 'pending',
         deliveryMethod,
         ...(deliveryMethod === 'delivery' && { shippingAddress }),
-        customerName: user.name,
-        customerPhone: phone || user.phone,
-        customerEmail: user.email,
+        customerName: effectiveName,
+        customerPhone: phone || user?.phone,
+        customerEmail: effectiveEmail,
         vendorIds: Array.from(new Set(cartItems.map(item => item.product.vendorId || item.product.userId).filter((id): id is string => !!id))),
       };
 
@@ -71,55 +90,69 @@ export default function CheckoutScreen() {
         await firebaseService.createNotification({
           userId: vendorId,
           title: 'New Order Received',
-          body: `You have received a new order from ${user.name || 'a customer'}.`,
+          body: `You have received a new order from ${effectiveName || 'a customer'}.`,
           type: 'order',
           read: false,
           metadata: {
             type: 'order',
             orderId,
-            customerName: user.name,
+            customerName: effectiveName,
           }
         });
       }
 
-      // Initialize payment
-      const reference = paymentService.generatePaymentReference();
-      const paymentData = {
-        amount: total,
-        email: user.email,
-        reference,
-        metadata: {
-          orderId,
-          userId: user.id,
-        },
-      };
-
-      const result = await paymentService.initializeMockPayment(paymentData);
-
-      if (result.success) {
-        clearCart();
-        Alert.alert(
-          'Order Placed',
-          'Your order has been placed. Please complete the payment.',
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                // Navigate based on user role
-                if (user?.role === 'customer') {
-                  router.replace('/(customer)/home');
-                } else if (user?.role === 'vendor') {
-                  router.replace('/(marketplace)/orders');
-                } else {
-                  router.replace('/(workshop)/marketplace');
-                }
-              },
-            },
-          ]
-        );
-
+      if (paymentMethod === 'monnify') {
+        // Initialize Monnify Payment
+        const result = await paymentService.initializeMonnifyPayment(orderId, total, { name: effectiveName, email: effectiveEmail });
+        if (result.success && result.accountDetails) {
+          setMonnifyDetails(result.accountDetails);
+          clearCart();
+          // Don't navigate away, show payment details
+        } else {
+          Alert.alert('Error', result.message);
+        }
       } else {
-        Alert.alert('Error', result.message);
+        // Card Payment (Existing Mock)
+        const reference = paymentService.generatePaymentReference();
+        const paymentData = {
+          amount: total,
+          email: effectiveEmail,
+          reference,
+          metadata: {
+            orderId,
+            userId: user?.id || 'guest',
+          },
+        };
+
+        const result = await paymentService.initializeMockPayment(paymentData);
+
+        if (result.success) {
+          clearCart();
+          Alert.alert(
+            'Order Placed',
+            'Your order has been placed. Please complete the payment.',
+            [
+              {
+                text: 'OK',
+                onPress: () => {
+                  if (user?.role === 'customer') {
+                    router.replace('/(customer)/home');
+                  } else if (user?.role === 'vendor') {
+                    router.replace('/(marketplace)/orders');
+                  } else if (isGuest) {
+                    // Stay in marketplace or go to orders?
+                    // If guest, maybe just clear stack or go home
+                    router.replace('/(marketplace)/orders'); // They can view their orders now!
+                  } else {
+                    router.replace('/(workshop)/marketplace');
+                  }
+                },
+              },
+            ]
+          );
+        } else {
+          Alert.alert('Error', result.message);
+        }
       }
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Checkout failed');
@@ -127,6 +160,55 @@ export default function CheckoutScreen() {
       setProcessing(false);
     }
   };
+
+  const handleFinishMonnify = () => {
+    if (user?.role === 'customer') {
+      router.replace('/(customer)/home');
+    } else if (isGuest) {
+      router.replace('/(marketplace)/orders');
+    } else {
+      // For now just go back or to orders
+      router.back();
+    }
+  };
+
+
+  if (monnifyDetails) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Pay with Bank Transfer</Text>
+        </View>
+        <ScrollView contentContainerStyle={{ padding: 20, alignItems: 'center' }}>
+          <Text style={{ fontSize: 16, textAlign: 'center', marginBottom: 20 }}>
+            Please transfer exactly <Text style={{ fontWeight: 'bold' }}>₦{total.toLocaleString()}</Text> to the account below.
+          </Text>
+
+          <View style={{ backgroundColor: '#fff', padding: 20, borderRadius: 12, width: '100%', alignItems: 'center' }}>
+            <Text style={{ color: '#666', marginBottom: 4 }}>Bank Name</Text>
+            <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 16 }}>{monnifyDetails.bankName}</Text>
+
+            <Text style={{ color: '#666', marginBottom: 4 }}>Account Number</Text>
+            <Text style={{ fontSize: 24, fontWeight: 'bold', marginBottom: 16, color: '#000' }}>{monnifyDetails.accountNumber}</Text>
+
+            <Text style={{ color: '#666', marginBottom: 4 }}>Account Name</Text>
+            <Text style={{ fontSize: 16, fontWeight: '600', marginBottom: 0 }}>{monnifyDetails.accountName}</Text>
+          </View>
+
+          <View style={styles.infoBox}>
+            <Ionicons name="information-circle-outline" size={24} color={Colors.primary} />
+            <Text style={styles.infoText}>
+              Your order will be automatically confirmed once we receive the payment. This usually takes a few minutes.
+            </Text>
+          </View>
+
+          <TouchableOpacity style={[styles.checkoutButton, { marginTop: 30, width: '100%' }]} onPress={handleFinishMonnify}>
+            <Text style={styles.checkoutButtonText}>I've Sent the Money</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -207,6 +289,22 @@ export default function CheckoutScreen() {
         {/* Contact Info */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Contact Information</Text>
+
+          {!user && (
+            <View style={{ marginBottom: 15 }}>
+              <Text style={[styles.deliveryLabel, { marginBottom: 5 }]}>Email Address (Required for Order Tracking)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="your@email.com"
+                value={user?.email || guestEmailInput} // Using local state guestEmailInput
+                onChangeText={setGuestEmailInput}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                editable={!user}
+              />
+            </View>
+          )}
+
           <TextInput
             style={styles.input}
             placeholder="Phone Number"
@@ -214,6 +312,46 @@ export default function CheckoutScreen() {
             onChangeText={setPhone}
             keyboardType="phone-pad"
           />
+        </View>
+
+
+        {/* Payment Method */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Payment Method</Text>
+          <TouchableOpacity
+            style={[
+              styles.deliveryOption,
+              paymentMethod === 'card' && styles.deliveryOptionActive,
+            ]}
+            onPress={() => setPaymentMethod('card')}
+          >
+            <Ionicons
+              name={paymentMethod === 'card' ? 'radio-button-on' : 'radio-button-off'}
+              size={24}
+              color={paymentMethod === 'card' ? '#000' : '#ccc'}
+            />
+            <View style={styles.deliveryInfo}>
+              <Text style={styles.deliveryLabel}>Card Payment</Text>
+              <Text style={styles.deliveryDesc}>Pay securely with your debit/credit card</Text>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.deliveryOption,
+              paymentMethod === 'monnify' && styles.deliveryOptionActive,
+            ]}
+            onPress={() => setPaymentMethod('monnify')}
+          >
+            <Ionicons
+              name={paymentMethod === 'monnify' ? 'radio-button-on' : 'radio-button-off'}
+              size={24}
+              color={paymentMethod === 'monnify' ? '#000' : '#ccc'}
+            />
+            <View style={styles.deliveryInfo}>
+              <Text style={styles.deliveryLabel}>Bank Transfer</Text>
+              <Text style={styles.deliveryDesc}>Transfer to a generated virtual account</Text>
+            </View>
+          </TouchableOpacity>
         </View>
 
         {/* Order Summary */}
@@ -257,7 +395,7 @@ export default function CheckoutScreen() {
           )}
         </TouchableOpacity>
       </View>
-    </View>
+    </View >
   );
 }
 
@@ -387,6 +525,20 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  infoBox: {
+    flexDirection: 'row',
+    backgroundColor: '#e3f2fd',
+    padding: 16,
+    borderRadius: 8,
+    marginTop: 20,
+    gap: 12,
+  },
+  infoText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#0d47a1',
+    lineHeight: 20,
   },
 });
 

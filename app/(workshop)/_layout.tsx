@@ -17,20 +17,65 @@ import {
   ArchiveBoxIcon as ArchiveBoxIconSolid,
   ShoppingBagIcon as ShoppingBagIconSolid
 } from 'react-native-heroicons/solid';
+import { useEffect, useState } from 'react';
+import { firebaseService } from '@/services/firebaseService';
+import { View, ActivityIndicator } from 'react-native';
 
 export default function WorkshopLayout() {
   const { user } = useAuthStore();
+  const [permissions, setPermissions] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchPermissions = async () => {
+      if (user?.workshopId && user?.role) {
+        try {
+          // Admins always have full access, no need to fetch if we just check role
+          if (user.role === 'admin' || user.role === 'super_admin') {
+            setPermissions({
+              canViewFinance: true,
+              canViewInventory: true,
+              canManageStaff: true,
+              canManageJobs: true,
+            });
+          } else {
+            const allPerms = await firebaseService.getWorkshopPermissions(user.workshopId);
+            setPermissions(allPerms[user.role] || {});
+          }
+        } catch (error) {
+          console.error("Failed to fetch permissions", error);
+        } finally {
+          setLoading(false);
+        }
+      } else {
+        setLoading(false);
+      }
+    };
+    fetchPermissions();
+  }, [user]);
 
   // Redirect based on role
   if (!user) {
     return <Redirect href="/(auth)/login" />;
   }
 
-  const workshopRoles = ['admin', 'technician', 'storekeeper', 'accountant', 'service_advisor'];
+  const workshopRoles = ['super_admin', 'admin', 'technician', 'storekeeper', 'accountant', 'service_advisor'];
 
   if (!workshopRoles.includes(user.role)) {
     return <Redirect href="/(customer)/home" />;
   }
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
+
+  const canViewFinance = user.role === 'admin' || user.role === 'super_admin' || permissions?.canViewFinance;
+  const canViewInventory = user.role === 'admin' || user.role === 'super_admin' || permissions?.canViewInventory;
+  // const canManageStaff = user.role === 'admin' || permissions?.canManageStaff; // For Customers tab?
 
   return (
     <Tabs
@@ -66,6 +111,7 @@ export default function WorkshopLayout() {
       <Tabs.Screen
         name="finance"
         options={{
+          href: canViewFinance ? undefined : null,
           title: 'Finance',
           tabBarIcon: ({ focused, color, size }) => (
             focused ? <BanknotesIconSolid size={size || 24} color={color} /> : <BanknotesIconOutline size={size || 24} color={color} />
@@ -93,6 +139,7 @@ export default function WorkshopLayout() {
       <Tabs.Screen
         name="inventory"
         options={{
+          href: canViewInventory ? undefined : null,
           title: 'Inventory',
           tabBarIcon: ({ focused, color, size }) => (
             focused ? <ArchiveBoxIconSolid size={size || 24} color={color} /> : <ArchiveBoxIconOutline size={size || 24} color={color} />
@@ -214,6 +261,18 @@ export default function WorkshopLayout() {
       />
       <Tabs.Screen
         name="access-control"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="marketplace-orders"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="marketplace-order-details"
         options={{
           href: null,
         }}

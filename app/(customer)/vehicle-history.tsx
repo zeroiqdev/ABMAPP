@@ -14,6 +14,7 @@ import { firebaseService } from '@/services/firebaseService';
 import { Job, Vehicle } from '@/types';
 import { format } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
+import { BrandLogo } from '@/components/BrandLogo';
 
 export default function VehicleHistoryScreen() {
     const router = useRouter();
@@ -67,39 +68,29 @@ export default function VehicleHistoryScreen() {
 
     const renderJob = ({ item }: { item: Job }) => (
         <TouchableOpacity
-            style={styles.jobCard}
+            style={styles.itemCard}
             onPress={() => router.push(`/(customer)/job-details?id=${item.id}`)}
         >
-            <View style={styles.jobHeader}>
-                <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
+            <View style={[styles.iconBox, { backgroundColor: '#000' }]}>
+                <Ionicons name="construct-outline" size={24} color="#fff" />
+            </View>
+
+            <View style={styles.itemInfo}>
+                <Text style={styles.itemName} numberOfLines={1}>
+                    {item.description}
+                </Text>
+                <Text style={styles.itemSubtitle}>
+                    {format(item.createdAt, 'MMM dd, yyyy')}
+                </Text>
+            </View>
+
+            <View style={styles.itemRight}>
+                <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '15' }]}>
                     <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
                         {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
                     </Text>
                 </View>
-                <Text style={styles.jobDate}>{format(item.createdAt, 'MMM dd, yyyy')}</Text>
             </View>
-
-            <Text style={styles.jobDescription} numberOfLines={2}>
-                {item.description}
-            </Text>
-
-            {item.partsUsed && item.partsUsed.length > 0 && (
-                <View style={styles.jobMeta}>
-                    <Ionicons name="construct-outline" size={16} color="#666" />
-                    <Text style={styles.jobMetaText}>
-                        {item.partsUsed.length} Part{item.partsUsed.length !== 1 ? 's' : ''} Replaced
-                    </Text>
-                </View>
-            )}
-
-            {item.completedAt && (
-                <View style={styles.jobMeta}>
-                    <Ionicons name="checkmark-circle-outline" size={16} color="#30D158" />
-                    <Text style={styles.jobMetaText}>
-                        Completed: {format(item.completedAt, 'MMM dd, yyyy')}
-                    </Text>
-                </View>
-            )}
         </TouchableOpacity>
     );
 
@@ -114,7 +105,7 @@ export default function VehicleHistoryScreen() {
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()}>
+                <TouchableOpacity onPress={() => router.push('/(customer)/vehicles')}>
                     <Ionicons name="arrow-back" size={24} color="#000" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Service History</Text>
@@ -125,7 +116,7 @@ export default function VehicleHistoryScreen() {
             {vehicle && (
                 <View style={styles.vehicleInfoCard}>
                     <View style={styles.vehicleIcon}>
-                        <Ionicons name="car-sport" size={32} color="#007AFF" />
+                        <BrandLogo brand={vehicle.make} size={32} />
                     </View>
                     <View style={styles.vehicleInfo}>
                         <Text style={styles.vehicleName}>
@@ -237,51 +228,47 @@ const styles = StyleSheet.create({
         padding: 20,
         paddingTop: 0,
     },
-    jobCard: {
-        backgroundColor: '#fff',
-        borderRadius: 12,
-        padding: 15,
-        marginBottom: 12,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 3,
-    },
-    jobHeader: {
+    itemCard: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 10,
+        backgroundColor: '#fff',
+        padding: 15,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f5f5f5',
+    },
+    iconBox: {
+        width: 48,
+        height: 48,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 15,
+    },
+    itemInfo: {
+        flex: 1,
+    },
+    itemName: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#333',
+        marginBottom: 4,
+    },
+    itemSubtitle: {
+        fontSize: 13,
+        color: '#888',
+    },
+    itemRight: {
+        alignItems: 'flex-end',
+        justifyContent: 'center',
     },
     statusBadge: {
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 12,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 8,
     },
     statusText: {
         fontSize: 12,
         fontWeight: '600',
-    },
-    jobDate: {
-        fontSize: 12,
-        color: '#999',
-    },
-    jobDescription: {
-        fontSize: 16,
-        color: '#000',
-        marginBottom: 10,
-        lineHeight: 22,
-    },
-    jobMeta: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        marginTop: 6,
-    },
-    jobMetaText: {
-        fontSize: 14,
-        color: '#666',
     },
     emptyState: {
         padding: 60,

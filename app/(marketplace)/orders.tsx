@@ -22,7 +22,7 @@ const TABS = ['All Orders', 'New Orders', 'Processing', 'Shipped', 'Cancelled'];
 
 export default function OrdersScreen() {
   const router = useRouter();
-  const { user } = useAuthStore();
+  const { user, isGuest, guestEmail } = useAuthStore();
   const [orders, setOrders] = useState<Order[]>([]);
   const [salesOrders, setSalesOrders] = useState<Order[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<Order[]>([]);
@@ -32,11 +32,9 @@ export default function OrdersScreen() {
   const isVendor = user?.role === 'vendor';
 
   useEffect(() => {
-    if (!user) return;
+    let unsubscribe: () => void | undefined;
 
-    let unsubscribe: () => void;
-
-    if (isVendor) {
+    if (isVendor && user) {
       const unsubscribeSales = firebaseService.subscribeToVendorOrders(user.id, (sales) => {
         setSalesOrders(sales);
       });
@@ -48,17 +46,24 @@ export default function OrdersScreen() {
         unsubscribeSales();
         unsubscribePurchases();
       };
-    } else {
+    } else if (user) {
       unsubscribe = firebaseService.subscribeToOrders(user.id, (newOrders) => {
         setOrders(newOrders);
         setLoading(false);
       });
+    } else if (isGuest && guestEmail) {
+      unsubscribe = firebaseService.subscribeToGuestOrders(guestEmail, (newOrders) => {
+        setOrders(newOrders);
+        setLoading(false);
+      });
+    } else {
+      setLoading(false);
     }
 
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, [user, isVendor]);
+  }, [user, isVendor, isGuest, guestEmail]);
 
   // Merge orders for vendors
   useEffect(() => {

@@ -6,6 +6,7 @@ export type UserRole =
   | 'accountant'
   | 'service_advisor'
   | 'vendor'
+  | 'super_admin'
   | string;
 
 export type JobStatus =
@@ -23,7 +24,32 @@ export interface User {
   name: string;
   phone: string;
   role: UserRole;
-  workshopId?: string; // For multi-tenant support
+  workshopId?: string; // Current/Active Workshop ID
+  connectedWorkshopIds?: string[]; // List of all workshops this user belongs to
+
+  // Vendor specific fields
+  vendorStatus?: 'active' | 'pending_details' | 'pending_approval' | 'rejected';
+  rejectionReason?: string;
+  businessDetails?: {
+    businessName: string;
+    rcNumber: string;
+    address: string;
+    city: string;
+    state: string;
+    country: string;
+    bankName: string;
+    accountNumber: string;
+    accountName: string;
+    contactName?: string;
+    contactRole?: string;
+    nin?: string;
+  };
+  documents?: {
+    ninImage?: string;
+    proofOfAddress?: string;
+    certificateOfIncorporation?: string;
+  };
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -165,7 +191,7 @@ export interface Order {
   userId: string;
   products: OrderItem[];
   total: number;
-  status: 'pending' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled';
+  status: 'pending' | 'confirmed' | 'shipped' | 'shipment_verified' | 'delivered' | 'cancelled';
   deliveryMethod: 'delivery' | 'pickup';
   shippingAddress?: string;
   vendorIds?: string[];
@@ -173,6 +199,14 @@ export interface Order {
   customerPhone?: string;
   customerEmail?: string;
   createdAt: Date;
+  payoutStatus?: 'pending' | 'processing' | 'paid' | 'failed';
+  adminNotes?: string;
+  monnifyPaymentDetails?: {
+    accountNumber: string;
+    accountName: string;
+    bankName: string;
+    reference: string;
+  };
 }
 
 export interface OrderItem {

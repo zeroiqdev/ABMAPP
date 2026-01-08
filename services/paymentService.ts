@@ -1,3 +1,5 @@
+import { getFunctions, httpsCallable } from 'firebase/functions';
+
 export interface PaymentResult {
   success: boolean;
   transactionId?: string;
@@ -12,93 +14,7 @@ export interface PaymentData {
 }
 
 class PaymentService {
-  private paystackPublicKey: string;
-  private flutterwavePublicKey: string;
-
-  constructor() {
-    this.paystackPublicKey = process.env.EXPO_PUBLIC_PAYSTACK_PUBLIC_KEY || '';
-    this.flutterwavePublicKey = process.env.EXPO_PUBLIC_FLUTTERWAVE_PUBLIC_KEY || '';
-  }
-
-  async initializePaystackPayment(data: PaymentData): Promise<PaymentResult> {
-    try {
-      const response = await fetch('https://api.paystack.co/transaction/initialize', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.paystackPublicKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          amount: data.amount * 100,
-          email: data.email,
-          reference: data.reference,
-          metadata: data.metadata,
-        }),
-      });
-
-      const result = await response.json();
-
-      if (result.status) {
-        return {
-          success: true,
-          transactionId: result.data.reference,
-          message: 'Payment initialized successfully',
-        };
-      } else {
-        return {
-          success: false,
-          message: result.message || 'Payment initialization failed',
-        };
-      }
-    } catch (error: any) {
-      return {
-        success: false,
-        message: error.message || 'Payment initialization failed',
-      };
-    }
-  }
-
-  async initializeFlutterwavePayment(data: PaymentData): Promise<PaymentResult> {
-    try {
-      const response = await fetch('https://api.flutterwave.com/v3/payments', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.flutterwavePublicKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          tx_ref: data.reference,
-          amount: data.amount,
-          currency: 'NGN',
-          redirect_url: 'abmapp://payment-callback',
-          customer: {
-            email: data.email,
-          },
-          meta: data.metadata,
-        }),
-      });
-
-      const result = await response.json();
-
-      if (result.status === 'success') {
-        return {
-          success: true,
-          transactionId: result.data.tx_ref,
-          message: 'Payment initialized successfully',
-        };
-      } else {
-        return {
-          success: false,
-          message: result.message || 'Payment initialization failed',
-        };
-      }
-    } catch (error: any) {
-      return {
-        success: false,
-        message: error.message || 'Payment initialization failed',
-      };
-    }
-  }
+  constructor() { }
 
   async initializeMockPayment(data: PaymentData): Promise<PaymentResult> {
     // Simulate API delay
@@ -111,71 +27,36 @@ class PaymentService {
     };
   }
 
-  async verifyPaystackPayment(reference: string): Promise<PaymentResult> {
+  async initializeMonnifyPayment(orderId: string, amount: number, user: { name: string; email: string }): Promise<PaymentResult & { accountDetails?: any }> {
     try {
-      const response = await fetch(
-        `https://api.paystack.co/transaction/verify/${reference}`,
-        {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${this.paystackPublicKey}`,
-          },
-        }
-      );
+      const functions = getFunctions();
+      const initializeMonnifyTransaction = httpsCallable(functions, 'initializeMonnifyTransaction');
 
-      const result = await response.json();
+      const result: any = await initializeMonnifyTransaction({
+        orderId,
+        amount,
+        customerName: user.name,
+        customerEmail: user.email
+      });
 
-      if (result.status && result.data.status === 'success') {
+      const data = result.data;
+      if (data.success) {
         return {
           success: true,
-          transactionId: result.data.reference,
-          message: 'Payment verified successfully',
+          message: 'Virtual account created',
+          accountDetails: {
+            accountNumber: data.accountNumber,
+            accountName: data.accountName,
+            bankName: data.bankName,
+            reference: data.reference
+          }
         };
       } else {
-        return {
-          success: false,
-          message: 'Payment verification failed',
-        };
+        return { success: false, message: data.error || 'Failed to initialize Monnify' };
       }
     } catch (error: any) {
-      return {
-        success: false,
-        message: error.message || 'Payment verification failed',
-      };
-    }
-  }
-
-  async verifyFlutterwavePayment(transactionId: string): Promise<PaymentResult> {
-    try {
-      const response = await fetch(
-        `https://api.flutterwave.com/v3/transactions/${transactionId}/verify`,
-        {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${this.flutterwavePublicKey}`,
-          },
-        }
-      );
-
-      const result = await response.json();
-
-      if (result.status === 'success' && result.data.status === 'successful') {
-        return {
-          success: true,
-          transactionId: result.data.tx_ref,
-          message: 'Payment verified successfully',
-        };
-      } else {
-        return {
-          success: false,
-          message: 'Payment verification failed',
-        };
-      }
-    } catch (error: any) {
-      return {
-        success: false,
-        message: error.message || 'Payment verification failed',
-      };
+      console.error('Monnify Init Error:', error);
+      return { success: false, message: error.message || 'Error initializing Monnify' };
     }
   }
 
@@ -185,4 +66,3 @@ class PaymentService {
 }
 
 export const paymentService = new PaymentService();
-

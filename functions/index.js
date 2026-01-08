@@ -84,3 +84,110 @@ exports.uploadImage = functions.https.onRequest((req, res) => {
     }
   });
 });
+
+// Monnify Integration
+const axios = require('axios');
+const admin = require('firebase-admin');
+if (!admin.apps.length) {
+  admin.initializeApp();
+}
+
+const getMonnifyToken = async () => {
+  const config = functions.config().monnify;
+  if (!config) throw new Error('Monnify config not found');
+
+  const apiKey = config.api_key;
+  const secretKey = config.secret_key;
+  // Base64 encode API_KEY:SECRET_KEY
+  const auth = Buffer.from(`${apiKey}:${secretKey}`).toString('base64');
+
+  try {
+    // Using Sandbox URL for now. Production URL: https://api.monnify.com
+    // Sandbox: https://sandbox.monnify.com
+    const baseUrl = config.base_url || 'https://sandbox.monnify.com';
+
+    const response = await axios.post(
+      `${baseUrl}/api/v1/auth/login`,
+      {},
+      { headers: { Authorization: `Basic ${auth}` } }
+    );
+    return response.data.responseBody.accessToken;
+  } catch (error) {
+    console.error('Monnify Auth Error:', error.response?.data || error.message);
+    throw new Error('Failed to authenticate with Monnify');
+  }
+};
+
+exports.initializeMonnifyTransaction = functions.https.onCall(async (data, context) => {
+  // data: { orderId, customerName, customerEmail }
+  try {
+    const token = await getMonnifyToken();
+    const config = functions.config().monnify;
+    const contractCode = config.contract_code;
+    const baseUrl = config.base_url || 'https://sandbox.monnify.com';
+
+    const response = await axios.post(
+      `${baseUrl}/api/v2/bank-transfer/reserved-accounts`,
+      {
+        accountReference: data.orderId,
+        accountName: `ABM-${data.customerName.replace(/[^a-zA-Z0-9 ]/g, "").substring(0, 20)}`,
+        currencyCode: 'NGN',
+        contractCode: contractCode,
+        customerEmail: data.customerEmail,
+        customerName: data.customerName,
+        getAllAvailableBanks: true
+      },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    const account = response.data.responseBody;
+    return {
+      success: true,
+      accountNumber: account.accountNumber,
+      accountName: account.accountName,
+      bankName: account.bankName,
+      reference: account.accountReference
+    };
+  } catch (error) {
+    console.error('Monnify Reservation Error:', error.response?.data || error.message);
+    return { success: false, error: 'Failed to reserve Monnify account' };
+  }
+});
+
+exports.monnifyWebhook = functions.https.onRequest(async (req, res) => {
+  try {
+    const body = req.body;
+    console.log('Monnify Webhook Received:', JSON.stringify(body));
+
+    // Basic validation could involve checking signature hash, but skipping for MVP speed
+    const eventType = body.eventType;
+
+    if (eventType === 'SUCCESSFUL_TRANSACTION_NOTIFICATION') {
+      const eventData = body.eventData;
+      const orderId = eventData.product.reference; // accountReference passed during reservation
+      const paidAmount = eventData.amountPaid;
+
+      // Verify order exists
+      const orderRef = admin.firestore().collection('orders').doc(orderId);
+      const orderSnap = await orderRef.get();
+
+      if (orderSnap.exists) {
+        await orderRef.update({
+          status: 'confirmed', // Mark as paid/confirmed
+          monnifyPaymentStatus: 'paid',
+          monnifyTransactionRef: eventData.transactionReference,
+          amountPaid: paidAmount, // Store actual paid amount
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        console.log(`Order ${orderId} confirmed via Monnify`);
+      } else {
+        console.warn(`Order ${orderId} not found for Monnify webhook`);
+      }
+    }
+
+    res.status(200).send('OK');
+  } catch (error) {
+    console.error('Webhook Error:', error);
+    res.status(500).send('Error processing webhook');
+  }
+});

@@ -23,7 +23,6 @@ const SYSTEM_ROLES: string[] = [
     'storekeeper',
     'accountant',
     'service_advisor',
-    'vendor',
 ];
 
 const PERMISSIONS = [
@@ -32,7 +31,8 @@ const PERMISSIONS = [
     { key: 'canManageInventory', label: 'Manage Inventory', description: 'Add, update, and delete inventory items' },
     { key: 'canViewFinance', label: 'View Finance', description: 'View financial reports and invoices' },
     { key: 'canManageFinance', label: 'Manage Finance', description: 'Create and update invoices, payments' },
-    { key: 'canManageStaff', label: 'Manage Staff', description: 'Invite and manage workshop staff' },
+    { key: 'canInviteStaff', label: 'Invite Staff', description: 'Send invitations to new staff members' },
+    { key: 'canManageStaff', label: 'Manage Staff', description: 'Update and remove existing staff' },
     { key: 'canManageSettings', label: 'Manage Settings', description: 'Update workshop settings' },
     { key: 'canViewReports', label: 'View Reports', description: 'Access workshop performance reports' },
 ];
@@ -43,6 +43,7 @@ const DEFAULT_PERMISSIONS = {
     canManageInventory: false,
     canViewFinance: false,
     canManageFinance: false,
+    canInviteStaff: false,
     canManageStaff: false,
     canManageSettings: false,
     canViewReports: false,
@@ -73,7 +74,8 @@ export default function AccessControlScreen() {
 
             // Merge system roles with custom roles found in permissions
             const customRoles = Object.keys(perms || {});
-            const allRoles = Array.from(new Set([...SYSTEM_ROLES, ...customRoles]));
+            const allRoles = Array.from(new Set([...SYSTEM_ROLES, ...customRoles]))
+                .filter(role => role !== 'customer' && role !== 'vendor');
             setAvailableRoles(allRoles);
         } catch (error) {
             console.error('Error fetching permissions:', error);

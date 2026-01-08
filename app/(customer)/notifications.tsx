@@ -49,11 +49,21 @@ export default function NotificationsScreen() {
 
     switch (notification.type) {
       case 'job_update':
+        if (notification.metadata?.vehicleId && user) {
+          router.push(`/(customer)/vehicle-history?vehicleId=${notification.metadata.vehicleId}&customerId=${user.id}`);
+        } else {
+          router.push('/(customer)/vehicles');
+        }
         break;
       case 'payment':
+        // If we have invoiceId, we could route deeper, but for now specific invoice deep link might not be set up
         router.push('/(customer)/invoices');
         break;
       default:
+        // Use metadata to guess where to go if type matches nothing
+        if (notification.metadata?.vehicleId) {
+          router.push(`/(customer)/vehicle-history?vehicleId=${notification.metadata.vehicleId}&customerId=${user?.id}`);
+        }
         break;
     }
   };
@@ -89,16 +99,11 @@ export default function NotificationsScreen() {
       style={[styles.notificationCard, !item.read && styles.unreadCard]}
       onPress={() => handleNotificationPress(item)}
     >
-      <View
-        style={[
-          styles.iconContainer,
-          { backgroundColor: getNotificationColor(item.type) + '20' },
-        ]}
-      >
+      <View style={styles.iconContainer}>
         <Ionicons
           name={getNotificationIcon(item.type) as any}
           size={24}
-          color={getNotificationColor(item.type)}
+          color="#fff"
         />
       </View>
       <View style={styles.notificationContent}>
@@ -171,7 +176,7 @@ export default function NotificationsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#fff',
   },
   header: {
     flexDirection: 'row',
@@ -179,9 +184,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     paddingTop: 60,
-    backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
+    backgroundColor: '#fff',
   },
   headerTitle: {
     fontSize: 24,
@@ -189,34 +194,27 @@ const styles = StyleSheet.create({
   },
   markAllText: {
     fontSize: 14,
-    color: '#007AFF',
+    color: '#000',
     fontWeight: '600',
   },
   listContent: {
-    padding: 15,
+    padding: 20,
   },
   notificationCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
   },
   unreadCard: {
-    backgroundColor: '#f0f7ff',
-    borderLeftWidth: 4,
-    borderLeftColor: '#007AFF',
+    backgroundColor: '#fff',
   },
   iconContainer: {
     width: 48,
     height: 48,
-    borderRadius: 24,
+    borderRadius: 8,
+    backgroundColor: '#000',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 15,
@@ -227,24 +225,26 @@ const styles = StyleSheet.create({
   notificationHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 5,
+    marginBottom: 4,
+    justifyContent: 'space-between',
   },
   notificationTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
-    marginRight: 8,
+    color: '#000',
+    flex: 1,
   },
   unreadDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#007AFF',
+    backgroundColor: '#000',
+    marginLeft: 8,
   },
   notificationMessage: {
     fontSize: 14,
     color: '#666',
-    marginBottom: 5,
+    marginBottom: 4,
     lineHeight: 20,
   },
   notificationTime: {

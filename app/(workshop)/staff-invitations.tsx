@@ -17,9 +17,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
 import { StaffInvitation, UserRole, User } from '@/types';
+import VendorDetailsModal from '@/components/VendorDetailsModal';
+import Swipeable from 'react-native-gesture-handler/Swipeable';
+import { AppConfig } from '@/constants/config';
 
 // Added 'customer' to system roles so it can be selected for invites
-const SYSTEM_ROLES: string[] = ['service_advisor', 'technician', 'storekeeper', 'accountant', 'admin', 'vendor', 'customer'];
+const SYSTEM_ROLES: string[] = ['service_advisor', 'technician', 'storekeeper', 'accountant', 'admin', 'vendor'];
 
 export default function StaffInvitationsScreen() {
   const router = useRouter();
@@ -42,8 +45,11 @@ export default function StaffInvitationsScreen() {
   // Modals
   const [showRolePicker, setShowRolePicker] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [selectedVendor, setSelectedVendor] = useState<User | null>(null);
 
-  const canInvite = user?.role === 'admin' || user?.role === 'service_advisor';
+  const [userPermissions, setUserPermissions] = useState<any>({});
+
+  const canInvite = user?.role === 'admin' || user?.role === 'super_admin' || userPermissions?.canInviteStaff;
 
   useEffect(() => {
     loadData();
@@ -67,9 +73,18 @@ export default function StaffInvitationsScreen() {
 
       // Load Roles
       const permissions = await firebaseService.getWorkshopPermissions(user.workshopId);
+      setUserPermissions(permissions[user.role] || {});
+
       const customRoles = Object.keys(permissions || {});
       // Merge unique roles
-      const allRoles = Array.from(new Set([...SYSTEM_ROLES, ...customRoles]));
+      // Merge unique roles
+      let allRoles = Array.from(new Set([...SYSTEM_ROLES, ...customRoles]));
+
+      // Restrict Vendor role if not Master Workshop
+      if (user.workshopId !== AppConfig.MASTER_WORKSHOP_ID) {
+        allRoles = allRoles.filter(r => r !== 'vendor');
+      }
+
       setAvailableRoles(allRoles);
 
     } catch (error) {
@@ -81,7 +96,7 @@ export default function StaffInvitationsScreen() {
 
   const handleCreateInvite = async () => {
     if (!canInvite) {
-      Alert.alert('Permission Denied', 'Only admins or service advisors can send invites.');
+      Alert.alert('Permission Denied', 'You do not have permission to send staff invites.');
       return;
     }
     if (!user?.workshopId) {
@@ -126,29 +141,87 @@ export default function StaffInvitationsScreen() {
     }
   };
 
-  const renderActiveStaff = (staff: User) => (
-    <View key={staff.id} style={styles.itemCard}>
-      <View style={[styles.iconBox, { backgroundColor: '#000' }]}>
-        <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#fff' }}>
-          {staff.name ? staff.name.charAt(0).toUpperCase() : '?'}
-        </Text>
-      </View>
-      <View style={styles.itemInfo}>
-        <Text style={styles.itemName}>{staff.name}</Text>
-        <Text style={styles.itemSubtitle}>{(staff.role || 'Unknown').replace('_', ' ')} • {staff.email}</Text>
-      </View>
-      <View style={styles.itemRight}>
-        <View style={[styles.statusBadge, { backgroundColor: '#d1fae5' }]}>
-          <Text style={[styles.statusText, { color: '#065f46' }]}>Active</Text>
+  const confirmDeleteUser = (targetUser: User) => {
+    if (user?.id === targetUser.id) {
+      Alert.alert('Error', 'You cannot remove yourself.');
+      return;
+    }
+    Alert.alert(
+      'Remove User',
+      `Are you sure you want to remove ${targetUser.name}? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            setLoadingData(true);
+            try {
+              await firebaseService.deleteUser(targetUser.id);
+              await loadData();
+            } catch (e: any) {
+              Alert.alert('Error', e.message);
+            } finally {
+              setLoadingData(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const renderRightActions = (progress: any, dragX: any, staff: User) => {
+    return (
+      <TouchableOpacity
+        style={styles.deleteAction}
+        onPress={() => confirmDeleteUser(staff)}
+      >
+        <Ionicons name="trash-outline" size={24} color="#fff" />
+        <Text style={styles.deleteActionText}>Remove</Text>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderActiveStaff = (staff: User) => {
+    const content = (
+      <View style={styles.itemCard}>
+        <View style={[styles.iconBox, { backgroundColor: '#000' }]}>
+          <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#fff' }}>
+            {staff.name ? staff.name.charAt(0).toUpperCase() : '?'}
+          </Text>
+        </View>
+        <View style={styles.itemInfo}>
+          <Text style={styles.itemName}>{staff.name}</Text>
+          <Text style={styles.itemSubtitle}>{(staff.role || 'Unknown').replace('_', ' ')} • {staff.email}</Text>
+        </View>
+        <View style={styles.itemRight}>
+          <View style={[styles.statusBadge, { backgroundColor: '#d1fae5', marginBottom: 4 }]}>
+            <Text style={[styles.statusText, { color: '#065f46' }]}>Active</Text>
+          </View>
         </View>
       </View>
-    </View>
-  );
+    );
+
+    if (user?.role === 'admin' || user?.role === 'super_admin') {
+      return (
+        <Swipeable
+          key={staff.id}
+          renderRightActions={(p, d) => renderRightActions(p, d, staff)}
+        >
+          {content}
+        </Swipeable>
+      );
+    }
+
+    return <View key={staff.id}>{content}</View>;
+  };
 
   const renderInviteCard = (invite: StaffInvitation) => (
     <View key={invite.id} style={styles.itemCard}>
-      <View style={[styles.iconBox, { backgroundColor: '#fef3c7' }]}>
-        <Ionicons name="mail-outline" size={24} color="#d97706" />
+      <View style={[styles.iconBox, { backgroundColor: '#000' }]}>
+        <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#fff' }}>
+          {(invite.name || invite.email || '?').charAt(0).toUpperCase()}
+        </Text>
       </View>
       <View style={styles.itemInfo}>
         <Text style={styles.itemName}>{invite.name || invite.email}</Text>
@@ -160,8 +233,8 @@ export default function StaffInvitationsScreen() {
             {invite.used ? 'Used' : 'Pending'}
           </Text>
         </View>
-        <Text style={styles.metaTimestamp}>
-          {new Date(invite.createdAt).toLocaleDateString()}
+        <Text style={[styles.metaTimestamp, { fontSize: 13, fontWeight: '600', color: '#111' }]}>
+          {invite.invitationCode}
         </Text>
       </View>
     </View>
@@ -178,10 +251,10 @@ export default function StaffInvitationsScreen() {
           <View style={{ width: 24 }} />
         </View>
         <View style={styles.permissionCard}>
-          <Ionicons name="shield-checkmark" size={48} color="#007AFF" />
-          <Text style={styles.permissionTitle}>Admin Access Required</Text>
+          <Ionicons name="shield-checkmark" size={48} color="#000" />
+          <Text style={styles.permissionTitle}>Permission Required</Text>
           <Text style={styles.permissionText}>
-            Only workshop admins or service advisors can send staff invitations.
+            You do not have permission to invite new staff. Contact an admin.
           </Text>
         </View>
       </View>
@@ -209,12 +282,14 @@ export default function StaffInvitationsScreen() {
           >
             <Text style={[styles.tabText, activeTab === 'active' && styles.tabTextActive]}>Staff ({activeStaff.length})</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'vendors' && styles.tabActive]}
-            onPress={() => setActiveTab('vendors')}
-          >
-            <Text style={[styles.tabText, activeTab === 'vendors' && styles.tabTextActive]}>Vendors ({activeVendors.length})</Text>
-          </TouchableOpacity>
+          {user?.workshopId === AppConfig.MASTER_WORKSHOP_ID && (
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'vendors' && styles.tabActive]}
+              onPress={() => setActiveTab('vendors')}
+            >
+              <Text style={[styles.tabText, activeTab === 'vendors' && styles.tabTextActive]}>Vendors ({activeVendors.length})</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={[styles.tab, activeTab === 'pending' && styles.tabActive]}
             onPress={() => setActiveTab('pending')}
@@ -236,7 +311,38 @@ export default function StaffInvitationsScreen() {
             activeVendors.length === 0 ? (
               <Text style={styles.emptyText}>No active vendors found.</Text>
             ) : (
-              activeVendors.map(renderActiveStaff) // Reusing renderActiveStaff for vendors
+              activeVendors.map((vendor) => (
+                <TouchableOpacity
+                  key={vendor.id}
+                  style={styles.itemCard}
+                  onPress={() => setSelectedVendor(vendor)}
+                >
+                  <View style={[styles.iconBox, { backgroundColor: '#000' }]}>
+                    <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#fff' }}>
+                      {vendor.name ? vendor.name.charAt(0).toUpperCase() : '?'}
+                    </Text>
+                  </View>
+                  <View style={styles.itemInfo}>
+                    <Text style={styles.itemName}>{vendor.name || 'Unnamed Vendor'}</Text>
+                    <Text style={styles.itemSubtitle}>{vendor.email}</Text>
+                  </View>
+                  <View style={styles.itemRight}>
+                    {vendor.vendorStatus === 'active' ? (
+                      <View style={[styles.statusBadge, { backgroundColor: '#dcfce7' }]}>
+                        <Text style={[styles.statusText, { color: '#16a34a' }]}>Active</Text>
+                      </View>
+                    ) : vendor.vendorStatus === 'pending_approval' ? (
+                      <View style={[styles.statusBadge, { backgroundColor: '#fef9c3' }]}>
+                        <Text style={[styles.statusText, { color: '#ca8a04' }]}>Pending</Text>
+                      </View>
+                    ) : (
+                      <View style={[styles.statusBadge, { backgroundColor: '#f3f4f6' }]}>
+                        <Text style={[styles.statusText, { color: '#4b5563' }]}>Incomplete</Text>
+                      </View>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              ))
             )
           ) : (
             invites.length === 0 ? (
@@ -247,6 +353,16 @@ export default function StaffInvitationsScreen() {
           )}
         </View>
       </ScrollView>
+
+      {/* Vendor Details Modal */}
+      <VendorDetailsModal
+        visible={!!selectedVendor}
+        vendor={selectedVendor}
+        onClose={() => setSelectedVendor(null)}
+        onApprove={() => {
+          loadData();
+        }}
+      />
 
       {/* Invite Modal */}
       <Modal
@@ -612,6 +728,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
+  },
+  deleteAction: {
+    backgroundColor: '#ef4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 80,
+    height: '100%',
+  },
+  deleteActionText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 12,
+    marginTop: 4,
   },
 });
 

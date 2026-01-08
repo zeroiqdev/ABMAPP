@@ -38,7 +38,7 @@ export default {
   expo: {
     name: "ABM Workshop & Marketplace",
     slug: "abmapp",
-    version: "1.0.0",
+    version: "1.0.1",
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
@@ -66,6 +66,8 @@ export default {
         backgroundColor: "#ffffff"
       },
       package: "com.abmtek.abmapp",
+      versionCode: 2,
+      googleServicesFile: './google-services.json',
       config: {
         googleMaps: {
           apiKey: getEnv('EXPO_PUBLIC_GOOGLE_MAPS_API_KEY')
@@ -73,8 +75,6 @@ export default {
       },
       permissions: [
         "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE",
         "NOTIFICATIONS",
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION"
@@ -105,18 +105,21 @@ export default {
         {
           cameraPermission: "The app accesses your camera to capture service images."
         }
-      ]
+      ],
+      "@react-native-firebase/app",
+      "@react-native-firebase/crashlytics"
     ],
     scheme: "abmapp",
     extra: {
+      eas: {
+        projectId: "7be241e0-2bad-4133-a489-251c099fbbe3"
+      },
       firebaseApiKey: getEnv('EXPO_PUBLIC_FIREBASE_API_KEY'),
       firebaseAuthDomain: getEnv('EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN'),
       firebaseProjectId: getEnv('EXPO_PUBLIC_FIREBASE_PROJECT_ID'),
       firebaseStorageBucket: getEnv('EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET'),
       firebaseMessagingSenderId: getEnv('EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID'),
       firebaseAppId: getEnv('EXPO_PUBLIC_FIREBASE_APP_ID'),
-      paystackPublicKey: getEnv('EXPO_PUBLIC_PAYSTACK_PUBLIC_KEY'),
-      flutterwavePublicKey: getEnv('EXPO_PUBLIC_FLUTTERWAVE_PUBLIC_KEY'),
       cloudinaryCloudName: getEnv('EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME'),
       cloudinaryUploadPreset: getEnv('EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET'),
       apiBaseUrl: getEnv('EXPO_PUBLIC_API_BASE_URL')

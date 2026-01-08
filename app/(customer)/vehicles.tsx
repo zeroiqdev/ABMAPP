@@ -13,6 +13,7 @@ import { collection, query, where, getDocs, deleteDoc, doc } from 'firebase/fire
 import { db } from '@/config/firebase';
 import { Vehicle } from '@/types';
 import { Ionicons } from '@expo/vector-icons';
+import { BrandLogo } from '@/components/BrandLogo';
 
 export default function VehiclesScreen() {
   const { user } = useAuthStore();
@@ -106,55 +107,24 @@ export default function VehiclesScreen() {
           vehicles.map((vehicle) => (
             <TouchableOpacity
               key={vehicle.id}
-              style={styles.vehicleCard}
+              style={styles.itemCard}
               onPress={() => router.push(`/(customer)/vehicle-history?id=${vehicle.id}`)}
             >
-              <View style={styles.vehicleHeader}>
-                <View>
-                  <Text style={styles.vehicleName}>
-                    {vehicle.make} {vehicle.model}
-                  </Text>
-                  <Text style={styles.vehicleYear}>{vehicle.year}</Text>
-                </View>
-                <View style={styles.actions}>
-                  <TouchableOpacity
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      router.push(`/(customer)/edit-vehicle?id=${vehicle.id}`);
-                    }}
-                  >
-                    <Ionicons name="pencil" size={20} color="#007AFF" />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      handleDelete(vehicle.id);
-                    }}
-                    style={styles.deleteButton}
-                  >
-                    <Ionicons name="trash" size={20} color="#FF3B30" />
-                  </TouchableOpacity>
-                </View>
+              <View style={styles.iconBox}>
+                <BrandLogo brand={vehicle.make} size={30} />
               </View>
-              <View style={styles.vehicleDetails}>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>License Plate:</Text>
-                  <Text style={styles.detailValue}>{vehicle.licensePlate}</Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>VIN:</Text>
-                  <Text style={styles.detailValue}>{vehicle.vin}</Text>
-                </View>
-                {vehicle.color && (
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>Color:</Text>
-                    <Text style={styles.detailValue}>{vehicle.color}</Text>
-                  </View>
-                )}
-                <View style={[styles.detailRow, { marginTop: 8 }]}>
-                  <Text style={[styles.detailLabel, { color: '#007AFF' }]}>Tap to view Service History</Text>
-                  <Ionicons name="chevron-forward" size={16} color="#007AFF" />
-                </View>
+
+              <View style={styles.itemInfo}>
+                <Text style={styles.itemName}>
+                  {vehicle.make} {vehicle.model}
+                </Text>
+                <Text style={styles.itemSubtitle}>
+                  {vehicle.licensePlate} • {vehicle.year}
+                </Text>
+              </View>
+
+              <View style={styles.itemRight}>
+                <Ionicons name="chevron-forward" size={20} color="#ccc" />
               </View>
             </TouchableOpacity>
           ))
@@ -184,7 +154,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   addButton: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#000',
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -193,60 +163,40 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    padding: 15,
+    padding: 20,
   },
-  vehicleCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  vehicleHeader: {
+  itemCard: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 15,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f5f5f5',
+    padding: 15,
   },
-  vehicleName: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
+  iconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 15,
   },
-  vehicleYear: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4,
+  itemInfo: {
+    flex: 1,
   },
-  actions: {
-    flexDirection: 'row',
-    gap: 15,
-  },
-  deleteButton: {
-    marginLeft: 10,
-  },
-  vehicleDetails: {
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-    paddingTop: 15,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  detailLabel: {
-    fontSize: 14,
-    color: '#666',
-  },
-  detailValue: {
-    fontSize: 14,
+  itemName: {
+    fontSize: 16,
     fontWeight: '600',
     color: '#333',
+    marginBottom: 4,
+  },
+  itemSubtitle: {
+    fontSize: 13,
+    color: '#888',
+  },
+  itemRight: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
   },
   emptyState: {
     flex: 1,
@@ -262,7 +212,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   emptyButton: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#000',
     paddingHorizontal: 30,
     paddingVertical: 12,
     borderRadius: 8,

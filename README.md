@@ -31,7 +31,7 @@ A comprehensive mobile application built with Expo framework for automotive work
 - Download receipts or service reports (PDF generation)
 
 **View Invoices & Make Payments**
-- Integrated Paystack/Flutterwave payments
+- Integrated Monnify payments (Virtual Accounts)
 - Payment history with filters
 - Invoice download and sharing
 
@@ -126,7 +126,7 @@ A comprehensive mobile application built with Expo framework for automotive work
 
 **Cart & Checkout**
 - Add to cart functionality
-- Secure checkout with Paystack/Flutterwave
+- Secure checkout with Monnify
 - Option for delivery or in-store pickup
 
 **Customer Account**
@@ -153,7 +153,7 @@ A comprehensive mobile application built with Expo framework for automotive work
 - **State Management**: Zustand
 - **Backend**: Firebase (Auth, Firestore, Storage)
 - **Notifications**: Expo Notifications
-- **Payments**: Paystack & Flutterwave integration
+- **Payments**: Monnify integration
 - **Image Handling**: Expo Image Picker, Expo Camera
 - **PDF Generation**: Expo Print
 - **Date Handling**: date-fns
@@ -288,8 +288,7 @@ npm run android
 - Video upload capability
 
 ### Payments
-- Paystack integration
-- Flutterwave integration
+- Monnify integration
 - Payment verification
 - Invoice generation
 

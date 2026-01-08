@@ -21,6 +21,8 @@ import { User, Invoice, InvoiceItem } from '@/types';
 import { Colors } from '@/constants/design';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { format } from 'date-fns';
+import CustomAlertModal from '@/components/CustomAlertModal';
+import { getUserFriendlyErrorMessage } from '@/utils/errorUtils';
 
 export default function CreateInvoiceScreen() {
     const router = useRouter();
@@ -49,6 +51,17 @@ export default function CreateInvoiceScreen() {
     // Date Selection
     const [dueDate, setDueDate] = useState<Date | null>(null);
     const [showDatePicker, setShowDatePicker] = useState(false);
+
+    // Custom Alert State
+    const [alertVisible, setAlertVisible] = useState(false);
+    const [alertTitle, setAlertTitle] = useState('');
+    const [alertMessage, setAlertMessage] = useState('');
+
+    const showAlert = (title: string, message: string) => {
+        setAlertTitle(title);
+        setAlertMessage(message);
+        setAlertVisible(true);
+    };
 
     // Reset form when screen is focused
     useFocusEffect(
@@ -107,16 +120,19 @@ export default function CreateInvoiceScreen() {
 
     const handleCreateInvoice = async () => {
         if (!selectedCustomer.name) {
-            Alert.alert('Error', 'Please enter customer name');
+            showAlert('Required Field', 'Please enter customer name');
             return;
         }
 
         if (invoiceItems.length === 0) {
-            Alert.alert('Error', 'Please add at least one item');
+            showAlert('Empty Invoice', 'Please add at least one item');
             return;
         }
 
-        if (!user?.workshopId) return;
+        if (!user?.workshopId) {
+            showAlert('Error', 'Workshop ID missing. Please restart the app.');
+            return;
+        }
 
         setLoading(true);
         try {
@@ -124,9 +140,9 @@ export default function CreateInvoiceScreen() {
 
             const newInvoice: Omit<Invoice, 'id' | 'createdAt'> = {
                 customerName: selectedCustomer.name,
-                customerPhone: selectedCustomer.phone,
-                customerEmail: selectedCustomer.email,
-                customerAddress: selectedCustomer.address,
+                customerPhone: selectedCustomer.phone || '',
+                customerEmail: selectedCustomer.email || '',
+                customerAddress: selectedCustomer.address || '',
                 workshopId: user.workshopId,
                 items: invoiceItems,
                 subtotal,
@@ -140,12 +156,18 @@ export default function CreateInvoiceScreen() {
             };
 
             await firebaseService.createInvoice(newInvoice);
+
+            // Success can still use standard Alert for the "OK" callback simplicity, 
+            // OR use CustomAlert with a callback if improved. 
+            // For now, success is distinct from "Error Correction" flow, so Alert is fine, 
+            // but let's be consistent and use basic Alert for success/navigation.
             Alert.alert('Success', 'Invoice created successfully', [
                 { text: 'OK', onPress: () => router.back() }
             ]);
         } catch (error) {
             console.error('Error creating invoice:', error);
-            Alert.alert('Error', 'Failed to create invoice');
+            const friendlyMsg = getUserFriendlyErrorMessage(error);
+            showAlert('Creation Failed', friendlyMsg);
         } finally {
             setLoading(false);
         }
@@ -348,7 +370,14 @@ export default function CreateInvoiceScreen() {
                     )}
                 </TouchableOpacity>
             </View>
-        </KeyboardAvoidingView>
+
+            <CustomAlertModal
+                visible={alertVisible}
+                title={alertTitle}
+                message={alertMessage}
+                onClose={() => setAlertVisible(false)}
+            />
+        </KeyboardAvoidingView >
     );
 }
 

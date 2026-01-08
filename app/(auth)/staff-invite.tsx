@@ -39,8 +39,16 @@ export default function StaffInviteScreen() {
 
     try {
       await acceptStaffInvite(email.trim(), password, invitationCode.trim());
+
+      // Check role to determine redirection
+      const currentUser = useAuthStore.getState().user;
       Alert.alert('Success', 'Account created successfully.');
-      router.replace('/(workshop)/dashboard');
+
+      if (currentUser?.role === 'vendor') {
+        router.replace('/(marketplace)/vendor-registration');
+      } else {
+        router.replace('/(workshop)/dashboard');
+      }
     } catch (error: any) {
       Alert.alert('Invite Error', error.message || 'Unable to accept invitation.');
     }
@@ -53,9 +61,9 @@ export default function StaffInviteScreen() {
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.content}>
-          <Text style={styles.title}>Activate Staff Access</Text>
+          <Text style={styles.title}>Activate Staff or Vendor Access</Text>
           <Text style={styles.subtitle}>
-            Enter the invitation code sent to your email to create your staff account.
+            Enter the invitation code sent to your email to create your staff or vendor account.
           </Text>
 
           <View style={styles.form}>

@@ -1,20 +1,32 @@
-import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { firebaseService } from './firebaseService';
 import { Notification } from '@/types';
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
+// Safely import Expo Notifications to avoid crashes in Expo Go
+let Notifications: any;
+try {
+  Notifications = require('expo-notifications');
+} catch (error) {
+  console.warn('Expo Notifications not available/supported in this environment');
+}
+
+// Only configure if available
+if (Notifications) {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+    }),
+  });
+}
 
 class NotificationService {
   private expoPushToken: string | null = null;
 
   async registerForPushNotifications(): Promise<string | null> {
+    if (!Notifications) return null;
+
     try {
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
       let finalStatus = existingStatus;
@@ -49,15 +61,20 @@ class NotificationService {
   }
 
   async sendLocalNotification(title: string, body: string, data?: any): Promise<void> {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title,
-        body,
-        data: data || {},
-        sound: true,
-      },
-      trigger: null,
-    });
+    if (!Notifications) return;
+    try {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title,
+          body,
+          data: data || {},
+          sound: true,
+        },
+        trigger: null,
+      });
+    } catch (error) {
+      console.log('Error sending local notification:', error);
+    }
   }
 
   async sendNotificationToUser(
@@ -75,7 +92,7 @@ class NotificationService {
       read: false,
     });
 
-    if (this.expoPushToken) {
+    if (this.expoPushToken && Notifications) {
       await this.sendLocalNotification(title, message, data);
     }
   }
@@ -85,9 +102,11 @@ class NotificationService {
   }
 
   setupNotificationListeners(
-    onNotificationReceived: (notification: Notifications.Notification) => void,
-    onNotificationTapped: (response: Notifications.NotificationResponse) => void
+    onNotificationReceived: (notification: any) => void,
+    onNotificationTapped: (response: any) => void
   ): () => void {
+    if (!Notifications) return () => { };
+
     const receivedListener = Notifications.addNotificationReceivedListener(
       onNotificationReceived
     );

@@ -1,5 +1,6 @@
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter, useSegments } from 'expo-router';
 import { Platform } from 'react-native';
+import { useEffect } from 'react';
 
 import {
   ShoppingBagIcon as ShoppingBagIconSolid,
@@ -19,6 +20,31 @@ import { useAuthStore } from '@/store/authStore';
 
 export default function MarketplaceLayout() {
   const { user } = useAuthStore();
+  const router = useRouter();
+  const segments = useSegments();
+
+  useEffect(() => {
+    if (user?.role === 'vendor') {
+      const currentRoute = segments[segments.length - 1];
+
+      // Unapproved vendors (pending_details, rejected, or no status) must go to registration form
+      // Never let them see home screen
+      if (!user.vendorStatus || user.vendorStatus === 'pending_details' || user.vendorStatus === 'rejected') {
+        if (currentRoute !== 'vendor-registration') {
+          // Use a small timeout to ensure navigation is ready or avoid immediate loop
+          setTimeout(() => router.replace('/(marketplace)/vendor-registration'), 100);
+        }
+      } else if (user.vendorStatus === 'pending_approval' && currentRoute !== 'pending-approval') {
+        setTimeout(() => router.replace('/(marketplace)/pending-approval'), 100);
+      } else if (user.vendorStatus === 'active') {
+        // If active, they shouldn't be on registration or pending screens
+        if (currentRoute === 'vendor-registration' || currentRoute === 'pending-approval') {
+          setTimeout(() => router.replace('/(marketplace)/home'), 100);
+        }
+      }
+    }
+  }, [user?.role, user?.vendorStatus, segments, router]);
+
   return (
     <Tabs
       screenOptions={{
@@ -81,7 +107,9 @@ export default function MarketplaceLayout() {
       <Tabs.Screen name="cart" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="checkout" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="order-details" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="vendor-dashboard" options={{ href: null }} />
+
+      <Tabs.Screen name="vendor-registration" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="pending-approval" options={{ href: null, tabBarStyle: { display: 'none' } }} />
     </Tabs>
   );
 }

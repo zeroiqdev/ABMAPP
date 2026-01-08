@@ -5,9 +5,9 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
   Alert,
   ActivityIndicator,
+  Clipboard,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,6 +15,7 @@ import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
 import { paymentService } from '@/services/paymentService';
 import { Invoice } from '@/types';
+import * as ClipboardExpo from 'expo-clipboard';
 
 export default function PaymentScreen() {
   const router = useRouter();
@@ -24,9 +25,9 @@ export default function PaymentScreen() {
   }>();
   const { user } = useAuthStore();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<'paystack' | 'flutterwave'>('paystack');
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
+  const [accountDetails, setAccountDetails] = useState<any>(null);
 
   useEffect(() => {
     loadInvoice();
@@ -51,71 +52,14 @@ export default function PaymentScreen() {
 
     setProcessing(true);
     try {
-      const paymentData = {
-        amount: invoice.total,
-        email: user.email,
-        reference: reference || paymentService.generatePaymentReference(),
-        metadata: {
-          invoiceId: invoice.id,
-          userId: user.id,
-        },
-      };
+      const result = await paymentService.initializeMonnifyPayment(
+        invoice.id,
+        invoice.total,
+        { name: user.name, email: user.email }
+      );
 
-      let result: { success: boolean; transactionId?: string; message: string };
-      if (paymentMethod === 'paystack') {
-        result = await paymentService.initializePaystackPayment(paymentData);
-      } else {
-        result = await paymentService.initializeFlutterwavePayment(paymentData);
-      }
-
-      if (result.success && result.transactionId) {
-        const transactionId = result.transactionId;
-        Alert.alert(
-          'Payment Initiated',
-          'Please complete the payment. We will verify it shortly.',
-          [
-            {
-              text: 'OK',
-              onPress: async () => {
-                setTimeout(async () => {
-                  try {
-                    const verifyResult =
-                      paymentMethod === 'paystack'
-                        ? await paymentService.verifyPaystackPayment(
-                            transactionId
-                          )
-                        : await paymentService.verifyFlutterwavePayment(
-                            transactionId
-                          );
-
-                    if (verifyResult.success) {
-                      await firebaseService.updateInvoice(invoice.id, {
-                        paymentStatus: 'paid',
-                        paymentMethod: paymentMethod,
-                        paymentDate: new Date(),
-                      });
-
-                      Alert.alert(
-                        'Payment Successful',
-                        'Your payment has been processed successfully.',
-                        [
-                          {
-                            text: 'OK',
-                            onPress: () => router.back(),
-                          },
-                        ]
-                      );
-                    } else {
-                      Alert.alert('Payment Failed', verifyResult.message);
-                    }
-                  } catch (error: any) {
-                    Alert.alert('Error', error.message);
-                  }
-                }, 2000);
-              },
-            },
-          ]
-        );
+      if (result.success && result.accountDetails) {
+        setAccountDetails(result.accountDetails);
       } else {
         Alert.alert('Error', result.message);
       }
@@ -126,10 +70,15 @@ export default function PaymentScreen() {
     }
   };
 
+  const copyToClipboard = async (text: string) => {
+    await ClipboardExpo.setStringAsync(text);
+    Alert.alert('Copied', 'Account number copied to clipboard');
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color="#000" />
       </View>
     );
   }
@@ -181,97 +130,66 @@ export default function PaymentScreen() {
           </View>
         </View>
 
-        {/* Payment Method Selection */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Select Payment Method</Text>
-          <TouchableOpacity
-            style={[
-              styles.paymentMethodCard,
-              paymentMethod === 'paystack' && styles.paymentMethodCardActive,
-            ]}
-            onPress={() => setPaymentMethod('paystack')}
-          >
-            <View style={styles.paymentMethodContent}>
-              <Ionicons
-                name="card-outline"
-                size={24}
-                color={paymentMethod === 'paystack' ? '#007AFF' : '#666'}
-              />
-              <View style={styles.paymentMethodInfo}>
-                <Text
-                  style={[
-                    styles.paymentMethodName,
-                    paymentMethod === 'paystack' && styles.paymentMethodNameActive,
-                  ]}
-                >
-                  Paystack
-                </Text>
-                <Text style={styles.paymentMethodDesc}>
-                  Pay with card, bank transfer, or USSD
-                </Text>
-              </View>
-              {paymentMethod === 'paystack' && (
-                <Ionicons name="checkmark-circle" size={24} color="#007AFF" />
-              )}
-            </View>
-          </TouchableOpacity>
+        {accountDetails ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Make Transfer</Text>
+            <Text style={styles.instructionText}>
+              Please make a transfer to the account below. Your payment will be confirmed automatically.
+            </Text>
 
-          <TouchableOpacity
-            style={[
-              styles.paymentMethodCard,
-              paymentMethod === 'flutterwave' && styles.paymentMethodCardActive,
-            ]}
-            onPress={() => setPaymentMethod('flutterwave')}
-          >
-            <View style={styles.paymentMethodContent}>
-              <Ionicons
-                name="card-outline"
-                size={24}
-                color={paymentMethod === 'flutterwave' ? '#007AFF' : '#666'}
-              />
-              <View style={styles.paymentMethodInfo}>
-                <Text
-                  style={[
-                    styles.paymentMethodName,
-                    paymentMethod === 'flutterwave' && styles.paymentMethodNameActive,
-                  ]}
-                >
-                  Flutterwave
-                </Text>
-                <Text style={styles.paymentMethodDesc}>
-                  Pay with card, mobile money, or bank transfer
-                </Text>
+            <View style={styles.accountCard}>
+              <View style={styles.accountRow}>
+                <Text style={styles.accountLabel}>Bank Name</Text>
+                <Text style={styles.accountValue}>{accountDetails.bankName}</Text>
               </View>
-              {paymentMethod === 'flutterwave' && (
-                <Ionicons name="checkmark-circle" size={24} color="#007AFF" />
-              )}
+              <View style={styles.accountRow}>
+                <Text style={styles.accountLabel}>Account Details</Text>
+                <Text style={styles.accountValue}>{accountDetails.accountName}</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.accountNumberRow}
+                onPress={() => copyToClipboard(accountDetails.accountNumber)}
+              >
+                <View>
+                  <Text style={styles.accountLabel}>Account Number</Text>
+                  <Text style={styles.accountNumberValue}>{accountDetails.accountNumber}</Text>
+                </View>
+                <Ionicons name="copy-outline" size={24} color="#000" />
+              </TouchableOpacity>
             </View>
-          </TouchableOpacity>
-        </View>
 
-        {/* Payment Button */}
-        <View style={styles.section}>
-          <TouchableOpacity
-            style={[styles.payButton, processing && styles.payButtonDisabled]}
-            onPress={handlePayment}
-            disabled={processing}
-          >
-            {processing ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <>
-                <Ionicons name="lock-closed-outline" size={20} color="#fff" />
-                <Text style={styles.payButtonText}>
-                  Pay ₦{invoice.total.toLocaleString()}
-                </Text>
-              </>
-            )}
-          </TouchableOpacity>
-          <Text style={styles.securityNote}>
-            <Ionicons name="shield-checkmark-outline" size={16} color="#666" />{' '}
-            Your payment is secure and encrypted
-          </Text>
-        </View>
+            <TouchableOpacity
+              style={styles.doneButton}
+              onPress={() => router.back()}
+            >
+              <Text style={styles.doneButtonText}>I have made the transfer</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          /* Payment Button */
+          <View style={styles.section}>
+            <TouchableOpacity
+              style={[styles.payButton, processing && styles.payButtonDisabled]}
+              onPress={handlePayment}
+              disabled={processing}
+            >
+              {processing ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="lock-closed-outline" size={20} color="#fff" />
+                  <Text style={styles.payButtonText}>
+                    Pay with Monnify
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+            <Text style={styles.securityNote}>
+              <Ionicons name="shield-checkmark-outline" size={16} color="#666" />{' '}
+              Your payment is secure and encrypted
+            </Text>
+          </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -338,43 +256,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#007AFF',
   },
-  paymentMethodCard: {
-    borderWidth: 2,
-    borderColor: '#eee',
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 10,
-  },
-  paymentMethodCardActive: {
-    borderColor: '#007AFF',
-    backgroundColor: '#f0f7ff',
-  },
-  paymentMethodContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 15,
-  },
-  paymentMethodInfo: {
-    flex: 1,
-  },
-  paymentMethodName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#666',
-    marginBottom: 4,
-  },
-  paymentMethodNameActive: {
-    color: '#007AFF',
-  },
-  paymentMethodDesc: {
-    fontSize: 12,
-    color: '#999',
-  },
   payButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#007AFF',
+    backgroundColor: '#000',
     padding: 16,
     borderRadius: 12,
     gap: 8,
@@ -403,5 +289,59 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#999',
   },
+  instructionText: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  accountCard: {
+    backgroundColor: '#f9f9f9',
+    borderRadius: 12,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#eee',
+    marginBottom: 20,
+  },
+  accountRow: {
+    marginBottom: 15,
+  },
+  accountLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 4,
+    textTransform: 'uppercase',
+  },
+  accountValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000',
+  },
+  accountNumberRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 5,
+    paddingTop: 15,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  accountNumberValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#000',
+    letterSpacing: 2,
+  },
+  doneButton: {
+    backgroundColor: '#000',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  doneButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  }
 });
 

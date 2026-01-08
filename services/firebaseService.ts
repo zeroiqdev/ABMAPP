@@ -85,6 +85,37 @@ export const firebaseService = {
     });
   },
 
+  async submitVendorDetails(userId: string, details: any, documents: any): Promise<void> {
+    const docRef = doc(db, 'users', userId);
+    await updateDoc(docRef, {
+      businessDetails: details,
+      documents: documents,
+      vendorStatus: 'pending_approval',
+      updatedAt: Timestamp.now(),
+    });
+  },
+
+  async approveVendor(userId: string): Promise<void> {
+    const docRef = doc(db, 'users', userId);
+    await updateDoc(docRef, {
+      vendorStatus: 'active',
+      updatedAt: Timestamp.now(),
+    });
+  },
+
+  async rejectVendor(userId: string, reason?: string): Promise<void> {
+    const docRef = doc(db, 'users', userId);
+    await updateDoc(docRef, {
+      vendorStatus: 'rejected',
+      rejectionReason: reason || 'Application declined by admin.',
+      updatedAt: Timestamp.now(),
+    });
+  },
+
+  async deleteUser(userId: string): Promise<void> {
+    await deleteDoc(doc(db, 'users', userId));
+  },
+
   async createCustomer(customer: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
     const docRef = await addDoc(collection(db, 'users'), {
       ...customer,
@@ -549,6 +580,20 @@ export const firebaseService = {
     return products;
   },
 
+  async getVendorProducts(vendorId: string): Promise<MarketplaceProduct[]> {
+    const q = query(
+      collection(db, 'marketplaceProducts'),
+      where('vendorId', '==', vendorId),
+      orderBy('createdAt', 'desc')
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toDate(),
+    })) as MarketplaceProduct[];
+  },
+
   async createMarketplaceProduct(
     product: Omit<MarketplaceProduct, 'id' | 'createdAt'>
   ): Promise<string> {
@@ -651,6 +696,24 @@ export const firebaseService = {
     const q = query(
       collection(db, 'orders'),
       where('userId', '==', userId)
+    );
+    return onSnapshot(q, (snapshot) => {
+      const orders = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate(),
+      })) as Order[];
+
+      orders.sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
+
+      callback(orders);
+    });
+  },
+
+  subscribeToGuestOrders(email: string, callback: (orders: Order[]) => void): () => void {
+    const q = query(
+      collection(db, 'orders'),
+      where('customerEmail', '==', email)
     );
     return onSnapshot(q, (snapshot) => {
       const orders = snapshot.docs.map((doc) => ({
@@ -895,7 +958,6 @@ export const firebaseService = {
     const q = query(
       collection(db, 'customerRegistrations'),
       where('registrationCode', '==', code.toUpperCase()),
-      where('used', '==', false),
       limit(1)
     );
     const snapshot = await getDocs(q);
@@ -966,7 +1028,7 @@ export const firebaseService = {
     const invitationData: Omit<StaffInvitation, 'id' | 'createdAt' | 'usedAt'> = {
       email: email.toLowerCase().trim(),
       name,
-      phone,
+      ...(phone ? { phone } : {}),
       role,
       invitationCode,
       invitedBy,
@@ -986,7 +1048,6 @@ export const firebaseService = {
     const q = query(
       collection(db, 'staffInvitations'),
       where('invitationCode', '==', code.toUpperCase()),
-      where('used', '==', false),
       limit(1)
     );
     const snapshot = await getDocs(q);
@@ -1075,7 +1136,7 @@ export const firebaseService = {
         imageUri,
         'chat_images',
         undefined,
-        `jobs / ${jobId} `
+        `jobs/${jobId}`
       );
     } catch (error: any) {
       // Fallback to Firebase Storage if Cloudinary fails (optional, but good for robustness)
@@ -1083,5 +1144,56 @@ export const firebaseService = {
       console.error('Cloudinary upload failed, falling back logic could be here', error);
       throw error;
     }
+  },
+
+  async getAllMarketplaceOrders(): Promise<Order[]> {
+    const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        createdAt: data.createdAt?.toDate() || new Date(),
+      } as Order;
+    });
+  },
+
+  subscribeToAllOrders(callback: (orders: Order[]) => void): () => void {
+    const q = query(
+      collection(db, 'orders'),
+      orderBy('createdAt', 'desc')
+    );
+    return onSnapshot(q, (snapshot) => {
+      const orders = snapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          createdAt: data.createdAt?.toDate() || new Date(),
+        } as Order;
+      });
+      callback(orders);
+    });
+  },
+
+  async updateOrderPayoutStatus(orderId: string, status: 'pending' | 'processing' | 'paid' | 'failed', adminNotes?: string): Promise<void> {
+    const docRef = doc(db, 'orders', orderId);
+    const updateData: any = {
+      payoutStatus: status,
+      updatedAt: Timestamp.now(),
+    };
+    if (adminNotes) {
+      updateData.adminNotes = adminNotes;
+    }
+    await updateDoc(docRef, updateData);
+  },
+
+  async updateOrderStatus(orderId: string, status: Order['status']): Promise<void> {
+    const docRef = doc(db, 'orders', orderId);
+    await updateDoc(docRef, {
+      status,
+      updatedAt: Timestamp.now(),
+    });
   },
 };
