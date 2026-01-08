@@ -60,14 +60,14 @@ export default function CartScreen() {
             style={styles.quantityButton}
             onPress={() => handleUpdateQuantity(item.product.id, item.quantity - 1)}
           >
-            <Ionicons name="remove" size={16} color="#007AFF" />
+            <Ionicons name="remove" size={16} color="#000" />
           </TouchableOpacity>
           <Text style={styles.quantityText}>{item.quantity}</Text>
           <TouchableOpacity
             style={styles.quantityButton}
             onPress={() => handleUpdateQuantity(item.product.id, item.quantity + 1)}
           >
-            <Ionicons name="add" size={16} color="#007AFF" />
+            <Ionicons name="add" size={16} color="#000" />
           </TouchableOpacity>
         </View>
       </View>
@@ -88,7 +88,7 @@ export default function CartScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => router.push('/(marketplace)/home')}>
           <Ionicons name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Shopping Cart</Text>
@@ -228,7 +228,7 @@ const styles = StyleSheet.create({
   itemTotal: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#007AFF',
+    color: '#000',
     marginBottom: 10,
   },
   removeButton: {
@@ -258,8 +258,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   totalRow: {
-    borderTopWidth: 2,
-    borderTopColor: '#007AFF',
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
     paddingTop: 12,
     marginTop: 8,
   },
@@ -271,10 +271,10 @@ const styles = StyleSheet.create({
   totalValue: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#007AFF',
+    color: '#000',
   },
   checkoutButton: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#000',
     padding: 16,
     borderRadius: 12,
     alignItems: 'center',
@@ -297,7 +297,7 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   shopButton: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#000',
     paddingHorizontal: 30,
     paddingVertical: 12,
     borderRadius: 8,

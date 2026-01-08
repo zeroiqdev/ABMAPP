@@ -75,7 +75,10 @@ export default function ProfileScreen() {
         )}
       </View>
 
-      <ScrollView style={styles.content}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={{ paddingBottom: 100 }}
+      >
         {/* Profile Info */}
         <View style={styles.section}>
           <View style={styles.avatarContainer}>

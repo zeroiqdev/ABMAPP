@@ -26,7 +26,7 @@ const WORKSHOP_LOCATION = {
     address: "Abuja Workshop",
 };
 
-const PRICE_PER_KM = 50;
+const PRICE_PER_KM = 500;
 const { width } = Dimensions.get('window');
 
 export default function TowRequestScreen() {
@@ -160,7 +160,7 @@ export default function TowRequestScreen() {
             WORKSHOP_LOCATION.longitude
         );
         setDistance(dist);
-        setPrice(Math.max(2000, Math.ceil(dist * PRICE_PER_KM)));
+        setPrice(Math.ceil(dist * PRICE_PER_KM));
     };
 
     function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -228,7 +228,7 @@ export default function TowRequestScreen() {
                 discount: 0,
                 total: price,
                 paymentStatus: 'pending',
-                status: 'draft',
+                status: 'draft', // User requested to revert to manual approval
                 dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
             });
 
@@ -366,7 +366,7 @@ export default function TowRequestScreen() {
                 )}
 
                 {/* Spacer for bottom button */}
-                <View style={{ height: 100 }} />
+                <View style={{ height: 150 }} />
             </ScrollView>
 
             <View style={styles.footer}>

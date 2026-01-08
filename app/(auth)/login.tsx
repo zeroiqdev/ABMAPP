@@ -175,11 +175,11 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   forgotText: {
-    color: '#007AFF',
+    color: '#000',
     fontSize: 14,
   },
   button: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#000',
     padding: 15,
     borderRadius: 8,
     alignItems: 'center',
@@ -202,7 +202,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   signupLink: {
-    color: '#007AFF',
+    color: '#000',
     fontSize: 14,
     fontWeight: '600',
   },

@@ -22,7 +22,7 @@ const { width } = Dimensions.get('window');
 
 export default function ProductDetailsScreen() {
     const router = useRouter();
-    const { id } = useLocalSearchParams<{ id: string }>();
+    const { id, from } = useLocalSearchParams<{ id: string; from?: string }>();
     const addItem = useCartStore((state) => state.addItem);
     const [product, setProduct] = useState<MarketplaceProduct | null>(null);
     const [quantity, setQuantity] = useState(1);
@@ -30,6 +30,14 @@ export default function ProductDetailsScreen() {
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
     const [showToast, setShowToast] = useState(false);
     const toastOpacity = useState(new Animated.Value(0))[0];
+
+    const handleBack = () => {
+        if (from === 'marketplace') {
+            router.navigate('/(customer)/marketplace');
+        } else {
+            router.back();
+        }
+    };
 
     useEffect(() => {
         loadProduct();
@@ -78,7 +86,7 @@ export default function ProductDetailsScreen() {
 
         // Add to cart store
         addItem(product, quantity);
-        
+
         // Show toast notification
         showToastNotification();
     };
@@ -95,7 +103,7 @@ export default function ProductDetailsScreen() {
         return (
             <View style={styles.container}>
                 <View style={styles.header}>
-                    <TouchableOpacity onPress={() => router.back()}>
+                    <TouchableOpacity onPress={handleBack}>
                         <Ionicons name="arrow-back" size={24} color="#000" />
                     </TouchableOpacity>
                 </View>
@@ -110,7 +118,7 @@ export default function ProductDetailsScreen() {
         <View style={styles.container}>
             {/* Header */}
             <View style={styles.header}>
-                <TouchableOpacity style={styles.iconButton} onPress={() => router.back()}>
+                <TouchableOpacity style={styles.iconButton} onPress={handleBack}>
                     <Ionicons name="arrow-back" size={24} color="#000" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle} numberOfLines={1}>{product.name}</Text>
@@ -119,7 +127,7 @@ export default function ProductDetailsScreen() {
                 </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 220 }}>
                 {/* Image Carousel */}
                 <View style={styles.carouselContainer}>
                     <ScrollView
@@ -455,7 +463,7 @@ const styles = StyleSheet.create({
     },
     footer: {
         position: 'absolute',
-        bottom: 0,
+        bottom: 90,
         left: 0,
         right: 0,
         backgroundColor: '#fff',

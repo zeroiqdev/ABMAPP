@@ -21,6 +21,7 @@ import { format } from 'date-fns';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { Colors, Typography, Spacing, BorderRadius, Shadows, StatusColors } from '@/constants/design';
 import { Platform } from 'react-native';
 
 export default function FinanceScreen() {
@@ -51,7 +52,12 @@ export default function FinanceScreen() {
   const [showDateFilterModal, setShowDateFilterModal] = useState(false);
   const [activeDatePicker, setActiveDatePicker] = useState<'start' | 'end' | 'due' | null>(null);
   const [showPaymentSuccessModal, setShowPaymentSuccessModal] = useState(false);
+
   const [recordedPaymentAmount, setRecordedPaymentAmount] = useState<number>(0);
+  const [editingVatRate, setEditingVatRate] = useState('');
+  const [editingDiscount, setEditingDiscount] = useState('');
+
+  const [invoiceType, setInvoiceType] = useState<'job' | 'direct'>('job');
 
   useEffect(() => {
     loadInvoices();
@@ -76,7 +82,7 @@ export default function FinanceScreen() {
 
   useEffect(() => {
     filterInvoices();
-  }, [invoices, filter, searchQuery, dateFilter, customerNamesMap]);
+  }, [invoices, filter, searchQuery, dateFilter, customerNamesMap, invoiceType]);
 
   const loadInvoices = async () => {
     if (!user?.workshopId) return;
@@ -86,7 +92,7 @@ export default function FinanceScreen() {
       setInvoices(invoicesData);
 
       // Load customer names for all invoices
-      const customerIds = [...new Set(invoicesData.map(inv => inv.userId))];
+      const customerIds = [...new Set(invoicesData.map(inv => inv.userId).filter((id): id is string => !!id))];
       const namesMap: Record<string, string> = {};
 
       await Promise.all(
@@ -116,6 +122,13 @@ export default function FinanceScreen() {
   const filterInvoices = () => {
     let result = invoices;
 
+    // Filter by Type (Job vs Direct)
+    if (invoiceType === 'job') {
+      result = result.filter(inv => !!inv.jobId);
+    } else {
+      result = result.filter(inv => !inv.jobId);
+    }
+
     // Status filter
     if (filter === 'pending') {
       result = result.filter((inv) => inv.paymentStatus === 'pending');
@@ -144,7 +157,7 @@ export default function FinanceScreen() {
       const query = searchQuery.toLowerCase();
       result = result.filter(
         (inv) => {
-          const customerName = customerNamesMap[inv.userId] || '';
+          const customerName = inv.customerName || (inv.userId ? customerNamesMap[inv.userId] : '') || '';
           return (
             inv.id.toLowerCase().includes(query) ||
             customerName.toLowerCase().includes(query) ||
@@ -181,16 +194,23 @@ export default function FinanceScreen() {
     setActiveDatePicker(null);
     setEditingItemIndex(null);
     setShowAddItem(false);
+
     setNewItem({ description: '', quantity: '1', unitPrice: '' });
     setAddItemMode('manual');
+    setEditingVatRate(invoice.vatRate ? invoice.vatRate.toString() : '0');
+    setEditingDiscount(invoice.discount ? invoice.discount.toString() : '0');
 
     // Load customer name
     try {
-      const customer = await firebaseService.getUser(invoice.userId);
-      if (customer) {
-        setCustomerName(customer.name);
+      if (invoice.userId) {
+        const customer = await firebaseService.getUser(invoice.userId);
+        if (customer) {
+          setCustomerName(customer.name);
+        } else {
+          setCustomerName('Unknown Customer');
+        }
       } else {
-        setCustomerName('Unknown Customer');
+        setCustomerName(invoice.customerName || 'Direct Customer');
       }
     } catch (error) {
       console.error('Error loading customer:', error);
@@ -326,7 +346,10 @@ export default function FinanceScreen() {
 
     try {
       const subtotal = items.reduce((sum, item) => sum + item.total, 0);
-      const total = subtotal + (selectedInvoice.vat || 0) - (selectedInvoice.discount || 0);
+      const vatRate = parseFloat(editingVatRate) || 0;
+      const discount = parseFloat(editingDiscount) || 0;
+      const vatAmount = subtotal * (vatRate / 100);
+      const total = subtotal + vatAmount - discount;
 
       const updateData: any = {
         items: items,
@@ -365,7 +388,11 @@ export default function FinanceScreen() {
     }
 
     // Use current edited total instead of original total
-    const currentTotal = editingItems.reduce((sum, item) => sum + item.total, 0);
+    const subtotal = editingItems.reduce((sum, item) => sum + item.total, 0);
+    const vatRate = parseFloat(editingVatRate) || 0;
+    const discount = parseFloat(editingDiscount) || 0;
+    const vatAmount = subtotal * (vatRate / 100);
+    const currentTotal = subtotal + vatAmount - discount;
     const amountPaid = selectedInvoice.amountPaid || 0;
 
     if (isFullPayment) {
@@ -390,7 +417,11 @@ export default function FinanceScreen() {
     if (!selectedInvoice || amount <= 0) return;
 
     // Use current edited total
-    const currentTotal = editingItems.reduce((sum, item) => sum + item.total, 0);
+    const subtotal = editingItems.reduce((sum, item) => sum + item.total, 0);
+    const vatRate = parseFloat(editingVatRate) || 0;
+    const discount = parseFloat(editingDiscount) || 0;
+    const vatAmount = subtotal * (vatRate / 100);
+    const currentTotal = subtotal + vatAmount - discount;
     const currentPaid = selectedInvoice.amountPaid || 0;
     const newPaid = currentPaid + amount;
     const remaining = currentTotal - newPaid;
@@ -413,15 +444,20 @@ export default function FinanceScreen() {
       });
 
       // Also update the total if items were edited
-      const updatedTotal = editingItems.reduce((sum, item) => sum + item.total, 0);
+      const finalSubtotal = editingItems.reduce((sum, item) => sum + item.total, 0);
+      const finalVatAmount = finalSubtotal * (vatRate / 100);
+      const finalTotal = finalSubtotal + finalVatAmount - discount;
 
       await firebaseService.updateInvoice(selectedInvoice.id, {
         paymentStatus: newStatus,
         amountPaid: newPaid,
         paymentHistory: paymentHistory,
         items: editingItems,
-        subtotal: updatedTotal,
-        total: updatedTotal,
+        subtotal: finalSubtotal,
+        total: finalTotal,
+        vat: finalVatAmount,
+        vatRate: vatRate,
+        discount: discount,
       });
 
       setRecordedPaymentAmount(amount);
@@ -451,12 +487,18 @@ export default function FinanceScreen() {
     setLoading(true);
     try {
       const subtotal = editingItems.reduce((sum, item) => sum + item.total, 0);
-      const total = subtotal + (selectedInvoice.vat || 0) - (selectedInvoice.discount || 0);
+      const vatRate = parseFloat(editingVatRate) || 0;
+      const discount = parseFloat(editingDiscount) || 0;
+      const vatAmount = subtotal * (vatRate / 100);
+      const total = subtotal + vatAmount - discount;
 
       await firebaseService.updateInvoice(selectedInvoice.id, {
         items: editingItems,
         subtotal,
         total,
+        vat: vatAmount,
+        vatRate,
+        discount,
         dueDate: editingDueDate || undefined,
       });
 
@@ -494,7 +536,7 @@ export default function FinanceScreen() {
       const job = selectedInvoice.jobId
         ? await firebaseService.getJob(selectedInvoice.jobId)
         : null;
-      const customer = await firebaseService.getUser(selectedInvoice.userId);
+      const customer = selectedInvoice.userId ? await firebaseService.getUser(selectedInvoice.userId) : null;
 
       // Use edited items and totals for PDF
       const currentTotal = editingItems.reduce((sum, item) => sum + item.total, 0);
@@ -544,7 +586,7 @@ export default function FinanceScreen() {
           </div>
           <div class="invoice-info">
             <div>
-              <p><strong>Customer:</strong> ${customer?.name || 'N/A'}</p>
+              <p><strong>Customer:</strong> ${customer?.name || inv.customerName || 'Direct Customer'}</p>
               <p><strong>Date:</strong> ${format(inv.createdAt, 'MMM dd, yyyy')}</p>
               ${inv.dueDate ? `<p><strong>Due Date:</strong> ${format(inv.dueDate, 'MMM dd, yyyy')}</p>` : ''}
             </div>
@@ -604,30 +646,42 @@ export default function FinanceScreen() {
     `;
   };
 
+  const getInvoiceIcon = (status: string): keyof typeof Ionicons.glyphMap => {
+    switch (status) {
+      case 'paid': return 'checkmark-circle-outline';
+      case 'partially_paid': return 'pie-chart-outline';
+      case 'overdue': return 'alert-circle-outline';
+      case 'unpaid': return 'time-outline';
+      case 'pending': return 'time-outline';
+      case 'cancelled': return 'close-circle-outline';
+      case 'refunded': return 'arrow-undo-outline';
+      default: return 'document-text-outline';
+    }
+  };
+
   const renderInvoice = ({ item }: { item: Invoice }) => {
     const amountPaid = item.amountPaid || 0;
     const remaining = item.total - amountPaid;
-    const customerName = customerNamesMap[item.userId] || 'Loading...';
+    const customerName = item.customerName || (item.userId ? customerNamesMap[item.userId] : 'Direct Customer') || 'Loading...';
 
     return (
       <TouchableOpacity
-        style={styles.invoiceCard}
+        style={styles.itemCard}
         onPress={() => handleInvoicePress(item)}
       >
-        <View style={styles.invoiceHeader}>
-          <View>
-            <Text
-              style={styles.invoiceNumber}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-            >
-              Invoice #{item.id}
-            </Text>
-            <Text style={styles.invoiceCustomer}>{customerName}</Text>
-            <Text style={styles.invoiceDate}>
-              {format(item.createdAt, 'MMM dd, yyyy')}
-            </Text>
-          </View>
+        <View style={[styles.iconBox, { backgroundColor: getPaymentStatusColor(item.paymentStatus) + '20' }]}>
+          <Ionicons name={getInvoiceIcon(item.paymentStatus)} size={24} color={getPaymentStatusColor(item.paymentStatus)} />
+        </View>
+        <View style={styles.itemInfo}>
+          <Text style={styles.itemName} numberOfLines={1}>
+            Invoice #{item.id.slice(0, 8)}
+          </Text>
+          <Text style={styles.itemSubtitle} numberOfLines={1}>
+            {customerName} • {format(item.createdAt, 'MMM dd, yyyy')}
+          </Text>
+        </View>
+        <View style={styles.itemRight}>
+          <Text style={styles.amountText}>₦{item.total.toLocaleString()}</Text>
           <View
             style={[
               styles.statusBadge,
@@ -641,25 +695,11 @@ export default function FinanceScreen() {
               ]}
             >
               {item.paymentStatus === 'partially_paid'
-                ? 'Partially Paid'
+                ? 'Partial'
                 : item.paymentStatus.charAt(0).toUpperCase() + item.paymentStatus.slice(1)}
             </Text>
           </View>
         </View>
-        <View style={styles.invoiceAmount}>
-          <Text style={styles.amountLabel}>Total Amount</Text>
-          <Text style={styles.amountValue}>₦{item.total.toLocaleString()}</Text>
-        </View>
-        {amountPaid > 0 && (
-          <View style={styles.paymentInfo}>
-            <Text style={styles.paidText}>Paid: ₦{amountPaid.toLocaleString()}</Text>
-            <Text style={[styles.remainingText, remaining < 0 && { color: '#30D158' }]}>
-              {remaining < 0
-                ? `Overpayment: ₦${Math.abs(remaining).toLocaleString()}`
-                : `Remaining: ₦${remaining.toLocaleString()}`}
-            </Text>
-          </View>
-        )}
       </TouchableOpacity>
     );
   };
@@ -668,11 +708,33 @@ export default function FinanceScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Finance</Text>
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={() => router.push('/(workshop)/create-invoice')}
+        >
+          <Ionicons name="add" size={24} color={Colors.textInverse} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Invoice Type Tabs */}
+      <View style={styles.typeContainer}>
+        <TouchableOpacity
+          style={[styles.typeTab, invoiceType === 'job' && styles.typeTabActive]}
+          onPress={() => setInvoiceType('job')}
+        >
+          <Text style={[styles.typeText, invoiceType === 'job' && styles.typeTextActive]}>Job Invoices</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.typeTab, invoiceType === 'direct' && styles.typeTabActive]}
+          onPress={() => setInvoiceType('direct')}
+        >
+          <Text style={[styles.typeText, invoiceType === 'direct' && styles.typeTextActive]}>Direct Invoices</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Search Bar */}
       <View style={styles.searchContainer}>
-        <Ionicons name="search-outline" size={20} color="#999" style={styles.searchIcon} />
+        <Ionicons name="search-outline" size={20} color={Colors.textTertiary} style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
           placeholder="Search by customer name or invoice ID..."
@@ -683,7 +745,7 @@ export default function FinanceScreen() {
           onPress={() => setShowDateFilterModal(true)}
           style={styles.dateFilterButton}
         >
-          <Ionicons name="calendar-outline" size={20} color="#000" />
+          <Ionicons name="calendar-outline" size={20} color={Colors.textPrimary} />
         </TouchableOpacity>
       </View>
 
@@ -723,7 +785,7 @@ export default function FinanceScreen() {
         }
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Ionicons name="receipt-outline" size={64} color="#ccc" />
+            <Ionicons name="receipt-outline" size={64} color={Colors.textTertiary} />
             <Text style={styles.emptyText}>No invoices found</Text>
           </View>
         }
@@ -746,7 +808,7 @@ export default function FinanceScreen() {
               setShowInvoiceModal(false);
               setActiveDatePicker(null);
             }}>
-              <Ionicons name="close" size={24} color="#000" />
+              <Ionicons name="close" size={24} color={Colors.textPrimary} />
             </TouchableOpacity>
           </View>
 
@@ -792,7 +854,7 @@ export default function FinanceScreen() {
                       }}
                       style={styles.addItemButton}
                     >
-                      <Ionicons name="add-circle-outline" size={24} color="#fff" />
+                      <Ionicons name="add-circle-outline" size={24} color={Colors.textInverse} />
                     </TouchableOpacity>
                   )}
                 </View>
@@ -843,7 +905,7 @@ export default function FinanceScreen() {
                               onPress={() => handleDeleteItem(index)}
                               style={[styles.itemEditButton, styles.deleteButton]}
                             >
-                              <Ionicons name="trash-outline" size={18} color="#FF3B30" />
+                              <Ionicons name="trash-outline" size={18} color={Colors.error} />
                             </TouchableOpacity>
                           )}
                         </View>
@@ -862,7 +924,7 @@ export default function FinanceScreen() {
                           </Text>
                         </View>
                         {canEditInvoice() && (
-                          <Ionicons name="pencil-outline" size={18} color="#000" />
+                          <Ionicons name="pencil-outline" size={18} color={Colors.textPrimary} />
                         )}
                       </TouchableOpacity>
                     )}
@@ -938,7 +1000,7 @@ export default function FinanceScreen() {
                       <View style={styles.inventorySelectionContainer}>
                         {inventoryItems.length === 0 ? (
                           <View style={styles.emptyState}>
-                            <Ionicons name="cube-outline" size={48} color="#ccc" />
+                            <Ionicons name="cube-outline" size={48} color={Colors.textTertiary} />
                             <Text style={styles.emptyText}>No inventory items found</Text>
                           </View>
                         ) : (
@@ -985,87 +1047,141 @@ export default function FinanceScreen() {
                     ₦{editingItems.reduce((sum, item) => sum + item.total, 0).toLocaleString()}
                   </Text>
                 </View>
-                <View style={styles.summaryRow}>
-                  <Text style={styles.summaryLabel}>Total:</Text>
-                  <Text style={styles.summaryValue}>
-                    ₦{editingItems.reduce((sum, item) => sum + item.total, 0).toLocaleString()}
-                  </Text>
-                </View>
-                {(selectedInvoice.amountPaid || 0) > 0 && (
-                  <>
-                    <View style={styles.summaryRow}>
-                      <Text style={styles.summaryLabel}>Amount Paid:</Text>
-                      <Text style={styles.summaryValue}>
-                        ₦{(selectedInvoice.amountPaid || 0).toLocaleString()}
-                      </Text>
-                    </View>
-                    <View style={styles.summaryRow}>
-                      <Text style={styles.summaryLabel}>
-                        {(editingItems.reduce((sum, item) => sum + item.total, 0) - (selectedInvoice.amountPaid || 0)) < 0 ? 'Overpayment:' : 'Balance Due:'}
-                      </Text>
-                      <Text style={[styles.summaryValue, (editingItems.reduce((sum, item) => sum + item.total, 0) - (selectedInvoice.amountPaid || 0)) < 0 ? { color: '#30D158' } : styles.balanceDue]}>
-                        ₦
-                        {Math.abs(editingItems.reduce((sum, item) => sum + item.total, 0) - (selectedInvoice.amountPaid || 0)).toLocaleString()}
-                      </Text>
-                    </View>
-                  </>
-                )}
-              </View>
 
-              {/* Due Date Selection - Prerequisite for Approval */}
-              {(selectedInvoice.status === 'draft' || !selectedInvoice.status) && (
-                <View style={styles.dueDateSection}>
-                  <Text style={styles.sectionTitle}>Due Date (Required)</Text>
-                  <TouchableOpacity
-                    style={[styles.dateInput, !editingDueDate && styles.dateInputError]}
-                    onPress={() => {
-                      setActiveDatePicker('due');
-                      if (Platform.OS === 'android') {
-                        setShowDatePicker(true);
-                      }
-                    }}
-                  >
-                    <Text style={styles.dateInputText}>
-                      {editingDueDate ? format(editingDueDate, 'MMM dd, yyyy') : 'Select Due Date'}
-                    </Text>
-                    <Ionicons name="calendar-outline" size={20} color="#000" />
-                  </TouchableOpacity>
-                  {activeDatePicker === 'due' && (Platform.OS === 'ios' || showDatePicker) && (
-                    <View>
-                      {Platform.OS === 'ios' && (
-                        <View style={styles.datePickerToolbar}>
-                          <TouchableOpacity
-                            onPress={() => setActiveDatePicker(null)}
-                            style={styles.datePickerDoneButton}
-                          >
-                            <Text style={styles.datePickerDoneText}>Done</Text>
-                          </TouchableOpacity>
-                        </View>
-                      )}
-                      <DateTimePicker
-                        value={editingDueDate || new Date()}
-                        mode="date"
-                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                        minimumDate={new Date()}
-                        themeVariant="light"
-                        onChange={(event, selectedDate) => {
-                          if (Platform.OS === 'android') {
-                            setShowDatePicker(false);
-                            setActiveDatePicker(null);
-                          }
-                          if (selectedDate) {
-                            setEditingDueDate(selectedDate);
-                            // Do not close on iOS, wait for Done button
-                          }
+                {canEditInvoice() ? (
+                  <>
+                    <View style={[styles.summaryRow, { alignItems: 'center' }]}>
+                      <Text style={styles.summaryLabel}>VAT Rate (%):</Text>
+                      <TextInput
+                        style={{
+                          borderWidth: 1,
+                          borderColor: '#ddd',
+                          borderRadius: 4,
+                          width: 60,
+                          height: 35,
+                          textAlign: 'right',
+                          paddingHorizontal: 8,
+                          fontSize: 14,
+                          backgroundColor: '#fff'
                         }}
-                        style={Platform.OS === 'ios' ? { backgroundColor: 'white' } : undefined}
+                        value={editingVatRate}
+                        onChangeText={setEditingVatRate}
+                        keyboardType="numeric"
+                        placeholder="0"
                       />
                     </View>
-                  )}
-                </View>
-              )}
+                    <View style={[styles.summaryRow, { alignItems: 'center' }]}>
+                      <Text style={styles.summaryLabel}>Discount (Amount):</Text>
+                      <TextInput
+                        style={{
+                          borderWidth: 1,
+                          borderColor: '#ddd',
+                          borderRadius: 4,
+                          width: 60,
+                          height: 35,
+                          textAlign: 'right',
+                          paddingHorizontal: 8,
+                          fontSize: 14,
+                          backgroundColor: '#fff'
+                        }}
+                        value={editingDiscount}
+                        onChangeText={setEditingDiscount}
+                        keyboardType="numeric"
+                        placeholder="0"
+                      />
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    {(parseFloat(editingVatRate) > 0) && (
+                      <View style={styles.summaryRow}>
+                        <Text style={styles.summaryLabel}>VAT ({editingVatRate}%):</Text>
+                        <Text style={styles.summaryValue}>
+                          ₦{(editingItems.reduce((sum, item) => sum + item.total, 0) * (parseFloat(editingVatRate) / 100)).toLocaleString()}
+                        </Text>
+                      </View>
+                    )}
+                    {(parseFloat(editingDiscount) > 0) && (
+                      <View style={styles.summaryRow}>
+                        <Text style={styles.summaryLabel}>Discount:</Text>
+                        <Text style={[styles.summaryValue, { color: '#FF3B30' }]}>
+                          -₦{parseFloat(editingDiscount).toLocaleString()}
+                        </Text>
+                      </View>
+                    )}
+                  </>
+                )}
 
-              {selectedInvoice.paymentHistory &&
+                <View style={[styles.summaryRow, { marginTop: 10, borderTopWidth: 1, borderTopColor: '#eee', paddingTop: 10 }]}>
+                  <Text style={[styles.summaryLabel, { fontWeight: 'bold', fontSize: 18 }]}>Total:</Text>
+                  <Text style={[styles.summaryValue, { fontWeight: 'bold', fontSize: 18 }]}>
+                    ₦{(
+                      editingItems.reduce((sum, item) => sum + item.total, 0) +
+                      (editingItems.reduce((sum, item) => sum + item.total, 0) * (parseFloat(editingVatRate) || 0) / 100) -
+                      (parseFloat(editingDiscount) || 0)
+                    ).toLocaleString()}
+                  </Text>
+                </View>
+              </View>
+
+
+              {/* Due Date Selection - Prerequisite for Approval */}
+              {
+                (selectedInvoice.status === 'draft' || !selectedInvoice.status) && (
+                  <View style={styles.dueDateSection}>
+                    <Text style={styles.sectionTitle}>Due Date (Required)</Text>
+                    <TouchableOpacity
+                      style={[styles.dateInput, !editingDueDate && styles.dateInputError]}
+                      onPress={() => {
+                        setActiveDatePicker('due');
+                        if (Platform.OS === 'android') {
+                          setShowDatePicker(true);
+                        }
+                      }}
+                    >
+                      <Text style={styles.dateInputText}>
+                        {editingDueDate ? format(editingDueDate, 'MMM dd, yyyy') : 'Select Due Date'}
+                      </Text>
+                      <Ionicons name="calendar-outline" size={20} color={Colors.textPrimary} />
+                    </TouchableOpacity>
+                    {activeDatePicker === 'due' && (Platform.OS === 'ios' || showDatePicker) && (
+                      <View>
+                        {Platform.OS === 'ios' && (
+                          <View style={styles.datePickerToolbar}>
+                            <TouchableOpacity
+                              onPress={() => setActiveDatePicker(null)}
+                              style={styles.datePickerDoneButton}
+                            >
+                              <Text style={styles.datePickerDoneText}>Done</Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                        <DateTimePicker
+                          value={editingDueDate || new Date()}
+                          mode="date"
+                          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                          minimumDate={new Date()}
+                          themeVariant="light"
+                          onChange={(event, selectedDate) => {
+                            if (Platform.OS === 'android') {
+                              setShowDatePicker(false);
+                              setActiveDatePicker(null);
+                            }
+                            if (selectedDate) {
+                              setEditingDueDate(selectedDate);
+                              // Do not close on iOS, wait for Done button
+                            }
+                          }}
+                          style={Platform.OS === 'ios' ? { backgroundColor: 'white' } : undefined}
+                        />
+                      </View>
+                    )}
+                  </View>
+                )
+              }
+
+              {
+                selectedInvoice.paymentHistory &&
                 selectedInvoice.paymentHistory.length > 0 && (
                   <View style={styles.paymentHistorySection}>
                     <Text style={styles.sectionTitle}>Payment History</Text>
@@ -1085,82 +1201,90 @@ export default function FinanceScreen() {
                       }
                     )}
                   </View>
-                )}
+                )
+              }
 
 
               {/* Locked Message */}
-              {!canEditInvoice() && (
-                <View style={styles.lockedMessage}>
-                  <Ionicons name="lock-closed-outline" size={20} color="#FFA500" />
-                  <Text style={styles.lockedText}>
-                    {selectedInvoice.status === 'approved'
-                      ? 'Invoice is approved and locked'
-                      : 'Invoice cannot be edited after payment has been recorded'}
-                  </Text>
-                </View>
-              )}
+              {
+                !canEditInvoice() && (
+                  <View style={styles.lockedMessage}>
+                    <Ionicons name="lock-closed-outline" size={20} color={Colors.warning} />
+                    <Text style={styles.lockedText}>
+                      {selectedInvoice.status === 'approved'
+                        ? 'Invoice is approved and locked'
+                        : 'Invoice cannot be edited after payment has been recorded'}
+                    </Text>
+                  </View>
+                )
+              }
 
               {/* Approve Button for Drafts */}
-              {(selectedInvoice.status === 'draft' || !selectedInvoice.status) && (
-                <TouchableOpacity
-                  style={styles.approveButton}
-                  onPress={handleApproveInvoice}
-                >
-                  <Ionicons name="checkmark-circle-outline" size={24} color="#fff" style={{ marginRight: 8 }} />
-                  <Text style={styles.approveButtonText}>
-                    {selectedInvoice.items.some(i => i.description.toLowerCase().includes('tow'))
-                      ? 'Approve'
-                      : 'Approve & Send'}
-                  </Text>
-                </TouchableOpacity>
-              )}
-
-              {!showAddItem && (
-                <>
-                  <View style={styles.paymentActions}>
-                    <Text style={styles.paymentSummaryText}>
-                      Paid: ₦{(selectedInvoice.amountPaid || 0).toLocaleString()} / {(editingItems.reduce((sum, item) => sum + item.total, 0) - (selectedInvoice.amountPaid || 0)) < 0 ? 'Overpayment' : 'Remaining'}: ₦
-                      {Math.abs(editingItems.reduce((sum, item) => sum + item.total, 0) - (selectedInvoice.amountPaid || 0)).toLocaleString()}
+              {
+                (selectedInvoice.status === 'draft' || !selectedInvoice.status) && (
+                  <TouchableOpacity
+                    style={styles.approveButton}
+                    onPress={handleApproveInvoice}
+                  >
+                    <Ionicons name="checkmark-circle-outline" size={24} color={Colors.textInverse} style={{ marginRight: 8 }} />
+                    <Text style={styles.approveButtonText}>
+                      {selectedInvoice.items.some(i => i.description.toLowerCase().includes('tow'))
+                        ? 'Approve'
+                        : 'Approve & Send'}
                     </Text>
-                    {(() => {
-                      const currentTotal = editingItems.reduce((sum, item) => sum + item.total, 0);
-                      const amountPaid = selectedInvoice.amountPaid || 0;
-                      const isFullyPaid = amountPaid >= currentTotal;
-
-                      return (
-                        <>
-                          <TouchableOpacity
-                            style={[styles.payButton, (isFullyPaid || loading) && styles.disabledButton]}
-                            onPress={() => {
-                              console.log('Record Payment button pressed');
-                              handleRecordPayment(false);
-                            }}
-                            disabled={isFullyPaid || loading}
-                            activeOpacity={0.7}
-                          >
-                            <Text style={styles.payButtonText}>Record Payment</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[styles.payButton, styles.fullPayButton, (isFullyPaid || loading) && styles.disabledButton]}
-                            onPress={() => handleRecordPayment(true)}
-                            disabled={isFullyPaid || loading}
-                          >
-                            <Text style={styles.payButtonText}>Mark Fully Paid</Text>
-                          </TouchableOpacity>
-                        </>
-                      );
-                    })()}
-                  </View>
-
-                  <TouchableOpacity style={styles.downloadButton} onPress={handleDownload}>
-                    <Ionicons name="download-outline" size={20} color="#000" />
-                    <Text style={styles.downloadButtonText}>Download Invoice</Text>
                   </TouchableOpacity>
-                </>
-              )}
-            </ScrollView>
-          )}
-        </View>
+                )
+              }
+
+              {
+                !showAddItem && (
+                  <>
+                    <View style={styles.paymentActions}>
+                      <Text style={styles.paymentSummaryText}>
+                        Paid: ₦{(selectedInvoice.amountPaid || 0).toLocaleString()} / {(editingItems.reduce((sum, item) => sum + item.total, 0) - (selectedInvoice.amountPaid || 0)) < 0 ? 'Overpayment' : 'Remaining'}: ₦
+                        {Math.abs(editingItems.reduce((sum, item) => sum + item.total, 0) - (selectedInvoice.amountPaid || 0)).toLocaleString()}
+                      </Text>
+                      {(() => {
+                        const currentTotal = editingItems.reduce((sum, item) => sum + item.total, 0);
+                        const amountPaid = selectedInvoice.amountPaid || 0;
+                        const isFullyPaid = amountPaid >= currentTotal;
+
+                        return (
+                          <>
+                            <TouchableOpacity
+                              style={[styles.payButton, (isFullyPaid || loading) && styles.disabledButton]}
+                              onPress={() => {
+                                console.log('Record Payment button pressed');
+                                handleRecordPayment(false);
+                              }}
+                              disabled={isFullyPaid || loading}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={styles.payButtonText}>Record Payment</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.payButton, styles.fullPayButton, (isFullyPaid || loading) && styles.disabledButton]}
+                              onPress={() => handleRecordPayment(true)}
+                              disabled={isFullyPaid || loading}
+                            >
+                              <Text style={styles.payButtonText}>Mark Fully Paid</Text>
+                            </TouchableOpacity>
+                          </>
+                        );
+                      })()}
+                    </View>
+
+                    <TouchableOpacity style={styles.downloadButton} onPress={handleDownload}>
+                      <Ionicons name="download-outline" size={20} color={Colors.textPrimary} />
+                      <Text style={styles.downloadButtonText}>Download Invoice</Text>
+                    </TouchableOpacity>
+                  </>
+                )
+              }
+            </ScrollView >
+          )
+          }
+        </View >
       </Modal >
 
       {/* Payment Modal */}
@@ -1240,7 +1364,7 @@ export default function FinanceScreen() {
                 disabled={loading || !paymentAmount || parseFloat(paymentAmount) <= 0}
               >
                 {loading ? (
-                  <ActivityIndicator color="#fff" />
+                  <ActivityIndicator color={Colors.textInverse} />
                 ) : (
                   <Text style={styles.confirmButtonText}>Record</Text>
                 )}
@@ -1262,7 +1386,7 @@ export default function FinanceScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Filter by Date</Text>
               <TouchableOpacity onPress={() => setShowDateFilterModal(false)}>
-                <Ionicons name="close" size={24} color="#000" />
+                <Ionicons name="close" size={24} color={Colors.textPrimary} />
               </TouchableOpacity>
             </View>
 
@@ -1281,7 +1405,7 @@ export default function FinanceScreen() {
                   <Text style={styles.dateInputText}>
                     {dateFilter.start ? format(dateFilter.start, 'MMM dd, yyyy') : 'Select start date'}
                   </Text>
-                  <Ionicons name="calendar-outline" size={20} color="#000" />
+                  <Ionicons name="calendar-outline" size={20} color={Colors.textPrimary} />
                 </TouchableOpacity>
                 {activeDatePicker === 'start' && (Platform.OS === 'ios' || showDatePicker) && (
                   <DateTimePicker
@@ -1318,7 +1442,7 @@ export default function FinanceScreen() {
                   <Text style={styles.dateInputText}>
                     {dateFilter.end ? format(dateFilter.end, 'MMM dd, yyyy') : 'Select end date'}
                   </Text>
-                  <Ionicons name="calendar-outline" size={20} color="#000" />
+                  <Ionicons name="calendar-outline" size={20} color={Colors.textPrimary} />
                 </TouchableOpacity>
                 {activeDatePicker === 'end' && (Platform.OS === 'ios' || showDatePicker) && (
                   <DateTimePicker
@@ -1373,7 +1497,7 @@ export default function FinanceScreen() {
         <View style={styles.successModalOverlay}>
           <View style={styles.successModalContent}>
             <View style={styles.successIconContainer}>
-              <Ionicons name="checkmark" size={40} color="#fff" />
+              <Ionicons name="checkmark" size={40} color={Colors.textInverse} />
             </View>
             <Text style={styles.successTitle}>Payment Recorded!</Text>
             <Text style={styles.successMessage}>
@@ -1455,315 +1579,351 @@ function InventoryItemRow({ item, onAdd }: { item: InventoryItem; onAdd: (qty: n
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   header: {
-    padding: 20,
-    paddingTop: 60,
-    backgroundColor: '#fff',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: Spacing.lg,
+    paddingTop: Platform.OS === 'android' ? 40 : Spacing['5xl'],
+    backgroundColor: Colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: Colors.border,
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: Typography.fontSize['2xl'],
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.textPrimary,
+  },
+  addButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.secondary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  typeContainer: {
+    flexDirection: 'row',
+    padding: Spacing.base,
+    backgroundColor: Colors.surface,
+    gap: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  typeTab: {
+    flex: 1,
+    paddingVertical: Spacing.sm,
+    alignItems: 'center',
+    borderRadius: BorderRadius.md,
+  },
+  typeTabActive: {
+    backgroundColor: Colors.secondary,
+  },
+  typeText: {
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.medium,
+    color: Colors.textSecondary,
+  },
+  typeTextActive: {
+    color: Colors.textInverse,
+    fontWeight: Typography.fontWeight.semibold,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    margin: 15,
-    paddingHorizontal: 15,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#eee',
+    backgroundColor: Colors.surface,
+    padding: Spacing.base,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    gap: Spacing.sm,
   },
   searchIcon: {
-    marginRight: 10,
+    marginRight: Spacing.sm,
   },
   searchInput: {
     flex: 1,
     height: 40,
-    fontSize: 14,
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textPrimary,
+  },
+  dateFilterButton: {
+    padding: Spacing.sm,
   },
   filterContainer: {
     flexDirection: 'row',
-    paddingHorizontal: 15,
-    paddingBottom: 15,
-    gap: 10,
+    padding: Spacing.base,
+    backgroundColor: Colors.surface,
+    gap: Spacing.sm,
   },
   filterPill: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#fff',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.background,
     borderWidth: 1,
-    borderColor: '#eee',
+    borderColor: Colors.border,
   },
   filterPillActive: {
-    backgroundColor: '#000',
-    borderColor: '#000',
+    backgroundColor: Colors.secondary,
+    borderColor: Colors.secondary,
   },
   filterText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#666',
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textSecondary,
+    fontWeight: Typography.fontWeight.medium,
   },
   filterTextActive: {
-    color: '#fff',
+    color: Colors.textInverse,
   },
   listContent: {
-    padding: 15,
+    padding: Spacing.base,
   },
   invoiceCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.base,
+    marginBottom: Spacing.base,
+    ...Shadows.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   invoiceHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 15,
+    marginBottom: Spacing.md,
   },
   invoiceNumber: {
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.semibold,
+  },
+  itemCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 0,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f5f5f5',
+    paddingVertical: 16,
+    paddingHorizontal: 15,
+  },
+  iconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  itemInfo: {
+    flex: 1,
+  },
+  itemName: {
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
     marginBottom: 4,
-    maxWidth: 200,
   },
-  invoiceCustomer: {
-    fontSize: 14,
-    color: '#000',
-    marginTop: 2,
-    fontWeight: '500',
+  itemSubtitle: {
+    fontSize: 13,
+    color: '#888',
   },
-  invoiceDate: {
-    fontSize: 12,
-    color: '#000',
-    marginTop: 4,
+  itemRight: {
+    alignItems: 'flex-end',
+    gap: 4,
   },
-  dateFilterButton: {
-    padding: 8,
-    marginLeft: 8,
-  },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
+  amountText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
   },
   statusText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#000',
   },
-  invoiceAmount: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
     alignItems: 'center',
-  },
-  amountLabel: {
-    fontSize: 14,
-    color: '#000',
-  },
-  amountValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#000',
-  },
-  paymentInfo: {
-    marginTop: 10,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-  },
-  paidText: {
-    fontSize: 12,
-    color: '#000',
-    marginBottom: 4,
-  },
-  remainingText: {
-    fontSize: 12,
-    color: '#000',
+    justifyContent: 'center',
   },
   emptyState: {
-    padding: 60,
+    padding: Spacing['5xl'],
     alignItems: 'center',
   },
   emptyText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#999',
+    marginTop: Spacing.base,
+    fontSize: Typography.fontSize.base,
+    color: Colors.textTertiary,
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: Colors.background,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    paddingTop: 60,
+    padding: Spacing.lg,
+    paddingTop: Platform.OS === 'android' ? 20 : Spacing.lg,
+    backgroundColor: Colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: Colors.border,
   },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontSize: Typography.fontSize.xl,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.textPrimary,
   },
   modalContent: {
     flex: 1,
-    padding: 20,
+    padding: Spacing.lg,
   },
   invoiceDetailsCard: {
-    backgroundColor: '#f9f9f9',
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 20,
+    backgroundColor: Colors.surface,
+    padding: Spacing.base,
+    borderRadius: BorderRadius.lg,
+    marginBottom: Spacing.lg,
+    ...Shadows.sm,
   },
   detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 20,
+    gap: Spacing.lg,
   },
   detailItem: {
     flex: 1,
   },
   detailLabel: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: Typography.fontSize.xs,
+    color: Colors.textSecondary,
     marginBottom: 4,
   },
   detailValue: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#000',
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.semibold,
+    color: Colors.textPrimary,
   },
   itemsSection: {
-    marginBottom: 20,
+    marginBottom: Spacing.lg,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 15,
+    fontSize: Typography.fontSize.lg,
+    fontWeight: Typography.fontWeight.bold,
+    marginBottom: Spacing.base,
+    color: Colors.textPrimary,
   },
   itemRow: {
-    marginBottom: 15,
+    marginBottom: Spacing.base,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-    paddingBottom: 15,
+    borderBottomColor: Colors.border,
+    paddingBottom: Spacing.base,
   },
   itemInfoContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  itemInfo: {
-    flex: 1,
-  },
+
   itemEditForm: {
-    backgroundColor: '#f9f9f9',
-    padding: 15,
-    borderRadius: 10,
+    backgroundColor: Colors.background,
+    padding: Spacing.base,
+    borderRadius: BorderRadius.lg,
   },
   itemEditInput: {
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    marginBottom: 10,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    fontSize: Typography.fontSize.base,
+    marginBottom: Spacing.sm,
     borderWidth: 1,
-    borderColor: '#eee',
+    borderColor: Colors.border,
+    color: Colors.textPrimary,
   },
   itemEditRow: {
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 10,
+    gap: Spacing.sm,
+    marginBottom: Spacing.sm,
   },
   itemEditField: {
     flex: 1,
   },
   itemEditLabel: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: Typography.fontSize.xs,
+    color: Colors.textSecondary,
     marginBottom: 4,
   },
   itemEditInputSmall: {
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 14,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    fontSize: Typography.fontSize.sm,
     borderWidth: 1,
-    borderColor: '#eee',
+    borderColor: Colors.border,
+    color: Colors.textPrimary,
   },
   itemEditActions: {
     flexDirection: 'row',
-    gap: 10,
+    gap: Spacing.sm,
   },
   itemEditButton: {
     flex: 1,
-    padding: 10,
-    borderRadius: 8,
-    backgroundColor: '#000',
+    padding: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.secondary,
     alignItems: 'center',
   },
   deleteButton: {
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: '#FF3B30',
-  },
-  addButton: {
-    backgroundColor: '#000',
+    borderColor: Colors.error,
   },
   itemEditButtonText: {
-    color: '#fff',
-    fontWeight: '600',
+    color: Colors.textInverse,
+    fontWeight: Typography.fontWeight.semibold,
   },
   addItemForm: {
-    backgroundColor: '#f9f9f9',
-    padding: 15,
-    borderRadius: 10,
-    marginTop: 10,
+    backgroundColor: Colors.background,
+    padding: Spacing.base,
+    borderRadius: BorderRadius.lg,
+    marginTop: Spacing.sm,
     borderWidth: 2,
-    borderColor: '#000',
+    borderColor: Colors.secondary,
     borderStyle: 'dashed',
   },
   addItemButton: {
     padding: 8,
-    backgroundColor: '#000',
-    borderRadius: 8,
+    backgroundColor: Colors.secondary,
+    borderRadius: BorderRadius.md,
   },
   addItemTabs: {
     flexDirection: 'row',
-    marginBottom: 15,
-    backgroundColor: '#f0f0f0',
-    borderRadius: 8,
+    marginBottom: Spacing.base,
+    backgroundColor: Colors.border,
+    borderRadius: BorderRadius.md,
     padding: 2,
   },
   approveButton: {
-    backgroundColor: '#30D158',
-    padding: 16,
-    borderRadius: 12,
+    backgroundColor: Colors.success,
+    padding: Spacing.base,
+    borderRadius: BorderRadius.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 20,
-    marginTop: 10,
+    marginBottom: Spacing.lg,
+    marginTop: Spacing.sm,
   },
   approveButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
+    color: Colors.textInverse,
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.bold,
   },
-
   addItemTab: {
     flex: 1,
     flexDirection: 'row',
@@ -1771,18 +1931,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 10,
     paddingHorizontal: 15,
-    borderRadius: 6,
+    borderRadius: BorderRadius.sm,
   },
   addItemTabActive: {
-    backgroundColor: '#000',
+    backgroundColor: Colors.secondary,
   },
   addItemTabText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#000',
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.semibold,
+    color: Colors.textSecondary,
   },
   addItemTabTextActive: {
-    color: '#fff',
+    color: Colors.textInverse,
   },
   inventorySelectionContainer: {
     maxHeight: 400,
@@ -1791,50 +1951,46 @@ const styles = StyleSheet.create({
     maxHeight: 300,
   },
   doneButton: {
-    backgroundColor: '#000',
-    padding: 15,
-    borderRadius: 10,
+    backgroundColor: Colors.secondary,
+    padding: Spacing.base,
+    borderRadius: BorderRadius.md,
     alignItems: 'center',
-    marginTop: 15,
-    marginBottom: 10,
+    marginTop: Spacing.base,
+    marginBottom: Spacing.sm,
   },
   doneButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    color: Colors.textInverse,
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.semibold,
   },
   inventoryItemRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    padding: 15,
-    borderRadius: 12,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    backgroundColor: Colors.surface,
+    padding: Spacing.base,
+    borderRadius: BorderRadius.md,
+    marginBottom: Spacing.md,
+    ...Shadows.sm,
   },
   inventoryItemInfo: {
     flex: 1,
-    marginRight: 15,
+    marginRight: Spacing.base,
   },
   inventoryItemName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#000',
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.semibold,
+    color: Colors.textPrimary,
     marginBottom: 4,
   },
   inventoryItemDetails: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textSecondary,
     marginBottom: 2,
   },
   inventoryItemCategory: {
-    fontSize: 12,
-    color: '#999',
+    fontSize: Typography.fontSize.xs,
+    color: Colors.textTertiary,
   },
   inventoryItemActions: {
     flexDirection: 'row',
@@ -1843,16 +1999,17 @@ const styles = StyleSheet.create({
   },
   quantityInput: {
     width: 60,
-    backgroundColor: '#f9f9f9',
-    borderRadius: 8,
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.sm,
     padding: 8,
-    fontSize: 14,
+    fontSize: Typography.fontSize.sm,
     textAlign: 'center',
     borderWidth: 1,
-    borderColor: '#eee',
+    borderColor: Colors.border,
+    color: Colors.textPrimary,
   },
   addInventoryButton: {
-    backgroundColor: '#000',
+    backgroundColor: Colors.secondary,
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -1863,51 +2020,51 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 15,
+    marginBottom: Spacing.base,
   },
   saveInvoiceButton: {
-    backgroundColor: '#000',
-    padding: 15,
-    borderRadius: 10,
+    backgroundColor: Colors.secondary,
+    padding: Spacing.base,
+    borderRadius: BorderRadius.md,
     alignItems: 'center',
-    marginTop: 20,
-    marginBottom: 10,
+    marginTop: Spacing.base,
+    marginBottom: Spacing.sm,
   },
   saveInvoiceButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    color: Colors.textInverse,
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.semibold,
   },
   lockedMessage: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff3cd',
-    padding: 15,
-    borderRadius: 10,
-    marginTop: 20,
-    marginBottom: 10,
+    backgroundColor: '#fff3cd', // Status color warning light? Maybe use design constants if available
+    padding: Spacing.base,
+    borderRadius: BorderRadius.md,
+    marginTop: Spacing.lg,
+    marginBottom: Spacing.sm,
     gap: 10,
   },
   lockedText: {
     flex: 1,
     color: '#856404',
-    fontSize: 14,
+    fontSize: Typography.fontSize.sm,
   },
   itemDescription: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#000',
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.medium,
+    color: Colors.textPrimary,
     marginBottom: 4,
   },
   itemDetails: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textSecondary,
   },
   summarySection: {
-    backgroundColor: '#f9f9f9',
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 20,
+    backgroundColor: Colors.background,
+    padding: Spacing.base,
+    borderRadius: BorderRadius.lg,
+    marginBottom: Spacing.lg,
   },
   summaryRow: {
     flexDirection: 'row',
@@ -1915,61 +2072,61 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   summaryLabel: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textSecondary,
   },
   summaryValue: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#000',
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.semibold,
+    color: Colors.textPrimary,
   },
   balanceDue: {
-    fontSize: 18,
-    color: '#FF3B30',
+    fontSize: Typography.fontSize.lg,
+    color: Colors.error,
   },
   paymentHistorySection: {
-    marginBottom: 20,
+    marginBottom: Spacing.lg,
   },
   paymentHistoryItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: Colors.border,
   },
   paymentAmount: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#30D158',
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.semibold,
+    color: Colors.successLight, // or calculate based on payment status
   },
   paymentDate: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textSecondary,
   },
   paymentActions: {
-    marginTop: 20,
-    marginBottom: 20,
+    marginTop: Spacing.lg,
+    marginBottom: Spacing.lg,
   },
   paymentSummaryText: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 15,
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textSecondary,
+    marginBottom: Spacing.base,
     textAlign: 'center',
   },
   payButton: {
-    backgroundColor: '#000',
-    padding: 15,
-    borderRadius: 10,
+    backgroundColor: Colors.secondary,
+    padding: Spacing.base,
+    borderRadius: BorderRadius.md,
     alignItems: 'center',
     marginBottom: 10,
   },
   fullPayButton: {
-    backgroundColor: '#000',
+    backgroundColor: Colors.secondary,
   },
   payButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    color: Colors.textInverse,
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.semibold,
   },
   disabledButton: {
     opacity: 0.5,
@@ -1979,79 +2136,81 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 15,
-    borderRadius: 10,
+    padding: Spacing.base,
+    borderRadius: BorderRadius.md,
     borderWidth: 1,
-    borderColor: '#000',
+    borderColor: Colors.textPrimary,
     marginTop: 10,
   },
   downloadButtonText: {
-    color: '#000',
-    fontSize: 16,
-    fontWeight: '600',
+    color: Colors.textPrimary,
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.semibold,
     marginLeft: 8,
   },
   paymentModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: Colors.overlay,
     justifyContent: 'center',
     alignItems: 'center',
   },
   paymentModalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 20,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.lg,
     width: '90%',
     maxWidth: 400,
   },
   paymentModalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontSize: Typography.fontSize.xl,
+    fontWeight: Typography.fontWeight.bold,
     marginBottom: 8,
+    color: Colors.textPrimary,
   },
   paymentModalSubtitle: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 20,
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textSecondary,
+    marginBottom: Spacing.lg,
   },
   inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.semibold,
+    color: Colors.textPrimary,
     marginBottom: 8,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#eee',
-    borderRadius: 10,
-    padding: 12,
-    fontSize: 16,
-    marginBottom: 15,
+    borderColor: Colors.border,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    fontSize: Typography.fontSize.base,
+    marginBottom: Spacing.base,
+    color: Colors.textPrimary,
   },
   methodButtons: {
     flexDirection: 'row',
     gap: 10,
-    marginBottom: 20,
+    marginBottom: Spacing.lg,
   },
   methodButton: {
     flex: 1,
-    padding: 12,
-    borderRadius: 10,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
     borderWidth: 1,
-    borderColor: '#eee',
+    borderColor: Colors.border,
     alignItems: 'center',
   },
   methodButtonActive: {
-    backgroundColor: '#007AFF',
-    borderColor: '#007AFF',
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
   },
   methodButtonText: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textSecondary,
   },
   methodButtonTextActive: {
-    color: '#fff',
-    fontWeight: '600',
+    color: Colors.textInverse,
+    fontWeight: Typography.fontWeight.semibold,
   },
   paymentModalActions: {
     flexDirection: 'row',
@@ -2059,134 +2218,137 @@ const styles = StyleSheet.create({
   },
   modalButton: {
     flex: 1,
-    padding: 15,
-    borderRadius: 10,
+    padding: Spacing.base,
+    borderRadius: BorderRadius.md,
     alignItems: 'center',
   },
   cancelButton: {
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   confirmButton: {
-    backgroundColor: '#000',
+    backgroundColor: Colors.secondary,
   },
   cancelButtonText: {
-    color: '#666',
-    fontSize: 16,
-    fontWeight: '600',
+    color: Colors.textSecondary,
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.semibold,
   },
   confirmButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    color: Colors.textInverse,
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.semibold,
   },
   dateFilterModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: Colors.overlay,
     justifyContent: 'flex-end',
   },
   dateFilterModalContent: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: BorderRadius.xl,
+    borderTopRightRadius: BorderRadius.xl,
+    padding: Spacing.lg,
     paddingBottom: 40,
   },
   dateFilterFields: {
-    marginVertical: 20,
+    marginVertical: Spacing.lg,
   },
   dateFilterField: {
-    marginBottom: 20,
+    marginBottom: Spacing.lg,
   },
   dateInput: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#f9f9f9',
-    borderRadius: 10,
-    padding: 15,
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.base,
     borderWidth: 1,
-    borderColor: '#eee',
+    borderColor: Colors.border,
   },
   dateInputText: {
-    fontSize: 16,
-    color: '#000',
+    fontSize: Typography.fontSize.base,
+    color: Colors.textPrimary,
   },
   dateFilterActions: {
     flexDirection: 'row',
     gap: 10,
-    marginTop: 20,
+    marginTop: Spacing.lg,
   },
   successModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: Colors.overlay,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
   successModalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 30,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.xl,
+    padding: Spacing['2xl'],
     alignItems: 'center',
     width: '100%',
     maxWidth: 340,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 5,
+    ...Shadows.lg,
   },
   successIconContainer: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#000',
+    backgroundColor: Colors.secondary,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: Spacing.lg,
   },
   successTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#000',
+    fontSize: Typography.fontSize['2xl'],
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.textPrimary,
     marginBottom: 10,
     textAlign: 'center',
   },
   successMessage: {
-    fontSize: 16,
-    color: '#666',
+    fontSize: Typography.fontSize.base,
+    color: Colors.textSecondary,
     textAlign: 'center',
-    marginBottom: 30,
+    marginBottom: Spacing['2xl'],
     lineHeight: 22,
   },
   successButton: {
-    backgroundColor: '#000',
-    paddingVertical: 15,
+    backgroundColor: Colors.secondary,
+    paddingVertical: Spacing.base,
     paddingHorizontal: 40,
-    borderRadius: 12,
+    borderRadius: BorderRadius.md,
     width: '100%',
     alignItems: 'center',
   },
   successButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    color: Colors.textInverse,
+    fontSize: Typography.fontSize.base,
+    fontWeight: Typography.fontWeight.semibold,
+  },
+  dueDateSection: {
+    marginBottom: Spacing.lg,
+    marginTop: 10,
+  },
+  dateInputError: {
+    borderColor: Colors.error,
   },
   datePickerToolbar: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    backgroundColor: '#f0f0f0',
+    backgroundColor: Colors.borderLight,
     padding: 10,
-    borderTopLeftRadius: 10,
-    borderTopRightRadius: 10,
+    borderTopLeftRadius: BorderRadius.md,
+    borderTopRightRadius: BorderRadius.md,
   },
   datePickerDoneButton: {
     paddingHorizontal: 15,
   },
   datePickerDoneText: {
-    color: '#000',
-    fontWeight: '600',
-    fontSize: 16,
+    color: Colors.textPrimary,
+    fontWeight: Typography.fontWeight.semibold,
+    fontSize: Typography.fontSize.base,
   },
 });
 

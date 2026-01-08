@@ -28,9 +28,12 @@ export default function CustomerHomeScreen() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'tow' | 'repairs' | 'orders'>('repairs');
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+
   const [marketplaceProducts, setMarketplaceProducts] = useState<MarketplaceProduct[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+
+
 
   const loadData = useCallback(async () => {
     if (!user) return;
@@ -105,13 +108,13 @@ export default function CustomerHomeScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <View style={styles.profileSection}>
-          <View style={styles.profileIcon}>
-            <Ionicons name="person" size={24} color={Colors.secondary} />
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#f0f0f0', justifyContent: 'center', alignItems: 'center', marginRight: 12 }}>
+            <Ionicons name="person" size={24} color="#666" />
           </View>
           <View>
-            <Text style={styles.welcomeText}>Welcome,</Text>
-            <Text style={styles.userName}>{user?.name || 'Customer'}</Text>
+            <Text style={{ fontSize: 14, color: '#666' }}>Welcome back,</Text>
+            <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#000' }}>{user?.name || 'Customer'}</Text>
           </View>
         </View>
         <View style={styles.headerActions}>
@@ -133,6 +136,8 @@ export default function CustomerHomeScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
+
+
         {/* Wallet-Style Vehicle Card */}
         <View style={styles.cardContainer}>
           <View style={styles.cardHeader}>
@@ -232,7 +237,7 @@ export default function CustomerHomeScreen() {
             style={[styles.tab, activeTab === 'orders' && styles.tabActive]}
             onPress={() => {
               setActiveTab('orders');
-              router.push('/(marketplace)/orders');
+              router.push('/(customer)/orders');
             }}
           >
 

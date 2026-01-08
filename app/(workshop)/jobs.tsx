@@ -144,9 +144,12 @@ function JobCard({ job }: { job: Job }) {
   }, [job.vehicleId]);
 
   const loadVehicle = async () => {
+    if (!job.vehicleId) {
+      setLoading(false);
+      return;
+    }
     try {
-      const vehicles = await firebaseService.getVehicles(job.userId);
-      const v = vehicles.find(v => v.id === job.vehicleId);
+      const v = await firebaseService.getVehicle(job.vehicleId);
       setVehicle(v || null);
     } catch (error) {
       console.error(error);

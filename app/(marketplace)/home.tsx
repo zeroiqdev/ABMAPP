@@ -13,8 +13,10 @@ import {
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { firebaseService } from '@/services/firebaseService';
-import { MarketplaceProduct } from '@/types';
+import { MarketplaceProduct, Order } from '@/types';
 import { useAuthStore } from '@/store/authStore';
+import { useCartStore } from '@/store/cartStore';
+import { VendorHome } from '@/components/VendorHome';
 
 const { width } = Dimensions.get('window');
 const COLUMN_WIDTH = (width - 40) / 2;
@@ -40,6 +42,9 @@ export default function MarketplaceHomeScreen() {
   const [searchTerm, setSearchTerm] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const cartItemCount = useCartStore((state) => state.getItemCount());
+
+
 
   const loadProducts = async () => {
     try {
@@ -111,6 +116,10 @@ export default function MarketplaceHomeScreen() {
     </TouchableOpacity>
   );
 
+  if (user?.role === 'vendor') {
+    return <VendorHome />;
+  }
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -124,7 +133,11 @@ export default function MarketplaceHomeScreen() {
             onPress={() => router.push('/(marketplace)/cart')}
           >
             <Ionicons name="bag-handle-outline" size={24} color="#000" />
-            <View style={styles.cartBadge} />
+            {cartItemCount > 0 && (
+              <View style={styles.cartBadge}>
+                <Text style={styles.cartBadgeText}>{cartItemCount}</Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -193,7 +206,7 @@ export default function MarketplaceHomeScreen() {
           }
         />
       </View>
-    </View>
+    </View >
   );
 }
 
@@ -237,14 +250,22 @@ const styles = StyleSheet.create({
   },
   cartBadge: {
     position: 'absolute',
-    top: 10,
-    right: 10,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    top: -2,
+    right: -2,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
     backgroundColor: 'red',
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  cartBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
   searchContainer: {
     flexDirection: 'row',
@@ -292,7 +313,7 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   productsList: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingBottom: 100,
   },
   columnWrapper: {

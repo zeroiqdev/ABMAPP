@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   RefreshControl,
   Alert,
+  ActivityIndicator,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,57 +18,78 @@ import { Order } from '@/types';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/design';
 import { format } from 'date-fns';
 
+const TABS = ['All Orders', 'New Orders', 'Processing', 'Shipped', 'Cancelled'];
+
 export default function OrdersScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [salesOrders, setSalesOrders] = useState<Order[]>([]);
+  const [purchaseOrders, setPurchaseOrders] = useState<Order[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('New Orders');
   const isVendor = user?.role === 'vendor';
 
   useEffect(() => {
-    loadOrders();
-  }, []);
-
-  const loadOrders = async () => {
     if (!user) return;
-    try {
-      const userOrders = isVendor
-        ? await firebaseService.getOrders(undefined, user.id)
-        : await firebaseService.getOrders(user.id);
-      setOrders(userOrders);
-    } catch (error) {
-      console.error('Error loading orders:', error);
-    } finally {
+
+    let unsubscribe: () => void;
+
+    if (isVendor) {
+      const unsubscribeSales = firebaseService.subscribeToVendorOrders(user.id, (sales) => {
+        setSalesOrders(sales);
+      });
+      const unsubscribePurchases = firebaseService.subscribeToOrders(user.id, (purchases) => {
+        setPurchaseOrders(purchases);
+      });
+
+      unsubscribe = () => {
+        unsubscribeSales();
+        unsubscribePurchases();
+      };
+    } else {
+      unsubscribe = firebaseService.subscribeToOrders(user.id, (newOrders) => {
+        setOrders(newOrders);
+        setLoading(false);
+      });
+    }
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [user, isVendor]);
+
+  // Merge orders for vendors
+  useEffect(() => {
+    if (isVendor) {
+      const allOrders = [...salesOrders, ...purchaseOrders];
+      const uniqueOrders = Array.from(new Map(allOrders.map(item => [item.id, item])).values());
+      uniqueOrders.sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
+
+      setOrders(uniqueOrders);
       setLoading(false);
     }
-  };
+  }, [salesOrders, purchaseOrders, isVendor]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadOrders();
-    setRefreshing(false);
+    setTimeout(() => setRefreshing(false), 1000);
   };
 
   const getStatusColor = (status: Order['status']) => {
     switch (status) {
-      case 'confirmed':
-        return Colors.success;
-      case 'shipped':
-        return Colors.info;
-      case 'delivered':
-        return Colors.success;
-      case 'cancelled':
-        return Colors.error;
-      default:
-        return Colors.warning;
+      case 'confirmed': return Colors.success;
+      case 'shipped': return Colors.info;
+      case 'delivered': return Colors.success;
+      case 'cancelled': return Colors.error;
+      default: return Colors.warning;
     }
   };
 
   const handleStatusUpdate = async (orderId: string, newStatus: Order['status']) => {
     try {
       await firebaseService.updateOrder(orderId, { status: newStatus });
-      await loadOrders();
       Alert.alert('Success', 'Order status updated successfully');
     } catch (error) {
       console.error('Error updating order status:', error);
@@ -74,249 +97,131 @@ export default function OrdersScreen() {
     }
   };
 
-  const showStatusOptions = (order: Order) => {
-    const statusOptions: { label: string; value: Order['status'] }[] = [];
-    
-    if (order.status === 'pending') {
-      statusOptions.push({ label: 'Confirm Order', value: 'confirmed' });
-      statusOptions.push({ label: 'Cancel Order', value: 'cancelled' });
-    } else if (order.status === 'confirmed') {
-      statusOptions.push({ label: 'Mark as Shipped', value: 'shipped' });
-      statusOptions.push({ label: 'Cancel Order', value: 'cancelled' });
-    } else if (order.status === 'shipped') {
-      statusOptions.push({ label: 'Mark as Delivered', value: 'delivered' });
+  const getFilteredOrders = () => {
+    if (!isVendor) return orders;
+    switch (activeTab) {
+      case 'New Orders': return orders.filter(o => o.status === 'pending');
+      case 'Processing': return orders.filter(o => o.status === 'confirmed');
+      case 'Shipped': return orders.filter(o => o.status === 'shipped');
+      case 'Cancelled': return orders.filter(o => o.status === 'cancelled');
+      default: return orders;
     }
+  };
 
-    if (statusOptions.length === 0) return;
+  const renderOrder = ({ item }: { item: Order }) => {
+    const firstItem = item.products[0];
+    const otherItemsCount = item.products.length - 1;
+    const itemName = firstItem ? firstItem.productName : 'Unknown Item';
+    const displayName = otherItemsCount > 0 ? `${itemName} +${otherItemsCount} more` : itemName;
 
-    Alert.alert(
-      'Update Order Status',
-      'Select new status:',
-      [
-        ...statusOptions.map((option) => ({
-          text: option.label,
-          onPress: () => handleStatusUpdate(order.id, option.value),
-        })),
-        { text: 'Cancel', style: 'cancel' },
-      ]
+    return (
+      <TouchableOpacity
+        style={styles.orderCard}
+        activeOpacity={0.8}
+        onPress={() => router.push(`/(marketplace)/order-details?id=${item.id}`)}
+      >
+        <View style={styles.iconBox}>
+          <Image source={{ uri: firstItem?.image || 'https://via.placeholder.com/100' }} style={styles.orderImage} />
+        </View>
+
+        <View style={styles.orderDetails}>
+          <Text style={styles.orderName} numberOfLines={1}>{displayName}</Text>
+          <Text style={styles.orderPrice}>₦{item.total.toLocaleString()}</Text>
+          <View style={styles.orderMeta}>
+            <Text style={styles.orderId}>#{item.id.slice(0, 8)}</Text>
+            <Text style={styles.orderDate}>• {item.createdAt ? format(item.createdAt, 'MMM d, yyyy') : ''}</Text>
+          </View>
+        </View>
+
+        <View style={styles.orderActions}>
+          <TouchableOpacity style={styles.viewButton} onPress={() => router.push(`/(marketplace)/order-details?id=${item.id}`)}>
+            <Text style={styles.viewButtonText}>View</Text>
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
     );
   };
 
-  const renderOrder = ({ item }: { item: Order }) => (
-    <TouchableOpacity 
-      style={styles.orderCard}
-      onPress={isVendor ? () => showStatusOptions(item) : undefined}
-    >
-      <View style={styles.orderHeader}>
-        <View>
-          <Text style={styles.orderId}>Order #{item.id.slice(0, 8)}</Text>
-          <Text style={styles.orderDate}>
-            {format(item.createdAt, 'MMM dd, yyyy')}
-          </Text>
-        </View>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
-          <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
-            {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-          </Text>
-        </View>
-      </View>
-      <View style={styles.orderItems}>
-        <Text style={styles.itemsCount}>
-          {item.products.length} item{item.products.length !== 1 ? 's' : ''}
-        </Text>
-        {item.products.map((product, index) => (
-          <Text key={index} style={styles.productName}>
-            • {product.productName} (x{product.quantity})
-          </Text>
-        ))}
-      </View>
-      {item.shippingAddress && (
-        <View style={styles.shippingInfo}>
-          <Text style={styles.shippingLabel}>Shipping Address:</Text>
-          <Text style={styles.shippingText}>{item.shippingAddress}</Text>
-        </View>
-      )}
-      <View style={styles.orderFooter}>
-        <Text style={styles.orderTotal}>₦{item.total.toLocaleString()}</Text>
-        {isVendor && (
-          <TouchableOpacity
-            style={styles.updateButton}
-            onPress={() => showStatusOptions(item)}
-          >
-            <Text style={styles.updateButtonText}>Update Status</Text>
-          </TouchableOpacity>
-        )}
-        {!isVendor && (
-          <Ionicons name="chevron-forward" size={20} color={Colors.textTertiary} />
-        )}
-      </View>
-    </TouchableOpacity>
+  if (loading) return (
+    <View style={styles.centerContainer}><ActivityIndicator size="large" color="#000" /></View>
   );
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={{ width: 24 }} />
-        <Text style={styles.headerTitle}>{isVendor ? 'Orders' : 'My Orders'}</Text>
+        <Text style={styles.headerTitle}>{isVendor ? 'Vendor Orders' : 'My Orders'}</Text>
         <View style={{ width: 24 }} />
       </View>
 
-      {loading ? (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyText}>Loading orders...</Text>
-        </View>
-      ) : (
+      <View style={styles.tabsContainer}>
         <FlatList
-          data={orders}
-          renderItem={renderOrder}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-          ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <Ionicons name="bag-outline" size={64} color={Colors.textTertiary} />
-              <Text style={styles.emptyText}>No orders yet</Text>
-              <Text style={styles.emptySubtext}>
-                {isVendor 
-                  ? 'Orders for your products will appear here'
-                  : 'Your marketplace orders will appear here'}
-              </Text>
-            </View>
-          }
+          data={TABS}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          renderItem={({ item }) => (
+            <TouchableOpacity style={[styles.tabItem, activeTab === item && styles.tabItemActive]} onPress={() => setActiveTab(item)}>
+              <Text style={[styles.tabText, activeTab === item && styles.tabTextActive]}>{item}</Text>
+            </TouchableOpacity>
+          )}
+          keyExtractor={item => item}
+          contentContainerStyle={styles.tabsContent}
         />
-      )}
+      </View>
+
+      <FlatList
+        data={getFilteredOrders()}
+        renderItem={renderOrder}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.listContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <Ionicons name="bag-outline" size={64} color={Colors.textTertiary} />
+            <Text style={styles.emptyText}>No orders yet</Text>
+            <Text style={styles.emptySubtext}>{isVendor ? 'Orders for your products will appear here' : 'Your marketplace orders will appear here'}</Text>
+          </View>
+        }
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: Spacing.lg,
-    paddingTop: Spacing['5xl'],
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  headerTitle: {
-    fontSize: Typography.fontSize.xl,
-    fontWeight: Typography.fontWeight.bold,
-    color: Colors.textPrimary,
-  },
-  listContent: {
-    padding: Spacing.base,
-  },
+  container: { flex: 1, backgroundColor: '#fff' },
+  centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.background },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: Spacing.lg, paddingTop: Spacing['5xl'], backgroundColor: Colors.surface, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  headerTitle: { fontSize: Typography.fontSize.xl, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary },
+  listContent: { padding: 20 },
   orderCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.lg,
-    marginBottom: Spacing.base,
-    ...Shadows.md,
-  },
-  orderHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: Spacing.md,
-  },
-  orderId: {
-    fontSize: Typography.fontSize.base,
-    fontWeight: Typography.fontWeight.bold,
-    color: Colors.textPrimary,
-    marginBottom: Spacing.xs,
-  },
-  orderDate: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.textSecondary,
-  },
-  statusBadge: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.full,
-  },
-  statusText: {
-    fontSize: Typography.fontSize.xs,
-    fontWeight: Typography.fontWeight.semibold,
-  },
-  orderItems: {
-    marginBottom: Spacing.md,
-  },
-  itemsCount: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.textSecondary,
-    marginBottom: Spacing.xs,
-  },
-  productName: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.textSecondary,
-    marginTop: Spacing.xs,
-  },
-  shippingInfo: {
-    marginTop: Spacing.md,
-    marginBottom: Spacing.md,
-    paddingTop: Spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
-  },
-  shippingLabel: {
-    fontSize: Typography.fontSize.xs,
-    fontWeight: Typography.fontWeight.semibold,
-    color: Colors.textSecondary,
-    marginBottom: Spacing.xs,
-  },
-  shippingText: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.textPrimary,
-  },
-  orderFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: Spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
+    marginBottom: 0,
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f5f5f5',
+    backgroundColor: '#fff'
   },
-  orderTotal: {
-    fontSize: Typography.fontSize.lg,
-    fontWeight: Typography.fontWeight.bold,
-    color: Colors.primary,
-  },
-  updateButton: {
-    backgroundColor: Colors.primary,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.sm,
-  },
-  updateButtonText: {
-    color: '#fff',
-    fontSize: Typography.fontSize.sm,
-    fontWeight: Typography.fontWeight.semibold,
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: Spacing['3xl'],
-  },
-  emptyText: {
-    fontSize: Typography.fontSize.base,
-    fontWeight: Typography.fontWeight.semibold,
-    color: Colors.textTertiary,
-    marginTop: Spacing.base,
-  },
-  emptySubtext: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.textSecondary,
-    marginTop: Spacing.xs,
-    textAlign: 'center',
-  },
+  iconBox: { width: 80, height: 80, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginRight: 12, backgroundColor: '#f5f5f5' },
+  orderImage: { width: 76, height: 76, borderRadius: 6, backgroundColor: '#f5f5f5' },
+  orderDetails: { flex: 1, justifyContent: 'center' },
+  orderName: { fontSize: 16, fontWeight: '600', color: '#000', marginBottom: 4 },
+  orderPrice: { fontSize: 16, fontWeight: 'bold', color: '#000', marginBottom: 6 },
+  orderMeta: { flexDirection: 'row', alignItems: 'center' },
+  orderId: { fontSize: 12, color: '#666' },
+  orderDate: { fontSize: 12, color: '#666' },
+  orderActions: { justifyContent: 'center', alignItems: 'center', paddingLeft: 8, width: 80 },
+  viewButton: { backgroundColor: '#000', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+  viewButtonText: { color: '#fff', fontWeight: '600', fontSize: 12 },
+  tabsContainer: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  tabsContent: { paddingHorizontal: 15 },
+  tabItem: { paddingVertical: 15, paddingHorizontal: 15, marginRight: 10, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  tabItemActive: { borderBottomColor: '#000' },
+  tabText: { fontSize: 14, color: '#999', fontWeight: '500' },
+  tabTextActive: { color: '#000', fontWeight: '600' },
+  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: Spacing['3xl'] },
+  emptyText: { fontSize: Typography.fontSize.base, fontWeight: Typography.fontWeight.semibold, color: Colors.textTertiary, marginTop: Spacing.base },
+  emptySubtext: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary, marginTop: Spacing.xs, textAlign: 'center' },
 });
-
 
 

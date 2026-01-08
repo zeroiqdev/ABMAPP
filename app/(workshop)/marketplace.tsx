@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { ClipboardDocumentListIcon } from 'react-native-heroicons/outline';
 import { firebaseService } from '@/services/firebaseService';
 import { MarketplaceProduct } from '@/types';
 import { useAuthStore } from '@/store/authStore';
@@ -72,7 +73,7 @@ export default function MarketplaceScreen() {
   const renderProduct = ({ item }: { item: MarketplaceProduct }) => (
     <TouchableOpacity
       style={styles.productCard}
-      onPress={() => router.push(`/(workshop)/product-details?id=${item.id}`)}
+      onPress={() => router.push(`/(workshop)/product-details?id=${item.id}&from=marketplace`)}
       activeOpacity={0.9}
     >
       <View style={styles.imageContainer}>
@@ -111,9 +112,12 @@ export default function MarketplaceScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          <View style={styles.menuButton}>
-            <Ionicons name="grid-outline" size={24} color="#000" />
-          </View>
+          <TouchableOpacity
+            style={styles.menuButton}
+            onPress={() => router.push('/(workshop)/orders')}
+          >
+            <ClipboardDocumentListIcon size={24} color="#000" />
+          </TouchableOpacity>
           <Text style={styles.headerTitle}>Marketplace</Text>
           <TouchableOpacity
             style={styles.cartButton}
@@ -298,7 +302,7 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   productsList: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingBottom: 100,
   },
   columnWrapper: {

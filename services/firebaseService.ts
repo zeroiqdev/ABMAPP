@@ -17,10 +17,12 @@ import {
   QueryConstraint,
   writeBatch,
   arrayUnion,
+  deleteField,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject, uploadString } from 'firebase/storage';
+import { sendPasswordResetEmail } from 'firebase/auth'; // Added
 import * as FileSystem from 'expo-file-system';
-import { db, storage } from '@/config/firebase';
+import { db, storage, auth } from '@/config/firebase'; // Added auth
 import { uploadImageToCloudinary, uploadMultipleImagesToCloudinary } from './cloudinaryService';
 import {
   User,
@@ -36,10 +38,17 @@ import {
   CustomerRegistration,
   StaffInvitation,
   ChatMessage,
+  RolePermissions,
 } from '@/types';
 
 export const firebaseService = {
+  async sendPasswordResetEmail(email: string): Promise<void> {
+    await sendPasswordResetEmail(auth, email);
+  },
+
   async getUser(userId: string): Promise<User | null> {
+    // ... rest of the file
+
     const docRef = doc(db, 'users', userId);
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
@@ -52,6 +61,20 @@ export const firebaseService = {
       } as User;
     }
     return null;
+  },
+
+  async getUsersByWorkshop(workshopId: string): Promise<User[]> {
+    const q = query(collection(db, 'users'), where('workshopId', '==', workshopId));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        createdAt: data.createdAt?.toDate() || new Date(),
+        updatedAt: data.updatedAt?.toDate() || new Date(),
+      };
+    }) as User[];
   },
 
   async updateUser(userId: string, data: Partial<User>): Promise<void> {
@@ -95,6 +118,20 @@ export const firebaseService = {
       const bName = b.name?.toLowerCase() || '';
       return aName.localeCompare(bName);
     });
+  },
+
+  async getVehicle(vehicleId: string): Promise<Vehicle | null> {
+    const docRef = doc(db, 'vehicles', vehicleId);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      return {
+        id: docSnap.id,
+        ...docSnap.data(),
+        createdAt: docSnap.data().createdAt?.toDate(),
+        updatedAt: docSnap.data().updatedAt?.toDate(),
+      } as Vehicle;
+    }
+    return null;
   },
 
   async getVehicles(userId: string): Promise<Vehicle[]> {
@@ -263,10 +300,11 @@ export const firebaseService = {
     // XXXX is last 4 digits of timestamp
     const timestamp = Date.now().toString();
     const lastFour = timestamp.slice(-4);
-    const customerId = invoice.userId.slice(0, 8); // Use first 8 chars of customer ID
-    const invoiceId = `INV - ${customerId} -${lastFour} `;
+    // Use first 8 chars of customer ID or 'DIRECT' if no user ID
+    const customerIdentifier = invoice.userId ? invoice.userId.slice(0, 8) : 'DIRECT';
+    const invoiceId = `INV-${customerIdentifier}-${lastFour}`;
 
-    // Use setDoc with custom ID instead of addDoc
+    // Use setDoc with custom ID instead of setDoc
     const docRef = doc(db, 'invoices', invoiceId);
     await setDoc(docRef, {
       ...invoice,
@@ -567,10 +605,11 @@ export const firebaseService = {
       createdAt: doc.data().createdAt?.toDate(),
     })) as Order[];
 
+
     if (vendorId) {
       // Filter orders to only include those with products from this vendor
       const vendorProductIds = new Set<string>();
-      
+
       // Get all products for this vendor
       const vendorProductsQuery = query(
         collection(db, 'marketplaceProducts'),
@@ -590,8 +629,67 @@ export const firebaseService = {
     return orders;
   },
 
+  async getOrder(orderId: string): Promise<Order | null> {
+    const docRef = doc(db, 'orders', orderId);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      return {
+        id: docSnap.id,
+        ...data,
+        createdAt: data.createdAt?.toDate(),
+      } as Order;
+    }
+    return null;
+  },
+
   async updateOrder(orderId: string, data: Partial<Order>): Promise<void> {
     await updateDoc(doc(db, 'orders', orderId), data);
+  },
+
+  subscribeToOrders(userId: string, callback: (orders: Order[]) => void): () => void {
+    const q = query(
+      collection(db, 'orders'),
+      where('userId', '==', userId)
+    );
+    return onSnapshot(q, (snapshot) => {
+      const orders = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate(),
+      })) as Order[];
+
+      orders.sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
+
+      callback(orders);
+    });
+  },
+
+  subscribeToVendorOrders(vendorId: string, callback: (orders: Order[]) => void): () => void {
+    const q = query(
+      collection(db, 'orders'),
+      where('vendorIds', 'array-contains', vendorId)
+    );
+
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        const orders = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+          createdAt: doc.data().createdAt?.toDate(),
+        })) as Order[];
+
+        orders.sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
+
+        callback(orders);
+      },
+      (error) => {
+        console.error('Error in subscribeToVendorOrders:', error);
+        // Return empty array on error to prevent app crash
+        callback([]);
+      }
+    );
   },
 
   async getWorkshop(workshopId: string): Promise<Workshop | null> {
@@ -610,6 +708,31 @@ export const firebaseService = {
 
   async updateWorkshop(workshopId: string, data: Partial<Workshop>): Promise<void> {
     await updateDoc(doc(db, 'workshops', workshopId), data);
+  },
+
+  async getWorkshopPermissions(workshopId: string): Promise<Record<string, RolePermissions['permissions']>> {
+    const docRef = doc(db, 'workshops', workshopId, 'settings', 'permissions');
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      return docSnap.data() as Record<string, RolePermissions['permissions']>;
+    }
+    return {};
+  },
+
+  async updateWorkshopPermissions(
+    workshopId: string,
+    role: string,
+    permissions: RolePermissions['permissions']
+  ): Promise<void> {
+    const docRef = doc(db, 'workshops', workshopId, 'settings', 'permissions');
+    await setDoc(docRef, { [role]: permissions }, { merge: true });
+  },
+
+  async deleteWorkshopRole(workshopId: string, role: string): Promise<void> {
+    const docRef = doc(db, 'workshops', workshopId, 'settings', 'permissions');
+    await updateDoc(docRef, {
+      [role]: deleteField()
+    });
   },
 
   async createNotification(

@@ -100,6 +100,17 @@ class PaymentService {
     }
   }
 
+  async initializeMockPayment(data: PaymentData): Promise<PaymentResult> {
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    return {
+      success: true,
+      transactionId: `MOCK-${Date.now()}`,
+      message: 'Mock payment initialized',
+    };
+  }
+
   async verifyPaystackPayment(reference: string): Promise<PaymentResult> {
     try {
       const response = await fetch(

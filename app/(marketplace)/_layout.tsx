@@ -1,8 +1,24 @@
 import { Tabs } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import { Platform } from 'react-native';
 
+import {
+  ShoppingBagIcon as ShoppingBagIconSolid,
+  PlusCircleIcon as PlusCircleIconSolid,
+  ClipboardDocumentListIcon as ClipboardDocumentListIconSolid,
+  Cog6ToothIcon as Cog6ToothIconSolid,
+  HomeIcon as HomeIconSolid
+} from 'react-native-heroicons/solid';
+import {
+  ShoppingBagIcon as ShoppingBagIconOutline,
+  PlusCircleIcon as PlusCircleIconOutline,
+  ClipboardDocumentListIcon as ClipboardDocumentListIconOutline,
+  Cog6ToothIcon as Cog6ToothIconOutline,
+  HomeIcon as HomeIconOutline
+} from 'react-native-heroicons/outline';
+import { useAuthStore } from '@/store/authStore';
+
 export default function MarketplaceLayout() {
+  const { user } = useAuthStore();
   return (
     <Tabs
       screenOptions={{
@@ -22,9 +38,13 @@ export default function MarketplaceLayout() {
       <Tabs.Screen
         name="home"
         options={{
-          title: 'Marketplace',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="storefront-outline" size={size} color={color} />
+          title: user?.role === 'vendor' ? 'Home' : 'Marketplace',
+          tabBarIcon: ({ focused, color, size }) => (
+            user?.role === 'vendor' ? (
+              focused ? <HomeIconSolid size={size} color={color} /> : <HomeIconOutline size={size} color={color} />
+            ) : (
+              focused ? <ShoppingBagIconSolid size={size} color={color} /> : <ShoppingBagIconOutline size={size} color={color} />
+            )
           ),
         }}
       />
@@ -32,8 +52,8 @@ export default function MarketplaceLayout() {
         name="upload"
         options={{
           title: 'Sell',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="add-circle-outline" size={size} color={color} />
+          tabBarIcon: ({ focused, color, size }) => (
+            focused ? <PlusCircleIconSolid size={size} color={color} /> : <PlusCircleIconOutline size={size} color={color} />
           ),
         }}
       />
@@ -41,8 +61,8 @@ export default function MarketplaceLayout() {
         name="orders"
         options={{
           title: 'Orders',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="receipt-outline" size={size} color={color} />
+          tabBarIcon: ({ focused, color, size }) => (
+            focused ? <ClipboardDocumentListIconSolid size={size} color={color} /> : <ClipboardDocumentListIconOutline size={size} color={color} />
           ),
         }}
       />
@@ -50,8 +70,8 @@ export default function MarketplaceLayout() {
         name="settings"
         options={{
           title: 'Settings',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="settings-outline" size={size} color={color} />
+          tabBarIcon: ({ focused, color, size }) => (
+            focused ? <Cog6ToothIconSolid size={size} color={color} /> : <Cog6ToothIconOutline size={size} color={color} />
           ),
         }}
       />
@@ -60,6 +80,7 @@ export default function MarketplaceLayout() {
       <Tabs.Screen name="product-details" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="cart" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="checkout" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="order-details" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="vendor-dashboard" options={{ href: null }} />
     </Tabs>
   );

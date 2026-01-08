@@ -22,6 +22,10 @@ service cloud.firestore {
       return isAuthenticated() && getUserData() != null && (getUserData().role == 'admin' || getUserData().role == 'service_advisor' || getUserData().role == 'technician');
     }
     
+    function isVendor() {
+      return isAuthenticated() && getUserData() != null && getUserData().role == 'vendor';
+    }
+    
     function getUserWorkshopId() {
       let userData = getUserData();
       return (userData != null && userData.keys().hasAny(['workshopId'])) ? userData.workshopId : null;
@@ -50,6 +54,11 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && request.auth.uid == workshopId;
       allow update: if isAuthenticated() && (request.auth.uid == workshopId || (isAdmin() && getUserWorkshopId() == workshopId));
+      
+      match /settings/permissions {
+        allow read: if isAuthenticated();
+        allow write: if isAdmin() && getUserWorkshopId() == workshopId;
+      }
     }
     
     // Customer registrations must be readable during signup (before auth),
@@ -135,8 +144,18 @@ service cloud.firestore {
     }
     
     match /orders/{orderId} {
-      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isStaff());
+      // Allow read for queries - any authenticated user can query
+      // The query itself (where('vendorIds', 'array-contains', vendorId)) filters results
+      allow read: if isAuthenticated() && resource != null && (
+        resource.data.userId == request.auth.uid || 
+        isStaff() ||
+        request.auth.uid in resource.data.vendorIds
+      );
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && (
+        isStaff() ||
+        (resource.data.vendorIds is list && request.auth.uid in resource.data.vendorIds)
+      );
     }
     
     match /notifications/{notificationId} {

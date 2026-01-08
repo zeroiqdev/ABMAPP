@@ -201,32 +201,16 @@ export default function CustomerDetailsScreen() {
           </View>
           <Text style={styles.customerName}>{customer.name}</Text>
 
-          <View style={styles.infoRow}>
-            <Ionicons name="mail-outline" size={20} color="#666" />
-            <Text style={styles.infoText}>{customer.email}</Text>
-          </View>
+
 
           {customer.phone && (
             <View style={styles.infoRow}>
-              <Ionicons name="call-outline" size={20} color="#666" />
-              <Text style={styles.infoText}>{customer.phone}</Text>
+              <Text style={styles.infoText}>Phone Number: {customer.phone}</Text>
             </View>
           )}
 
-          <View style={styles.infoRow}>
-            <Ionicons name="calendar-outline" size={20} color="#666" />
-            <Text style={styles.infoText}>
-              Joined {customer.createdAt && customer.createdAt instanceof Date
-                ? format(customer.createdAt, 'MMM dd, yyyy')
-                : customer.createdAt
-                  ? format(new Date(customer.createdAt), 'MMM dd, yyyy')
-                  : 'N/A'}
-            </Text>
-          </View>
-
           {registrationCode && (
             <View style={styles.infoRow}>
-              <Ionicons name="key-outline" size={20} color="#666" />
               <Text style={styles.infoText}>Registration Code: {registrationCode}</Text>
             </View>
           )}

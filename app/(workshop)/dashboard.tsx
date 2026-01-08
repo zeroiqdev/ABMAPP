@@ -11,6 +11,7 @@ import {
   Platform,
   StatusBar,
   Image,
+  Modal,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,17 +19,25 @@ import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
 import { User, Vehicle, Job, Invoice } from '@/types';
 import { BrandLogo } from '@/components/BrandLogo';
-import { format, subMonths, startOfMonth, endOfMonth, isWithinInterval, startOfWeek, endOfWeek } from 'date-fns';
+import { format, subMonths, addMonths, startOfMonth, endOfMonth, isWithinInterval, startOfWeek, endOfWeek, differenceInMonths, sub } from 'date-fns';
 import { Colors, Typography, Spacing, BorderRadius, Shadows, StatusColors } from '@/constants/design';
 
 const { width } = Dimensions.get('window');
-const CARD_WIDTH = width * 0.85;
-const CARD_SPACING = 15;
-const SIDE_PADDING = (width - CARD_WIDTH) / 2;
+const CARD_SPACING = 16; // Changed from 15
+const SIDE_PADDING = 20; // Changed from (width - CARD_WIDTH) / 2
+const CARD_WIDTH = width - (SIDE_PADDING * 2); // Changed from width * 0.85
+
+
+
 
 export default function WorkshopDashboard() {
   const { user } = useAuthStore();
   const router = useRouter();
+  const [dateRange, setDateRange] = useState<{ start: Date; end: Date }>({
+    start: startOfMonth(new Date()),
+    end: endOfMonth(new Date())
+  });
+
   const [stats, setStats] = useState({
     totalRevenue: 0,
     lastMonthRevenue: 0,
@@ -43,11 +52,12 @@ export default function WorkshopDashboard() {
   const [recentJobs, setRecentJobs] = useState<Job[]>([]);
   const [recentJobVehicles, setRecentJobVehicles] = useState<Record<string, any>>({});
   const [refreshing, setRefreshing] = useState(false);
+  const [monthPickerVisible, setMonthPickerVisible] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
       loadDashboardData();
-    }, [user])
+    }, [user, dateRange])
   );
 
   const loadDashboardData = async () => {
@@ -65,118 +75,155 @@ export default function WorkshopDashboard() {
       const safeInvoices = Array.isArray(invoices) ? invoices : [];
 
       // --- Revenue Metrics ---
-      const now = new Date();
-      const lastMonthStart = startOfMonth(subMonths(now, 1));
-      const lastMonthEnd = endOfMonth(subMonths(now, 1));
+      const currentPeriodStart = startOfMonth(dateRange.start);
+      const currentPeriodEnd = endOfMonth(dateRange.end);
 
-      // Calculate total revenue from all paid amounts (including partial payments)
-      const paidInvoices = safeInvoices.filter((inv) => inv && (inv.paymentStatus === 'paid' || inv.paymentStatus === 'partially_paid'));
-      const totalRevenue = paidInvoices.reduce((sum, inv) => sum + (inv?.amountPaid || 0), 0);
+      // Calculate previous period based on duration
+      const durationInMonths = differenceInMonths(currentPeriodEnd, currentPeriodStart) + 1;
+      const prevPeriodStart = startOfMonth(sub(currentPeriodStart, { months: durationInMonths }));
+      const prevPeriodEnd = endOfMonth(sub(currentPeriodEnd, { months: durationInMonths }));
 
-      // Calculate last month revenue from payment history
-      const lastMonthRevenue = safeInvoices.reduce((sum, inv) => {
-        if (!inv || !inv.paymentHistory || !Array.isArray(inv.paymentHistory) || inv.paymentHistory.length === 0) return sum;
+      // Calculate Revenue based on Payment History within the period
+      const calculateRevenueForPeriod = (start: Date, end: Date) => {
+        return safeInvoices.reduce((sum, inv) => {
+          if (!inv || !inv.paymentHistory || !Array.isArray(inv.paymentHistory) || inv.paymentHistory.length === 0) return sum;
 
-        const lastMonthPayments = inv.paymentHistory.filter((payment) => {
-          if (!payment || !payment.date) return false;
-          try {
-            const paymentDate = payment.date instanceof Date ? payment.date : new Date(payment.date);
-            return isWithinInterval(paymentDate, { start: lastMonthStart, end: lastMonthEnd });
-          } catch (e) {
-            return false;
-          }
-        });
+          const periodPayments = inv.paymentHistory.filter((payment) => {
+            if (!payment || !payment.date) return false;
+            try {
+              const pDate = payment.date;
+              const paymentDate = (pDate as any).toDate ? (pDate as any).toDate() : new Date(pDate);
+              return isWithinInterval(paymentDate, { start, end });
+            } catch (e) {
+              return false;
+            }
+          });
 
-        return sum + lastMonthPayments.reduce((paymentSum, p) => paymentSum + (p?.amount || 0), 0);
-      }, 0);
+          return sum + periodPayments.reduce((pSum, p) => pSum + (p?.amount || 0), 0);
+        }, 0);
+      };
 
-      // --- Technician Revenue Breakdown ---
+      const totalRevenue = calculateRevenueForPeriod(currentPeriodStart, currentPeriodEnd);
+      const lastMonthRevenue = calculateRevenueForPeriod(prevPeriodStart, prevPeriodEnd);
+
+      // --- Technician Revenue Breakdown (Current Period) ---
       const jobMap = new Map(safeJobs.map(j => j && j.id ? [j.id, j] : null).filter(Boolean) as [string, Job][]);
       const techRevenueMap = new Map<string, number>();
 
-      // Calculate technician earnings from payment history
       safeInvoices.forEach(inv => {
+        if (!inv.jobId) return;
         const job = jobMap.get(inv.jobId);
-        if (job && job.assignedTechnicianId && inv.paymentHistory && Array.isArray(inv.paymentHistory) && inv.paymentHistory.length > 0) {
-          const techName = job.technicianName || 'Unknown Tech';
-          const current = techRevenueMap.get(techName) || 0;
-          // Add all payments for this invoice to technician's earnings
-          const invoicePayments = inv.paymentHistory.reduce((sum, p) => sum + (p?.amount || 0), 0);
-          techRevenueMap.set(techName, current + invoicePayments);
+        if (job && job.assignedTechnicianId && inv.paymentHistory && Array.isArray(inv.paymentHistory)) {
+          // Only count payments in current period
+          const periodPayments = inv.paymentHistory.filter((payment) => {
+            if (!payment || !payment.date) return false;
+            try {
+              const pDate = payment.date;
+              const paymentDate = (pDate as any).toDate ? (pDate as any).toDate() : new Date(pDate);
+              return isWithinInterval(paymentDate, { start: currentPeriodStart, end: currentPeriodEnd });
+            } catch (e) {
+              return false;
+            }
+          });
+
+          if (periodPayments.length > 0) {
+            const techName = job.technicianName || 'Unknown Tech';
+            const current = techRevenueMap.get(techName) || 0;
+            const amount = periodPayments.reduce((sum, p) => sum + (p?.amount || 0), 0);
+            techRevenueMap.set(techName, current + amount);
+          }
         }
       });
 
       const technicianRevenue = Array.from(techRevenueMap.entries())
         .map(([name, amount]) => ({ name, amount }))
-        .sort((a, b) => b.amount - a.amount)
-        .slice(0, 3);
+        .sort((a, b) => b.amount - a.amount);
+      // Removed .slice(0, 3) to give full list for interactive card later? Or keep it?
+      // Let's keep all data for the interactive card task.
 
       // --- Completed Jobs ---
-      const completedJobs = safeJobs.filter(j => j && j.status === 'completed').length;
+      const getJobDate = (dateField: any) => {
+        if (!dateField) return new Date();
+        return dateField.toDate ? dateField.toDate() : new Date(dateField);
+      };
+
+      const completedJobs = safeJobs.filter(j =>
+        j &&
+        j.status === 'completed' &&
+        j.completedAt &&
+        isWithinInterval(getJobDate(j.completedAt), { start: currentPeriodStart, end: currentPeriodEnd })
+      ).length;
+
       const lastMonthCompletedJobs = safeJobs.filter(j =>
         j &&
         j.status === 'completed' &&
         j.completedAt &&
-        isWithinInterval(j.completedAt, { start: lastMonthStart, end: lastMonthEnd })
+        isWithinInterval(getJobDate(j.completedAt), { start: prevPeriodStart, end: prevPeriodEnd })
       ).length;
 
-      // --- Technician Specific Stats ---
-      const weekStart = startOfWeek(now, { weekStartsOn: 1 }); // Monday start
-      const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
+      // --- Technician Specific Metrics (Keep weekly for now as it's a specific metric?)
+      // Or update to use dateRange too? User request "metrics card... select timeframe". 
+      // Technician Dashboard has "Weekly Overview". This explicitly says "Weekly". 
+      // Changing it to arbitrary range might break context.
+      // But adding "Month/Range Picker" to Technician dashboard implies it affects SOMETHING.
+      // Let's make it affect "Assigned" and "Completed" counts instead of "Weekly".
 
-      let techWeeklyAssigned = 0;
-      let techWeeklyCompleted = 0;
-      const techRating = 4.9; // Placeholder for now
+      const rangeStart = startOfMonth(dateRange.start); // Enforce full month if picker only does months
+      const rangeEnd = endOfMonth(dateRange.end);
 
-      let filteredRecentJobs: Job[] = [];
+      const techAssigned = safeJobs.filter(j =>
+        j.assignedTechnicianId === user.id &&
+        j.createdAt &&
+        isWithinInterval(getJobDate(j.createdAt), { start: rangeStart, end: rangeEnd })
+      ).length;
 
-      if (user.role === 'technician') {
-        const myJobs = safeJobs.filter(j => j && j.assignedTechnicianId === user.id);
+      const techCompleted = safeJobs.filter(j =>
+        j.assignedTechnicianId === user.id &&
+        j.status === 'completed' &&
+        j.completedAt &&
+        isWithinInterval(getJobDate(j.completedAt), { start: rangeStart, end: rangeEnd })
+      ).length;
 
-        techWeeklyAssigned = myJobs.filter(j =>
-          j && j.createdAt && isWithinInterval(j.createdAt, { start: weekStart, end: weekEnd })
-        ).length;
+      // Mock rating (replace with real data if available)
+      const techRating = 4.8;
 
-        techWeeklyCompleted = myJobs.filter(j =>
-          j &&
-          j.status === 'completed' &&
-          j.completedAt && isWithinInterval(j.completedAt, { start: weekStart, end: weekEnd })
-        ).length;
-
-        // For technicians, recent jobs should be their assigned ACTIVE jobs
-        const activeJobs = myJobs.filter(j => j && ['received', 'diagnosed', 'repairing'].includes(j.status));
-        filteredRecentJobs = activeJobs.slice(0, 5);
-      } else {
-        filteredRecentJobs = safeJobs.slice(0, 5);
-      }
-
-      setRecentJobs(filteredRecentJobs);
       setStats({
         totalRevenue,
         lastMonthRevenue,
-        technicianRevenue,
+        technicianRevenue, // Now has all techs
         completedJobs,
         lastMonthCompletedJobs,
-        techWeeklyAssigned,
-        techWeeklyCompleted,
+        techWeeklyAssigned: techAssigned, // reusing state name but it's now Period Assigned
+        techWeeklyCompleted: techCompleted,
         techRating,
       });
 
-      // --- Fetch Vehicles for Recent Jobs ---
+      // ... recent jobs logic same ...
+      let filteredRecentJobs: Job[] = [];
+      if (user.role === 'admin') {
+        filteredRecentJobs = safeJobs
+          .sort((a, b) => (getJobDate(b.createdAt).getTime() || 0) - (getJobDate(a.createdAt).getTime() || 0))
+          .slice(0, 5);
+      } else if (user.role === 'technician') {
+        filteredRecentJobs = safeJobs
+          .filter(j => j.assignedTechnicianId === user.id && j.status !== 'completed' && j.status !== 'cancelled')
+          .sort((a, b) => (getJobDate(b.createdAt).getTime() || 0) - (getJobDate(a.createdAt).getTime() || 0))
+          .slice(0, 5);
+      }
+      setRecentJobs(filteredRecentJobs);
+
+      // ... vehicle fetching same ...
       const vehicleMap: Record<string, any> = {};
       await Promise.all(
         filteredRecentJobs.map(async (job) => {
-          if (job.vehicleId && job.userId) {
-            // In a real app we might have getVehicleById, but here we might have to get user vehicles
-            // Assuming we can get all vehicles and filter (inefficient) or get by user
+          if (job.vehicleId) {
             try {
-              const vehicles = await firebaseService.getVehicles(job.userId);
-              const vehicle = vehicles.find(v => v.id === job.vehicleId);
+              const vehicle = await firebaseService.getVehicle(job.vehicleId);
               if (vehicle) {
                 vehicleMap[job.id] = vehicle;
               }
             } catch (e) {
-              console.log('Error fetching vehicle for job', job.id, e);
+              console.log('Error fetching vehicle', e);
             }
           }
         })
@@ -189,6 +236,8 @@ export default function WorkshopDashboard() {
     }
   };
 
+
+
   const onRefresh = async () => {
     setRefreshing(true);
     await loadDashboardData();
@@ -198,7 +247,9 @@ export default function WorkshopDashboard() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      <DashboardHeader user={user} />
+      <DashboardHeader
+        user={user}
+      />
 
       <ScrollView
         style={styles.content}
@@ -207,28 +258,36 @@ export default function WorkshopDashboard() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.textPrimary} />
         }
       >
-        {getRoleDashboard({ user, stats, recentJobs, recentJobVehicles })}
+        {getRoleDashboard({ user, stats, recentJobs, recentJobVehicles, onOpenMonthPicker: () => setMonthPickerVisible(true) })}
       </ScrollView>
+
+      <MonthPickerModal
+        visible={monthPickerVisible}
+        dateRange={dateRange}
+        onRangeChange={setDateRange}
+        onClose={() => setMonthPickerVisible(false)}
+      />
     </View>
   );
 }
 
-function getRoleDashboard({ user, stats, recentJobs, recentJobVehicles }: { user: any, stats: any, recentJobs: Job[], recentJobVehicles: Record<string, any> }) {
+function getRoleDashboard({ user, stats, recentJobs, recentJobVehicles, onOpenMonthPicker }: { user: any, stats: any, recentJobs: Job[], recentJobVehicles: Record<string, any>, onOpenMonthPicker: () => void }) {
   switch (user?.role) {
     case 'admin':
-      return <AdminDashboard stats={stats} recentJobs={recentJobs} recentJobVehicles={recentJobVehicles} />;
+      return <AdminDashboard stats={stats} recentJobs={recentJobs} recentJobVehicles={recentJobVehicles} onOpenMonthPicker={onOpenMonthPicker} />;
     case 'technician':
-      return <TechnicianDashboard stats={stats} recentJobs={recentJobs} recentJobVehicles={recentJobVehicles} />;
+      return <TechnicianDashboard stats={stats} recentJobs={recentJobs} recentJobVehicles={recentJobVehicles} onOpenMonthPicker={onOpenMonthPicker} />;
     default:
       return <Text>Dashboard not available for this role</Text>;
   }
 }
 
-function DashboardHeader({ user }: { user: any }) {
+function DashboardHeader({
+  user,
+}: {
+  user: any;
+}) {
   const router = useRouter();
-
-
-
 
   return (
     <View style={styles.headerContainer}>
@@ -252,7 +311,7 @@ function DashboardHeader({ user }: { user: any }) {
   );
 }
 
-function TechnicianDashboard({ stats, recentJobs, recentJobVehicles }: { stats: any, recentJobs: Job[], recentJobVehicles: Record<string, any> }) {
+function TechnicianDashboard({ stats, recentJobs, recentJobVehicles, onOpenMonthPicker }: { stats: any, recentJobs: Job[], recentJobVehicles: Record<string, any>, onOpenMonthPicker: () => void }) {
   const router = useRouter();
 
   return (
@@ -270,7 +329,11 @@ function TechnicianDashboard({ stats, recentJobs, recentJobVehicles }: { stats: 
           snapToAlignment="start"
         >
           <View style={styles.slideContainer}>
-            <WeeklyMetricsCard assigned={stats.techWeeklyAssigned} completed={stats.techWeeklyCompleted} />
+            <WeeklyMetricsCard
+              assigned={stats.techWeeklyAssigned}
+              completed={stats.techWeeklyCompleted}
+              onPressIcon={onOpenMonthPicker}
+            />
           </View>
         </ScrollView>
       </View>
@@ -294,11 +357,16 @@ function TechnicianDashboard({ stats, recentJobs, recentJobVehicles }: { stats: 
   );
 }
 
-function WeeklyMetricsCard({ assigned, completed }: { assigned: number, completed: number }) {
+function WeeklyMetricsCard({ assigned, completed, onPressIcon }: { assigned: number, completed: number, onPressIcon?: () => void }) {
   return (
     <View style={styles.blackCard}>
       <View style={styles.metricHeader}>
         <Text style={styles.metricTitle}>Weekly Overview</Text>
+        {onPressIcon && (
+          <TouchableOpacity onPress={onPressIcon} style={styles.metricIconCircle}>
+            <Ionicons name="calendar-outline" size={16} color={Colors.textPrimary} />
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={{ flexDirection: 'row', gap: 40, marginTop: 20 }}>
@@ -323,10 +391,12 @@ function AdminDashboard({
   stats,
   recentJobs,
   recentJobVehicles,
+  onOpenMonthPicker,
 }: {
   stats: any;
   recentJobs: Job[];
   recentJobVehicles: Record<string, any>;
+  onOpenMonthPicker: () => void;
 }) {
   const router = useRouter();
   const [activeIndex, setActiveIndex] = useState(0);
@@ -368,6 +438,7 @@ function AdminDashboard({
               value={`₦${stats.totalRevenue.toLocaleString()}`}
               growth={revenueGrowth}
               chartData={[40, 60, 45, 70, 80, 65, 85]}
+              onPressIcon={onOpenMonthPicker}
             />
           </View>
 
@@ -384,6 +455,7 @@ function AdminDashboard({
               growth={jobsGrowth}
               chartData={[20, 30, 25, 40, 35, 50, 45]}
               isCurrency={false}
+              onPressIcon={onOpenMonthPicker}
             />
           </View>
         </ScrollView>
@@ -432,12 +504,14 @@ function MetricCard({
   growth,
   chartData,
   isCurrency = true,
+  onPressIcon,
 }: {
   title: string;
   value: string;
   growth: number;
   chartData: number[];
   isCurrency?: boolean;
+  onPressIcon?: () => void;
 }) {
   const isPositive = growth >= 0;
 
@@ -445,9 +519,15 @@ function MetricCard({
     <View style={styles.blackCard}>
       <View style={styles.metricHeader}>
         <Text style={styles.metricTitle}>{title}</Text>
-        <View style={styles.metricIconCircle}>
-          <Ionicons name="arrow-up" size={14} color={Colors.textPrimary} style={{ transform: [{ rotate: '45deg' }] }} />
-        </View>
+        {onPressIcon ? (
+          <TouchableOpacity onPress={onPressIcon} style={styles.metricIconCircle}>
+            <Ionicons name="calendar-outline" size={16} color={Colors.textPrimary} />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.metricIconCircle}>
+            <Ionicons name="arrow-up" size={14} color={Colors.textPrimary} style={{ transform: [{ rotate: '45deg' }] }} />
+          </View>
+        )}
       </View>
 
       <Text style={styles.metricValue}>{value}</Text>
@@ -488,28 +568,91 @@ function MetricCard({
 }
 
 function TechnicianRevenueCard({ data }: { data: { name: string; amount: number }[] }) {
-  return (
-    <View style={styles.blackCard}>
-      <View style={styles.metricHeader}>
-        <Text style={styles.metricTitle}>Technician Revenue</Text>
-        <View style={styles.metricIconCircle}>
-          <Ionicons name="people" size={14} color={Colors.textPrimary} />
-        </View>
-      </View>
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [pickerVisible, setPickerVisible] = useState(false);
 
-      <View style={styles.techList}>
-        {data.length === 0 ? (
-          <Text style={styles.emptyTextWhite}>No data available</Text>
-        ) : (
-          data.map((tech, index) => (
-            <View key={index} style={styles.techRow}>
-              <Text style={styles.techName}>{tech.name}</Text>
-              <Text style={styles.techAmount}>₦{tech.amount.toLocaleString()}</Text>
+  // Reset to 0 when data changes so we always show top tech initially
+  useEffect(() => {
+    setCurrentIndex(0);
+  }, [data]);
+
+  const currentTech = data && data.length > 0 ? data[currentIndex] : null;
+
+  return (
+    <>
+      <View style={styles.blackCard}>
+        <View style={styles.metricHeader}>
+          <Text style={styles.metricTitle}>Technician Revenue</Text>
+          <TouchableOpacity
+            style={styles.metricIconCircle}
+            onPress={() => setPickerVisible(true)}
+            disabled={!data || data.length === 0}
+          >
+            <Ionicons name="people" size={16} color={Colors.textPrimary} />
+          </TouchableOpacity>
+        </View>
+
+        {currentTech ? (
+          <>
+            <Text style={styles.metricValue}>₦{currentTech.amount.toLocaleString()}</Text>
+            <View style={styles.metricFooter}>
+              <View>
+                <Text style={{ color: Colors.textSecondary, fontSize: Typography.fontSize.sm, fontWeight: 'bold' }}>
+                  {currentTech.name}
+                </Text>
+                <Text style={{ color: Colors.textSecondary, fontSize: Typography.fontSize.xs, marginTop: 4 }}>
+                  Rank: #{currentIndex + 1}
+                </Text>
+              </View>
             </View>
-          ))
+          </>
+        ) : (
+          <View style={{ flex: 1, justifyContent: 'center' }}>
+            <Text style={styles.emptyTextWhite}>No data available</Text>
+          </View>
         )}
       </View>
-    </View>
+
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={pickerVisible}
+        onRequestClose={() => setPickerVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.monthPickerContainer}>
+            <Text style={[styles.monthPickerTitle, { marginBottom: 15 }]}>Select Technician</Text>
+            <ScrollView style={{ maxHeight: 300, width: '100%' }}>
+              {data.map((tech, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={[
+                    styles.techRow,
+                    {
+                      borderBottomColor: Colors.border,
+                      paddingVertical: 12,
+                      backgroundColor: index === currentIndex ? Colors.background : 'transparent',
+                      borderRadius: 8,
+                      paddingHorizontal: 8
+                    }
+                  ]}
+                  onPress={() => {
+                    setCurrentIndex(index);
+                    setPickerVisible(false);
+                  }}
+                >
+                  <Text style={[styles.techName, { color: Colors.textPrimary }]}>{tech.name}</Text>
+                  <Text style={[styles.techAmount, { color: Colors.textPrimary }]}>₦{tech.amount.toLocaleString()}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TouchableOpacity style={styles.monthPickerCancelButton} onPress={() => setPickerVisible(false)}>
+              <Text style={styles.monthPickerCancelButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </>
   );
 }
 
@@ -570,13 +713,129 @@ function RecentJobItem({ job, vehicle }: { job: Job, vehicle?: any }) {
   );
 }
 
+const MonthPickerModal = ({
+  visible,
+  dateRange,
+  onRangeChange,
+  onClose
+}: {
+  visible: boolean;
+  dateRange: { start: Date; end: Date };
+  onRangeChange: (range: { start: Date; end: Date }) => void;
+  onClose: () => void;
+}) => {
+  const [mode, setMode] = useState<'single' | 'range'>('single');
+  const [tempRange, setTempRange] = useState(dateRange);
+
+  useEffect(() => {
+    if (visible) {
+      setTempRange(dateRange);
+      // Infer mode. If start and end are same month, probably single.
+      // But user might want range Jan-Jan explicitly? No, that's single.
+      if (format(dateRange.start, 'MMM yyyy') === format(dateRange.end, 'MMM yyyy')) {
+        setMode('single');
+      } else {
+        setMode('range');
+      }
+    }
+  }, [visible, dateRange]);
+
+  const handleMonthChange = (direction: 'prev' | 'next', type: 'start' | 'end' | 'single') => {
+    setTempRange(prev => {
+      let baseDate = type === 'end' ? prev.end : prev.start; // for 'single' use start
+      if (type === 'single') baseDate = prev.start;
+
+      const newDate = direction === 'prev' ? subMonths(baseDate, 1) : addMonths(baseDate, 1);
+
+      if (type === 'single') {
+        return { start: newDate, end: newDate };
+      } else if (type === 'start') {
+        // Enforce start <= end
+        const newStart = newDate > prev.end ? prev.end : newDate;
+        return { ...prev, start: newStart };
+      } else {
+        // Enforce end >= start
+        const newEnd = newDate < prev.start ? prev.start : newDate;
+        return { ...prev, end: newEnd };
+      }
+    });
+  };
+
+  const handleApply = () => {
+    onRangeChange(tempRange);
+    onClose();
+  };
+
+  const MonthSelector = ({ label, date, type }: { label?: string, date: Date, type: 'start' | 'end' | 'single' }) => (
+    <View style={styles.monthSelectorRow}>
+      {label && <Text style={styles.monthSelectorLabel}>{label}</Text>}
+      <View style={styles.monthPickerHeader}>
+        <TouchableOpacity onPress={() => handleMonthChange('prev', type)} style={styles.monthPickerNavButton}>
+          <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
+        </TouchableOpacity>
+        <Text style={styles.monthPickerTitle}>{format(date, 'MMMM yyyy')}</Text>
+        <TouchableOpacity onPress={() => handleMonthChange('next', type)} style={styles.monthPickerNavButton}>
+          <Ionicons name="chevron-forward" size={24} color={Colors.textPrimary} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  return (
+    <Modal
+      animationType="fade"
+      transparent={true}
+      visible={visible}
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.monthPickerContainer}>
+          <View style={styles.toggleContainer}>
+            <TouchableOpacity
+              style={[styles.toggleButton, mode === 'single' && styles.toggleButtonActive]}
+              onPress={() => {
+                setMode('single');
+                setTempRange({ start: tempRange.start, end: tempRange.start });
+              }}
+            >
+              <Text style={[styles.toggleText, mode === 'single' && styles.toggleTextActive]}>Single Month</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.toggleButton, mode === 'range' && styles.toggleButtonActive]}
+              onPress={() => setMode('range')}
+            >
+              <Text style={[styles.toggleText, mode === 'range' && styles.toggleTextActive]}>Period</Text>
+            </TouchableOpacity>
+          </View>
+
+          {mode === 'single' ? (
+            <MonthSelector date={tempRange.start} type="single" />
+          ) : (
+            <View style={{ width: '100%' }}>
+              <MonthSelector label="From" date={tempRange.start} type="start" />
+              <MonthSelector label="To" date={tempRange.end} type="end" />
+            </View>
+          )}
+
+          <TouchableOpacity style={styles.monthPickerSelectButton} onPress={handleApply}>
+            <Text style={styles.monthPickerSelectButtonText}>Apply Filter</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.monthPickerCancelButton} onPress={onClose}>
+            <Text style={styles.monthPickerCancelButtonText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: '#FFFFFF',
   },
   headerContainer: {
-    backgroundColor: Colors.surface,
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.sm,
     paddingTop: Platform.OS === 'android' ? 40 : Spacing.sm,
@@ -597,24 +856,47 @@ const styles = StyleSheet.create({
   },
   headerActions: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: Spacing.base,
+  },
+  dateSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: BorderRadius.lg,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    marginRight: 5,
+  },
+  dateNavButton: {
+    padding: 4,
+  },
+  dateText: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.semibold,
+    color: Colors.textPrimary,
+    marginHorizontal: 8,
+    minWidth: 100,
+    textAlign: 'center',
   },
   iconButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: Colors.background,
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
   },
   content: {
     flex: 1,
+    backgroundColor: '#FFFFFF',
   },
   contentContainer: {
     paddingBottom: 40,
   },
   carouselContainer: {
-    marginTop: 20,
+    backgroundColor: 'transparent',
+    paddingVertical: 20,
     marginBottom: 10,
   },
   slideContainer: {
@@ -627,7 +909,11 @@ const styles = StyleSheet.create({
     padding: Spacing.xl,
     height: 200,
     justifyContent: 'space-between',
-    ...Shadows.xl,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 5,
   },
   metricHeader: {
     flexDirection: 'row',
@@ -716,10 +1002,24 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: Colors.background,
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
+  tagContainer: {
+    backgroundColor: '#F8F8F8',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    borderColor: '#EEEEEE',
+  },
+
   recentItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -758,23 +1058,114 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.xs,
     color: Colors.textTertiary,
   },
-  tagContainer: {
-    backgroundColor: Colors.background,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
-    borderRadius: BorderRadius.sm,
-  },
   tagText: {
     fontSize: Typography.fontSize.xs,
     color: Colors.textSecondary,
     fontWeight: Typography.fontWeight.medium,
   },
   statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
     alignItems: 'center',
   },
+  monthPickerContainer: {
+    width: '85%',
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  monthPickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 20,
+  },
+  monthPickerNavButton: {
+    padding: 10,
+  },
+  monthPickerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#000',
+  },
+  monthPickerSelectButton: {
+    backgroundColor: '#000',
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    borderRadius: 25,
+    marginTop: 10,
+    width: '100%',
+    alignItems: 'center',
+  },
+  monthPickerSelectButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  monthPickerCancelButton: {
+    paddingVertical: 12,
+    marginTop: 10,
+  },
+  monthPickerCancelButtonText: {
+    color: '#666',
+    fontSize: 16,
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#f0f0f0',
+    borderRadius: 25,
+    padding: 4,
+    marginBottom: 20,
+    width: '100%',
+  },
+  toggleButton: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 20,
+  },
+  toggleButtonActive: {
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  toggleText: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  toggleTextActive: {
+    color: '#000',
+    fontWeight: '600',
+  },
+  monthSelectorRow: {
+    width: '100%',
+    marginBottom: 10,
+  },
+  monthSelectorLabel: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginBottom: 4,
+    fontWeight: '600',
+    marginLeft: 10,
+  },
+
   statusText: {
     fontSize: 12,
     fontWeight: '600',
@@ -800,18 +1191,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingVertical: 4,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.secondaryLight,
-    paddingBottom: Spacing.sm,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
   },
   techName: {
     color: Colors.textInverse,
-    fontSize: Typography.fontSize.base,
+    fontSize: Typography.fontSize.sm,
     fontWeight: Typography.fontWeight.medium,
   },
   techAmount: {
-    color: Colors.success,
-    fontSize: Typography.fontSize.base,
+    color: Colors.primary,
+    fontSize: Typography.fontSize.sm,
     fontWeight: Typography.fontWeight.bold,
   },
 });
+

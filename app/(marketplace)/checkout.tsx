@@ -12,6 +12,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
+import { useCartStore } from '@/store/cartStore';
 import { firebaseService } from '@/services/firebaseService';
 import { paymentService } from '@/services/paymentService';
 import { Order } from '@/types';
@@ -19,14 +20,13 @@ import { Order } from '@/types';
 export default function CheckoutScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
+  const { items: cartItems, getTotal, clearCart } = useCartStore();
   const [deliveryMethod, setDeliveryMethod] = useState<'delivery' | 'pickup'>('delivery');
   const [shippingAddress, setShippingAddress] = useState('');
   const [phone, setPhone] = useState(user?.phone || '');
   const [processing, setProcessing] = useState(false);
 
-  // In a real app, these would come from cart state
-  const cartItems: any[] = [];
-  const subtotal = 0;
+  const subtotal = getTotal();
   const shipping = deliveryMethod === 'delivery' ? 1000 : 0;
   const total = subtotal + shipping;
 
@@ -50,14 +50,37 @@ export default function CheckoutScreen() {
           productName: item.product.name,
           quantity: item.quantity,
           price: item.product.price,
+          image: item.product.images?.[0],
+          vendorId: item.product.vendorId || item.product.userId,
         })),
         total,
         status: 'pending',
         deliveryMethod,
-        shippingAddress: deliveryMethod === 'delivery' ? shippingAddress : undefined,
+        ...(deliveryMethod === 'delivery' && { shippingAddress }),
+        customerName: user.name,
+        customerPhone: phone || user.phone,
+        customerEmail: user.email,
+        vendorIds: Array.from(new Set(cartItems.map(item => item.product.vendorId || item.product.userId).filter((id): id is string => !!id))),
       };
 
       const orderId = await firebaseService.createOrder(order);
+
+      // Notify vendors
+      const uniqueVendorIds = Array.from(new Set(cartItems.map(item => item.product.vendorId || item.product.userId).filter(Boolean))) as string[];
+      for (const vendorId of uniqueVendorIds) {
+        await firebaseService.createNotification({
+          userId: vendorId,
+          title: 'New Order Received',
+          body: `You have received a new order from ${user.name || 'a customer'}.`,
+          type: 'order',
+          read: false,
+          metadata: {
+            type: 'order',
+            orderId,
+            customerName: user.name,
+          }
+        });
+      }
 
       // Initialize payment
       const reference = paymentService.generatePaymentReference();
@@ -71,9 +94,10 @@ export default function CheckoutScreen() {
         },
       };
 
-      const result = await paymentService.initializePaystackPayment(paymentData);
+      const result = await paymentService.initializeMockPayment(paymentData);
 
       if (result.success) {
+        clearCart();
         Alert.alert(
           'Order Placed',
           'Your order has been placed. Please complete the payment.',
@@ -81,12 +105,19 @@ export default function CheckoutScreen() {
             {
               text: 'OK',
               onPress: () => {
-                // In a real app, you'd open payment web view or navigate to payment screen
-                router.replace('/(marketplace)/orders');
+                // Navigate based on user role
+                if (user?.role === 'customer') {
+                  router.replace('/(customer)/home');
+                } else if (user?.role === 'vendor') {
+                  router.replace('/(marketplace)/orders');
+                } else {
+                  router.replace('/(workshop)/marketplace');
+                }
               },
             },
           ]
         );
+
       } else {
         Alert.alert('Error', result.message);
       }
@@ -100,7 +131,15 @@ export default function CheckoutScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => {
+          if (user?.role === 'vendor') {
+            router.replace('/(marketplace)/cart');
+          } else if (user?.role && user.role !== 'customer') {
+            router.replace('/(workshop)/cart');
+          } else {
+            router.back();
+          }
+        }}>
           <Ionicons name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Checkout</Text>
@@ -121,7 +160,7 @@ export default function CheckoutScreen() {
             <Ionicons
               name={deliveryMethod === 'delivery' ? 'radio-button-on' : 'radio-button-off'}
               size={24}
-              color={deliveryMethod === 'delivery' ? '#007AFF' : '#ccc'}
+              color={deliveryMethod === 'delivery' ? '#000' : '#ccc'}
             />
             <View style={styles.deliveryInfo}>
               <Text style={styles.deliveryLabel}>Home Delivery</Text>
@@ -140,7 +179,7 @@ export default function CheckoutScreen() {
             <Ionicons
               name={deliveryMethod === 'pickup' ? 'radio-button-on' : 'radio-button-off'}
               size={24}
-              color={deliveryMethod === 'pickup' ? '#007AFF' : '#ccc'}
+              color={deliveryMethod === 'pickup' ? '#000' : '#ccc'}
             />
             <View style={styles.deliveryInfo}>
               <Text style={styles.deliveryLabel}>Store Pickup</Text>
@@ -265,8 +304,8 @@ const styles = StyleSheet.create({
     borderColor: '#eee',
   },
   deliveryOptionActive: {
-    borderColor: '#007AFF',
-    backgroundColor: '#E3F2FD',
+    borderColor: '#000',
+    backgroundColor: 'rgba(0,0,0,0.05)',
   },
   deliveryInfo: {
     marginLeft: 12,
@@ -311,8 +350,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   totalRow: {
-    borderTopWidth: 2,
-    borderTopColor: '#007AFF',
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
     paddingTop: 15,
     marginTop: 10,
   },
@@ -324,7 +363,7 @@ const styles = StyleSheet.create({
   totalValue: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#007AFF',
+    color: '#000',
   },
   footer: {
     padding: 20,
@@ -336,7 +375,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#007AFF',
+    backgroundColor: '#000',
     padding: 16,
     borderRadius: 12,
     gap: 10,

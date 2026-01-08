@@ -61,39 +61,26 @@ export default function WorkshopInvoicesScreen() {
 
   const renderInvoice = ({ item }: { item: Invoice }) => (
     <TouchableOpacity
-      style={styles.invoiceCard}
+      style={styles.itemCard}
       onPress={() => router.push(`/(workshop)/invoice-details?id=${item.id}`)}
     >
-      <View style={styles.invoiceHeader}>
-        <View>
-          <Text style={styles.invoiceNumber}>Invoice #{item.id.slice(0, 8)}</Text>
-          <Text style={styles.invoiceDate}>
-            {format(item.createdAt, 'MMM dd, yyyy')}
-          </Text>
-        </View>
-        <View
-          style={[
-            styles.statusBadge,
-            { backgroundColor: getPaymentStatusColor(item.paymentStatus) },
-          ]}
-        >
-          <Text style={styles.statusText}>
+      <View style={[styles.iconBox, { backgroundColor: getPaymentStatusColor(item.paymentStatus) + '20' }]}>
+        <Ionicons name="receipt-outline" size={24} color={getPaymentStatusColor(item.paymentStatus)} />
+      </View>
+      <View style={styles.itemInfo}>
+        <Text style={styles.itemName}>Invoice #{item.id.slice(0, 8)}</Text>
+        <Text style={styles.itemSubtitle}>
+          {format(item.createdAt, 'MMM dd, yyyy')}
+        </Text>
+      </View>
+      <View style={styles.itemRight}>
+        <Text style={styles.amountText}>₦{item.total.toLocaleString()}</Text>
+        <View style={[styles.statusBadge, { backgroundColor: getPaymentStatusColor(item.paymentStatus) + '20' }]}>
+          <Text style={[styles.statusText, { color: getPaymentStatusColor(item.paymentStatus) }]}>
             {item.paymentStatus.charAt(0).toUpperCase() + item.paymentStatus.slice(1)}
           </Text>
         </View>
       </View>
-      <View style={styles.invoiceAmount}>
-        <Text style={styles.amountLabel}>Total Amount</Text>
-        <Text style={styles.amountValue}>₦{item.total.toLocaleString()}</Text>
-      </View>
-      {item.dueDate && item.paymentStatus === 'pending' && (
-        <View style={styles.dueDateRow}>
-          <Ionicons name="time-outline" size={16} color="#FFA500" />
-          <Text style={styles.dueDateText}>
-            Due: {format(item.dueDate, 'MMM dd, yyyy')}
-          </Text>
-        </View>
-      )}
     </TouchableOpacity>
   );
 
@@ -226,67 +213,55 @@ const styles = StyleSheet.create({
   listContent: {
     padding: 15,
   },
-  invoiceCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  invoiceHeader: {
+  itemCard: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 15,
+    alignItems: 'center',
+    marginBottom: 0,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f5f5f5',
+    paddingVertical: 16,
   },
-  invoiceNumber: {
+  iconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  itemInfo: {
+    flex: 1,
+  },
+  itemName: {
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
     marginBottom: 4,
   },
-  invoiceDate: {
-    fontSize: 12,
-    color: '#999',
+  itemSubtitle: {
+    fontSize: 13,
+    color: '#888',
   },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
+  itemRight: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  amountText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
   },
   statusText: {
-    color: '#fff',
     fontSize: 12,
     fontWeight: '600',
   },
-  invoiceAmount: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
     alignItems: 'center',
-  },
-  amountLabel: {
-    fontSize: 14,
-    color: '#666',
-  },
-  amountValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#007AFF',
-  },
-  dueDateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 10,
-  },
-  dueDateText: {
-    fontSize: 12,
-    color: '#FFA500',
-    fontWeight: '500',
+    justifyContent: 'center',
   },
   emptyState: {
     padding: 60,

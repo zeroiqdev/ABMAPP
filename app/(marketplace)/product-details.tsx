@@ -83,7 +83,7 @@ export default function ProductDetailsScreen() {
 
     // Add to cart store
     addItem(product, quantity);
-    
+
     // Show toast notification
     showToastNotification();
   };
@@ -100,7 +100,7 @@ export default function ProductDetailsScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()}>
+          <TouchableOpacity onPress={() => router.replace('/(marketplace)/home')}>
             <Ionicons name="arrow-back" size={24} color="#000" />
           </TouchableOpacity>
         </View>
@@ -115,7 +115,7 @@ export default function ProductDetailsScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.iconButton} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.iconButton} onPress={() => router.replace('/(marketplace)/home')}>
           <Ionicons name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>{product.name}</Text>
@@ -124,7 +124,7 @@ export default function ProductDetailsScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 140 }}>
         {/* Image Carousel */}
         <View style={styles.carouselContainer}>
           <ScrollView
@@ -235,7 +235,9 @@ export default function ProductDetailsScreen() {
       <View style={styles.footer}>
         <View style={styles.priceContainer}>
           <Text style={styles.totalLabel}>Total Price</Text>
-          <Text style={styles.totalPrice}>₦{(product.price * quantity).toLocaleString()}</Text>
+          <Text style={styles.totalPrice} numberOfLines={1} adjustsFontSizeToFit>
+            ₦{(product.price * quantity).toLocaleString()}
+          </Text>
         </View>
         <TouchableOpacity
           style={[styles.addToCartButton, product.stock === 0 && styles.disabledButton]}

@@ -129,8 +129,9 @@ export default function WorkshopJobDetailsScreen() {
     try {
       await firebaseService.updateJob(job.id, {
         status: newStatus,
-        notes: notes || job.notes,
+        notes: notes ?? job.notes ?? '',
         assignedTechnicianId: selectedTechnician || job.assignedTechnicianId,
+        ...(newStatus === 'completed' ? { completedAt: new Date() } : {}),
       });
 
       // Send notification to customer

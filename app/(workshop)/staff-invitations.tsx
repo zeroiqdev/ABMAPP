@@ -8,42 +8,74 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
-import { StaffInvitation, UserRole } from '@/types';
+import { StaffInvitation, UserRole, User } from '@/types';
 
-const staffRoles: UserRole[] = ['service_advisor', 'technician', 'storekeeper', 'accountant', 'admin', 'vendor'];
+// Added 'customer' to system roles so it can be selected for invites
+const SYSTEM_ROLES: string[] = ['service_advisor', 'technician', 'storekeeper', 'accountant', 'admin', 'vendor', 'customer'];
 
 export default function StaffInvitationsScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
   const [invites, setInvites] = useState<StaffInvitation[]>([]);
+  const [activeStaff, setActiveStaff] = useState<User[]>([]);
+  const [activeVendors, setActiveVendors] = useState<User[]>([]);
+  const [availableRoles, setAvailableRoles] = useState<string[]>(SYSTEM_ROLES);
+
+  // Form State
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [role, setRole] = useState<UserRole>('technician');
+  const [role, setRole] = useState<string>('technician');
+
   const [loading, setLoading] = useState(false);
-  const [loadingInvites, setLoadingInvites] = useState(false);
+  const [loadingData, setLoadingData] = useState(false);
+  const [activeTab, setActiveTab] = useState<'active' | 'vendors' | 'pending'>('active');
+
+  // Modals
+  const [showRolePicker, setShowRolePicker] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
 
   const canInvite = user?.role === 'admin' || user?.role === 'service_advisor';
 
   useEffect(() => {
-    loadInvites();
+    loadData();
   }, [user?.workshopId]);
 
-  const loadInvites = async () => {
+  const loadData = async () => {
     if (!user?.workshopId) return;
-    setLoadingInvites(true);
+    setLoadingData(true);
     try {
-      const data = await firebaseService.getStaffInvitations(user.workshopId);
-      setInvites(data);
+      // Load Invites
+      const invitesData = await firebaseService.getStaffInvitations(user.workshopId);
+      setInvites(invitesData);
+
+      // Load Active Staff - Filter out customers
+      const usersData = await firebaseService.getUsersByWorkshop(user.workshopId);
+      const staffOnly = usersData.filter(u => u.role !== 'customer' && u.role !== 'vendor');
+      const vendorsOnly = usersData.filter(u => u.role === 'vendor');
+
+      setActiveStaff(staffOnly);
+      setActiveVendors(vendorsOnly);
+
+      // Load Roles
+      const permissions = await firebaseService.getWorkshopPermissions(user.workshopId);
+      const customRoles = Object.keys(permissions || {});
+      // Merge unique roles
+      const allRoles = Array.from(new Set([...SYSTEM_ROLES, ...customRoles]));
+      setAvailableRoles(allRoles);
+
     } catch (error) {
-      console.error('Failed to load invites', error);
+      console.error('Failed to load data', error);
     } finally {
-      setLoadingInvites(false);
+      setLoadingData(false);
     }
   };
 
@@ -70,7 +102,7 @@ export default function StaffInvitationsScreen() {
       const { invitationCode } = await firebaseService.createStaffInvitation(
         email,
         name,
-        role,
+        role as UserRole,
         user.id,
         user.workshopId,
         phone || undefined
@@ -79,11 +111,14 @@ export default function StaffInvitationsScreen() {
         'Invite Created',
         `Share this code with ${name}:\n\n${invitationCode}\n\nThey can redeem it from the staff invite screen.`
       );
+
+      // Reset and Close
       setName('');
       setEmail('');
       setPhone('');
-      setRole('technician');
-      await loadInvites();
+      setShowInviteModal(false);
+
+      await loadData();
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to create invite.');
     } finally {
@@ -91,28 +126,44 @@ export default function StaffInvitationsScreen() {
     }
   };
 
+  const renderActiveStaff = (staff: User) => (
+    <View key={staff.id} style={styles.itemCard}>
+      <View style={[styles.iconBox, { backgroundColor: '#000' }]}>
+        <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#fff' }}>
+          {staff.name ? staff.name.charAt(0).toUpperCase() : '?'}
+        </Text>
+      </View>
+      <View style={styles.itemInfo}>
+        <Text style={styles.itemName}>{staff.name}</Text>
+        <Text style={styles.itemSubtitle}>{(staff.role || 'Unknown').replace('_', ' ')} • {staff.email}</Text>
+      </View>
+      <View style={styles.itemRight}>
+        <View style={[styles.statusBadge, { backgroundColor: '#d1fae5' }]}>
+          <Text style={[styles.statusText, { color: '#065f46' }]}>Active</Text>
+        </View>
+      </View>
+    </View>
+  );
+
   const renderInviteCard = (invite: StaffInvitation) => (
-    <View key={invite.id} style={styles.inviteCard}>
-      <View style={styles.inviteHeader}>
-        <View>
-          <Text style={styles.inviteName}>{invite.name}</Text>
-          <Text style={styles.inviteEmail}>{invite.email}</Text>
+    <View key={invite.id} style={styles.itemCard}>
+      <View style={[styles.iconBox, { backgroundColor: '#fef3c7' }]}>
+        <Ionicons name="mail-outline" size={24} color="#d97706" />
+      </View>
+      <View style={styles.itemInfo}>
+        <Text style={styles.itemName}>{invite.name || invite.email}</Text>
+        <Text style={styles.itemSubtitle}>Role: {invite.role.replace('_', ' ')}</Text>
+      </View>
+      <View style={styles.itemRight}>
+        <View style={[styles.statusBadge, { backgroundColor: invite.used ? '#f1f5f9' : '#fffbeb' }]}>
+          <Text style={[styles.statusText, { color: invite.used ? '#64748b' : '#b45309' }]}>
+            {invite.used ? 'Used' : 'Pending'}
+          </Text>
         </View>
-        <View style={styles.statusPill(invite.used)}>
-          <Text style={styles.statusText}>{invite.used ? 'Used' : 'Pending'}</Text>
-        </View>
+        <Text style={styles.metaTimestamp}>
+          {new Date(invite.createdAt).toLocaleDateString()}
+        </Text>
       </View>
-      <View style={styles.inviteMeta}>
-        <Text style={styles.metaLabel}>Role</Text>
-        <Text style={styles.metaValue}>{invite.role.replace('_', ' ')}</Text>
-      </View>
-      <View style={styles.inviteMeta}>
-        <Text style={styles.metaLabel}>Code</Text>
-        <Text style={styles.codeValue}>{invite.invitationCode}</Text>
-      </View>
-      <Text style={styles.metaTimestamp}>
-        Sent on {invite.createdAt.toLocaleDateString()} at {invite.createdAt.toLocaleTimeString()}
-      </Text>
     </View>
   );
 
@@ -130,8 +181,7 @@ export default function StaffInvitationsScreen() {
           <Ionicons name="shield-checkmark" size={48} color="#007AFF" />
           <Text style={styles.permissionTitle}>Admin Access Required</Text>
           <Text style={styles.permissionText}>
-            Only workshop admins or service advisors can send staff invitations. Please contact your
-            administrator for access.
+            Only workshop admins or service advisors can send staff invitations.
           </Text>
         </View>
       </View>
@@ -144,83 +194,155 @@ export default function StaffInvitationsScreen() {
         <TouchableOpacity onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Staff Invitations</Text>
-        <TouchableOpacity onPress={loadInvites}>
-          <Ionicons name="refresh" size={22} color="#000" />
+        <Text style={styles.headerTitle}>Staff Management</Text>
+        <TouchableOpacity onPress={() => setShowInviteModal(true)}>
+          <Ionicons name="add" size={28} color="#000" />
         </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.content}>
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Invite New Staff</Text>
-          <Text style={styles.sectionSubtitle}>
-            Send a secure invite code so teammates can create their own login.
-          </Text>
-
-          <TextInput
-            style={styles.input}
-            placeholder="Full Name"
-            value={name}
-            onChangeText={setName}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Work Email"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Phone (optional)"
-            value={phone}
-            onChangeText={setPhone}
-            keyboardType="phone-pad"
-          />
-
-          <Text style={styles.roleLabel}>Assign Role</Text>
-          <View style={styles.roleChips}>
-            {staffRoles.map((r) => (
-              <TouchableOpacity
-                key={r}
-                style={[styles.roleChip, role === r && styles.roleChipActive]}
-                onPress={() => setRole(r)}
-              >
-                <Text style={[styles.roleChipText, role === r && styles.roleChipTextActive]}>
-                  {r.replace('_', ' ')}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
+        {/* Tabs */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabContainer}>
           <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handleCreateInvite}
-            disabled={loading}
+            style={[styles.tab, activeTab === 'active' && styles.tabActive]}
+            onPress={() => setActiveTab('active')}
           >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Generate Invite</Text>
-            )}
+            <Text style={[styles.tabText, activeTab === 'active' && styles.tabTextActive]}>Staff ({activeStaff.length})</Text>
           </TouchableOpacity>
-        </View>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'vendors' && styles.tabActive]}
+            onPress={() => setActiveTab('vendors')}
+          >
+            <Text style={[styles.tabText, activeTab === 'vendors' && styles.tabTextActive]}>Vendors ({activeVendors.length})</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'pending' && styles.tabActive]}
+            onPress={() => setActiveTab('pending')}
+          >
+            <Text style={[styles.tabText, activeTab === 'pending' && styles.tabTextActive]}>Pending ({invites.length})</Text>
+          </TouchableOpacity>
+        </ScrollView>
 
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Recent Invites</Text>
-            <Text style={styles.sectionSubtitle}>{invites.length} total</Text>
-          </View>
-          {loadingInvites ? (
-            <ActivityIndicator color="#000" />
-          ) : invites.length === 0 ? (
-            <Text style={styles.emptyText}>No invitations sent yet.</Text>
+        <View style={styles.listSection}>
+          {loadingData ? (
+            <ActivityIndicator color="#000" style={{ marginTop: 20 }} />
+          ) : activeTab === 'active' ? (
+            activeStaff.length === 0 ? (
+              <Text style={styles.emptyText}>No active staff members found.</Text>
+            ) : (
+              activeStaff.map(renderActiveStaff)
+            )
+          ) : activeTab === 'vendors' ? (
+            activeVendors.length === 0 ? (
+              <Text style={styles.emptyText}>No active vendors found.</Text>
+            ) : (
+              activeVendors.map(renderActiveStaff) // Reusing renderActiveStaff for vendors
+            )
           ) : (
-            invites.map(renderInviteCard)
+            invites.length === 0 ? (
+              <Text style={styles.emptyText}>No invitations sent yet.</Text>
+            ) : (
+              invites.map(renderInviteCard)
+            )
           )}
         </View>
       </ScrollView>
+
+      {/* Invite Modal */}
+      <Modal
+        visible={showInviteModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowInviteModal(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setShowInviteModal(false)}
+          >
+            <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Invite New Member</Text>
+                <TouchableOpacity onPress={() => setShowInviteModal(false)}>
+                  <Ionicons name="close" size={24} color="#000" />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Full Name"
+                  placeholderTextColor="#666"
+                  value={name}
+                  onChangeText={setName}
+                />
+
+                <TextInput
+                  style={styles.input}
+                  placeholder="Email Address"
+                  placeholderTextColor="#666"
+                  value={email}
+                  onChangeText={setEmail}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                />
+
+                <TextInput
+                  style={styles.input}
+                  placeholder="Phone Number (Optional)"
+                  placeholderTextColor="#666"
+                  value={phone}
+                  onChangeText={setPhone}
+                  keyboardType="phone-pad"
+                />
+
+                <Text style={styles.roleLabel}>Assign Role</Text>
+                <View style={styles.roleSelector}>
+                  <Text style={styles.roleSelectorText}>{role.replace('_', ' ')}</Text>
+                  <View style={styles.roleSelectorControls}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        const currentIndex = availableRoles.indexOf(role);
+                        const prevIndex = (currentIndex - 1 + availableRoles.length) % availableRoles.length;
+                        setRole(availableRoles[prevIndex]);
+                      }}
+                      style={styles.roleControlBtn}
+                    >
+                      <Ionicons name="chevron-up" size={20} color="#666" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => {
+                        const currentIndex = availableRoles.indexOf(role);
+                        const nextIndex = (currentIndex + 1) % availableRoles.length;
+                        setRole(availableRoles[nextIndex]);
+                      }}
+                      style={styles.roleControlBtn}
+                    >
+                      <Ionicons name="chevron-down" size={20} color="#666" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.button, loading && styles.buttonDisabled]}
+                  onPress={handleCreateInvite}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.buttonText}>Generate Invite</Text>
+                  )}
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -258,55 +380,55 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
+  listSection: {
+    paddingHorizontal: 0,
+    paddingBottom: 40,
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  sectionSubtitle: {
-    fontSize: 14,
-    color: '#777',
     marginBottom: 16,
+    paddingHorizontal: 15, // Ensure title still has padding if used (it's unused in listSection loop but defined)
   },
   input: {
     borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: 10,
+    borderColor: '#ddd',
+    borderRadius: 8,
     padding: 15,
-    marginBottom: 12,
+    marginBottom: 15,
     fontSize: 16,
-    backgroundColor: '#fafafa',
   },
   roleLabel: {
     fontSize: 14,
     fontWeight: '600',
     marginBottom: 8,
+    marginTop: 4,
   },
-  roleChips: {
+  roleSelector: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 16,
-  },
-  roleChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
+    justifyContent: 'space-between',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 10,
+    paddingLeft: 15,
+    backgroundColor: '#fff',
+    marginBottom: 20,
   },
-  roleChipActive: {
-    backgroundColor: '#007AFF',
-    borderColor: '#007AFF',
-  },
-  roleChipText: {
-    fontSize: 14,
-    color: '#555',
+  roleSelectorText: {
+    fontSize: 16,
+    color: '#333',
     textTransform: 'capitalize',
+    flex: 1,
   },
-  roleChipTextActive: {
-    color: '#fff',
-    fontWeight: '600',
+  roleSelectorControls: {
+    flexDirection: 'column',
+    justifyContent: 'center',
+    marginLeft: 10,
+  },
+  roleControlBtn: {
+    padding: 2,
   },
   button: {
     backgroundColor: '#111827',
@@ -323,73 +445,62 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
   emptyText: {
     fontSize: 14,
     color: '#777',
+    textAlign: 'center',
+    marginTop: 20,
   },
-  inviteCard: {
-    borderWidth: 1,
-    borderColor: '#eee',
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 12,
-    backgroundColor: '#fafafa',
-  },
-  inviteHeader: {
+  itemCard: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
     alignItems: 'center',
+    marginBottom: 0,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f5f5f5',
+    paddingVertical: 16,
+    paddingHorizontal: 15,
   },
-  inviteName: {
+  iconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  itemInfo: {
+    flex: 1,
+  },
+  itemName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#111',
+    color: '#333',
+    marginBottom: 4,
   },
-  inviteEmail: {
+  itemSubtitle: {
     fontSize: 13,
-    color: '#666',
+    color: '#888',
   },
-  statusPill: (used: boolean) => ({
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: used ? '#e2e8f0' : '#d1fae5',
-  }),
+  itemRight: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
   statusText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#111',
   },
-  inviteMeta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  metaLabel: {
-    fontSize: 12,
-    color: '#777',
-  },
-  metaValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    textTransform: 'capitalize',
-  },
-  codeValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    letterSpacing: 1.2,
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   metaTimestamp: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#999',
-    marginTop: 8,
+    marginTop: 2,
   },
   permissionCard: {
     margin: 20,
@@ -410,6 +521,97 @@ const styles = StyleSheet.create({
     color: '#555',
     textAlign: 'center',
     lineHeight: 20,
+  },
+  // Tab Styles
+  tabContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 15,
+    marginBottom: 15,
+    marginTop: 15,
+    gap: 10,
+  },
+  tab: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    backgroundColor: '#e5e7eb',
+  },
+  tabActive: {
+    backgroundColor: '#111827',
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#4b5563',
+  },
+  tabTextActive: {
+    color: '#fff',
+  },
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    paddingBottom: 40,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  modalOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  modalOptionSelected: {
+    backgroundColor: '#f0f9ff',
+  },
+  modalOptionText: {
+    fontSize: 16,
+    color: '#333',
+    textTransform: 'capitalize',
+  },
+  modalOptionTextSelected: {
+    color: '#007AFF',
+    fontWeight: '600',
+  },
+  inlineRoleList: {
+    borderWidth: 1,
+    borderColor: '#eee',
+    borderRadius: 10,
+    marginTop: -10,
+    marginBottom: 20,
+    backgroundColor: '#fff',
+    overflow: 'hidden',
+  },
+  modalCloseButton: {
+    marginTop: 20,
+    padding: 15,
+    alignItems: 'center',
+    backgroundColor: '#f3f4f6',
+    borderRadius: 10,
+  },
+  modalCloseText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
   },
 });
 

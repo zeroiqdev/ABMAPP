@@ -34,6 +34,7 @@ const ISSUE_OPTIONS = [
     'Noise / Vibration',
     'Overheating',
     'Performance Loss',
+    'Tow Request',
 ];
 
 export default function CreateJobScreen() {
@@ -172,7 +173,15 @@ export default function CreateJobScreen() {
             }
 
             setDescription(job.description || '');
-            setIssues(job.issues || []);
+
+            // Robustly handle Tow Request issue selection
+            if (job.issues && job.issues.length > 0) {
+                setIssues(job.issues);
+            } else if (job.type === 'tow' || (job.description && job.description.toLowerCase().includes('tow request'))) {
+                setIssues(['Tow Request']);
+            } else {
+                setIssues([]);
+            }
             // Service charge/tech/parts will likely be empty for new requests, but we populate if they exist
             if (job.serviceCharge) setServiceCharge(job.serviceCharge.toString());
             if (job.assignedTechnicianId) {

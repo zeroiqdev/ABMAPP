@@ -1,5 +1,20 @@
 import { Tabs } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { View, StyleSheet } from 'react-native';
+import { BlurView } from 'expo-blur';
+import {
+  HomeIcon,
+  ReceiptRefundIcon,
+  WrenchScrewdriverIcon,
+  ShoppingBagIcon,
+  UserIcon,
+} from 'react-native-heroicons/outline';
+import {
+  HomeIcon as HomeIconSolid,
+  ReceiptRefundIcon as ReceiptRefundIconSolid,
+  WrenchScrewdriverIcon as WrenchScrewdriverIconSolid,
+  ShoppingBagIcon as ShoppingBagIconSolid,
+  UserIcon as UserIconSolid,
+} from 'react-native-heroicons/solid';
 import { Colors } from '@/constants/design';
 
 export default function CustomerLayout() {
@@ -10,21 +25,24 @@ export default function CustomerLayout() {
         tabBarActiveTintColor: Colors.secondary,
         tabBarInactiveTintColor: Colors.textSecondary,
         tabBarStyle: {
-          backgroundColor: Colors.surface,
-          borderTopWidth: 1,
-          borderTopColor: Colors.border,
-          height: 50,
-          paddingBottom: 4,
-          paddingTop: 4,
+          position: 'absolute',
+          backgroundColor: 'transparent',
+          borderTopWidth: 0,
+          elevation: 0,
+          height: 80,
+          paddingBottom: 20,
         },
+        tabBarBackground: () => (
+          <BlurView intensity={80} tint="light" style={StyleSheet.absoluteFill} />
+        ),
       }}
     >
       <Tabs.Screen
         name="home"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home" size={size} color={color} />
+          tabBarIcon: ({ color, focused, size }) => (
+            focused ? <HomeIconSolid size={size} color={color} /> : <HomeIcon size={size} color={color} />
           ),
         }}
       />
@@ -33,8 +51,8 @@ export default function CustomerLayout() {
         options={{
           title: 'Invoices',
           href: '/(customer)/invoices',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="receipt" size={size} color={color} />
+          tabBarIcon: ({ color, focused, size }) => (
+            focused ? <ReceiptRefundIconSolid size={size} color={color} /> : <ReceiptRefundIcon size={size} color={color} />
           ),
         }}
       />
@@ -43,8 +61,8 @@ export default function CustomerLayout() {
         options={{
           title: 'Maintenance',
           href: '/(customer)/maintenance',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="construct" size={size} color={color} />
+          tabBarIcon: ({ color, focused, size }) => (
+            focused ? <WrenchScrewdriverIconSolid size={size} color={color} /> : <WrenchScrewdriverIcon size={size} color={color} />
           ),
         }}
       />
@@ -52,8 +70,8 @@ export default function CustomerLayout() {
         name="marketplace"
         options={{
           title: 'Marketplace',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="storefront" size={size} color={color} />
+          tabBarIcon: ({ color, focused, size }) => (
+            focused ? <ShoppingBagIconSolid size={size} color={color} /> : <ShoppingBagIcon size={size} color={color} />
           ),
         }}
       />
@@ -61,8 +79,8 @@ export default function CustomerLayout() {
         name="profile"
         options={{
           title: 'Account',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person" size={size} color={color} />
+          tabBarIcon: ({ color, focused, size }) => (
+            focused ? <UserIconSolid size={size} color={color} /> : <UserIcon size={size} color={color} />
           ),
         }}
       />
@@ -72,7 +90,7 @@ export default function CustomerLayout() {
           href: null,
           title: 'Service',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="construct" size={size} color={color} />
+            <WrenchScrewdriverIcon size={size} color={color} />
           ),
         }}
       />
@@ -104,7 +122,7 @@ export default function CustomerLayout() {
         name="tow-request"
         options={{
           href: null,
-          tabBarStyle: { display: 'none' }, // Ensure tab bar is hidden when on this screen if desired, or just hide from menu
+          tabBarStyle: { display: 'none' },
         }}
       />
       <Tabs.Screen
@@ -151,6 +169,18 @@ export default function CustomerLayout() {
       />
       <Tabs.Screen
         name="cart"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="orders"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="order-details"
         options={{
           href: null,
         }}

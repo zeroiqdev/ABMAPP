@@ -72,7 +72,7 @@ export default function MarketplaceScreen() {
   const renderProduct = ({ item }: { item: MarketplaceProduct }) => (
     <TouchableOpacity
       style={styles.productCard}
-      onPress={() => router.push(`/(customer)/product-details?id=${item.id}`)}
+      onPress={() => router.push(`/(customer)/product-details?id=${item.id}&from=marketplace`)}
       activeOpacity={0.9}
     >
       <View style={styles.imageContainer}>
@@ -435,6 +435,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 4,
     elevation: 8,
+  },
+  productsList: {
+    paddingHorizontal: 16,
+    paddingBottom: 20,
+  },
+  columnWrapper: {
+    justifyContent: 'space-between',
   },
   emptyState: {
     padding: 40,

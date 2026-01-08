@@ -1,7 +1,22 @@
 import { Tabs, Redirect } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
-import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/design';
+import {
+  HomeIcon as HomeIconOutline,
+  BanknotesIcon as BanknotesIconOutline,
+  BriefcaseIcon as BriefcaseIconOutline,
+  UserGroupIcon as UserGroupIconOutline,
+  ArchiveBoxIcon as ArchiveBoxIconOutline,
+  ShoppingBagIcon as ShoppingBagIconOutline
+} from 'react-native-heroicons/outline';
+import {
+  HomeIcon as HomeIconSolid,
+  BanknotesIcon as BanknotesIconSolid,
+  BriefcaseIcon as BriefcaseIconSolid,
+  UserGroupIcon as UserGroupIconSolid,
+  ArchiveBoxIcon as ArchiveBoxIconSolid,
+  ShoppingBagIcon as ShoppingBagIconSolid
+} from 'react-native-heroicons/solid';
 
 export default function WorkshopLayout() {
   const { user } = useAuthStore();
@@ -43,8 +58,8 @@ export default function WorkshopLayout() {
         name="dashboard"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home" size={size || 20} color={color} />
+          tabBarIcon: ({ focused, color, size }) => (
+            focused ? <HomeIconSolid size={size || 24} color={color} /> : <HomeIconOutline size={size || 24} color={color} />
           ),
         }}
       />
@@ -52,8 +67,8 @@ export default function WorkshopLayout() {
         name="finance"
         options={{
           title: 'Finance',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="cash-outline" size={size || 20} color={color} />
+          tabBarIcon: ({ focused, color, size }) => (
+            focused ? <BanknotesIconSolid size={size || 24} color={color} /> : <BanknotesIconOutline size={size || 24} color={color} />
           ),
         }}
       />
@@ -61,8 +76,8 @@ export default function WorkshopLayout() {
         name="jobs"
         options={{
           title: 'Jobs',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="briefcase-outline" size={size || 20} color={color} />
+          tabBarIcon: ({ focused, color, size }) => (
+            focused ? <BriefcaseIconSolid size={size || 24} color={color} /> : <BriefcaseIconOutline size={size || 24} color={color} />
           ),
         }}
       />
@@ -70,8 +85,8 @@ export default function WorkshopLayout() {
         name="customers"
         options={{
           title: 'Customer',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="people-outline" size={size || 20} color={color} />
+          tabBarIcon: ({ focused, color, size }) => (
+            focused ? <UserGroupIconSolid size={size || 24} color={color} /> : <UserGroupIconOutline size={size || 24} color={color} />
           ),
         }}
       />
@@ -79,8 +94,8 @@ export default function WorkshopLayout() {
         name="inventory"
         options={{
           title: 'Inventory',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="archive-outline" size={size || 20} color={color} />
+          tabBarIcon: ({ focused, color, size }) => (
+            focused ? <ArchiveBoxIconSolid size={size || 24} color={color} /> : <ArchiveBoxIconOutline size={size || 24} color={color} />
           ),
         }}
       />
@@ -88,8 +103,8 @@ export default function WorkshopLayout() {
         name="marketplace"
         options={{
           title: 'Marketplace',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="storefront-outline" size={size || 20} color={color} />
+          tabBarIcon: ({ focused, color, size }) => (
+            focused ? <ShoppingBagIconSolid size={size || 24} color={color} /> : <ShoppingBagIconOutline size={size || 24} color={color} />
           ),
         }}
       />
@@ -175,6 +190,30 @@ export default function WorkshopLayout() {
       />
       <Tabs.Screen
         name="cart"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="orders"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="order-details"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="create-invoice"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="access-control"
         options={{
           href: null,
         }}

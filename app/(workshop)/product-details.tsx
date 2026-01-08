@@ -22,7 +22,8 @@ const { width } = Dimensions.get('window');
 
 export default function ProductDetailsScreen() {
     const router = useRouter();
-    const { id } = useLocalSearchParams<{ id: string }>();
+    const { id, from } = useLocalSearchParams<{ id: string, from?: string }>();
+
     const addItem = useCartStore((state) => state.addItem);
     const [product, setProduct] = useState<MarketplaceProduct | null>(null);
     const [quantity, setQuantity] = useState(1);
@@ -78,24 +79,28 @@ export default function ProductDetailsScreen() {
 
         // Add to cart store
         addItem(product, quantity);
-        
+
         // Show toast notification
         showToastNotification();
     };
 
-    if (loading) {
-        return (
-            <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#000" />
-            </View>
-        );
-    }
+    const handleBack = () => {
+        if (from === 'marketplace') {
+            // Force navigation back to marketplace tab if we came from there
+            // This ensures we don't drop to home if the stack is confused
+            router.navigate('/(workshop)/marketplace');
+        } else {
+            router.back();
+        }
+    };
+
+
 
     if (!product) {
         return (
             <View style={styles.container}>
                 <View style={styles.header}>
-                    <TouchableOpacity onPress={() => router.back()}>
+                    <TouchableOpacity onPress={handleBack}>
                         <Ionicons name="arrow-back" size={24} color="#000" />
                     </TouchableOpacity>
                 </View>
@@ -110,7 +115,7 @@ export default function ProductDetailsScreen() {
         <View style={styles.container}>
             {/* Header */}
             <View style={styles.header}>
-                <TouchableOpacity style={styles.iconButton} onPress={() => router.back()}>
+                <TouchableOpacity style={styles.iconButton} onPress={handleBack}>
                     <Ionicons name="arrow-back" size={24} color="#000" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle} numberOfLines={1}>{product.name}</Text>
@@ -119,7 +124,7 @@ export default function ProductDetailsScreen() {
                 </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 140 }}>
                 {/* Image Carousel */}
                 <View style={styles.carouselContainer}>
                     <ScrollView
@@ -230,7 +235,9 @@ export default function ProductDetailsScreen() {
             <View style={styles.footer}>
                 <View style={styles.priceContainer}>
                     <Text style={styles.totalLabel}>Total Price</Text>
-                    <Text style={styles.totalPrice}>₦{(product.price * quantity).toLocaleString()}</Text>
+                    <Text style={styles.totalPrice} numberOfLines={1} adjustsFontSizeToFit>
+                        ₦{(product.price * quantity).toLocaleString()}
+                    </Text>
                 </View>
                 <TouchableOpacity
                     style={[styles.addToCartButton, product.stock === 0 && styles.disabledButton]}

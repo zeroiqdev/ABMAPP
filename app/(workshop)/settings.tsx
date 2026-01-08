@@ -6,15 +6,48 @@ import {
   ScrollView,
   TouchableOpacity,
   Switch,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
+import { firebaseService } from '@/services/firebaseService';
 
 export default function WorkshopSettingsScreen() {
   const router = useRouter();
-  const userRel = useAuthStore();
-  const { user } = userRel;
+  const { user, logout } = useAuthStore();
+
+  const handleLogout = async () => {
+    Alert.alert(
+      'Log Out',
+      'Are you sure you want to log out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Log Out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await logout();
+              router.replace('/');
+            } catch (error) {
+              console.error('Logout failed:', error);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleResetPassword = async () => {
+    if (!user?.email) return;
+    try {
+      await firebaseService.sendPasswordResetEmail(user.email);
+      Alert.alert('Success', `Password reset email sent to ${user.email}`);
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to send reset email');
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -27,94 +60,100 @@ export default function WorkshopSettingsScreen() {
       </View>
 
       <ScrollView style={styles.content}>
-        {/* Workshop Settings */}
-        {user?.role === 'admin' && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Workshop Settings</Text>
-            <TouchableOpacity style={styles.settingRow}>
-              <Ionicons name="business-outline" size={24} color="#666" />
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Workshop Information</Text>
-                <Text style={styles.settingDesc}>Manage workshop details</Text>
+
+        {/* Account Section - First */}
+        <View style={[styles.section, { marginTop: 30 }]}>
+          <Text style={styles.sectionTitle}>Account</Text>
+
+          <View style={styles.profileCard}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>
+                {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
+              </Text>
+            </View>
+            <View style={styles.profileInfo}>
+              <Text style={styles.profileName}>{user?.name || 'User'}</Text>
+              <Text style={styles.profileEmail}>{user?.email || 'No email'}</Text>
+              <View style={styles.roleBadge}>
+                <Text style={styles.roleText}>
+                  {user?.role ? user.role.replace('_', ' ').toUpperCase() : 'STAFF'}
+                </Text>
               </View>
-              <Ionicons name="chevron-forward" size={20} color="#999" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.settingRow}>
-              <Ionicons name="calculator-outline" size={24} color="#666" />
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>VAT Rate</Text>
-                <Text style={styles.settingDesc}>Configure VAT percentage</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color="#999" />
-            </TouchableOpacity>
+            </View>
+          </View>
+
+          <TouchableOpacity style={styles.settingRow} onPress={handleResetPassword}>
+            <View style={styles.iconContainer}>
+              <Ionicons name="lock-closed" size={20} color="#000" />
+            </View>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Reset Password</Text>
+              <Text style={styles.settingDesc}>Send password reset email</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+            <Ionicons name="log-out-outline" size={20} color="#FF3B30" />
+            <Text style={styles.logoutText}>Log Out</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Workshop Settings - Admin Only */}
+        {(user?.role === 'admin' || user?.role === 'service_advisor') && (
+          <View style={[styles.section, { marginTop: 40 }]}>
+            <Text style={styles.sectionTitle}>Team & Access</Text>
+
             <TouchableOpacity
               style={styles.settingRow}
               onPress={() => router.push('/(workshop)/staff-invitations')}
             >
-              <Ionicons name="people-outline" size={24} color="#666" />
+              <View style={styles.iconContainer}>
+                <Ionicons name="people" size={22} color="#000" />
+              </View>
               <View style={styles.settingInfo}>
                 <Text style={styles.settingLabel}>Staff Management</Text>
-                <Text style={styles.settingDesc}>Manage staff roles and permissions</Text>
+                <Text style={styles.settingDesc}>Manage invites, roles, and vendors</Text>
               </View>
-              <Ionicons name="chevron-forward" size={20} color="#999" />
+              <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.settingRow}
+              onPress={() => router.push('/(workshop)/access-control')}
+            >
+              <View style={styles.iconContainer}>
+                <Ionicons name="shield-checkmark" size={22} color="#000" />
+              </View>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Access Control</Text>
+                <Text style={styles.settingDesc}>Configure detailed permissions</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
             </TouchableOpacity>
           </View>
         )}
 
-        {/* Notifications */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Notifications</Text>
+        {/* Preferences */}
+        <View style={[styles.section, { marginTop: 40 }]}>
+          <Text style={styles.sectionTitle}>Preferences</Text>
           <View style={styles.settingRow}>
-            <Ionicons name="notifications-outline" size={24} color="#666" />
+            <View style={styles.iconContainer}>
+              <Ionicons name="notifications" size={22} color="#000" />
+            </View>
             <View style={styles.settingInfo}>
               <Text style={styles.settingLabel}>Push Notifications</Text>
               <Text style={styles.settingDesc}>Receive job and system updates</Text>
             </View>
             <Switch
-              trackColor={{ false: '#ddd', true: '#007AFF' }}
+              trackColor={{ false: '#e0e0e0', true: '#000' }}
               value={true}
               onValueChange={() => { }}
+              thumbColor="#fff"
             />
           </View>
         </View>
 
-        {/* Account */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Account</Text>
-          <TouchableOpacity style={styles.settingRow}>
-            <Ionicons name="person-outline" size={24} color="#666" />
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Profile</Text>
-              <Text style={styles.settingDesc}>Update your profile information</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color="#999" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.settingRow}>
-            <Ionicons name="lock-closed-outline" size={24} color="#666" />
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Change Password</Text>
-              <Text style={styles.settingDesc}>Update your password</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color="#999" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.settingRow}
-            onPress={async () => {
-              try {
-                await userRel.logout();
-                router.replace('/');
-              } catch (error) {
-                console.error('Logout failed:', error);
-              }
-            }}
-          >
-            <Ionicons name="log-out-outline" size={24} color="#FF3B30" />
-            <View style={styles.settingInfo}>
-              <Text style={[styles.settingLabel, { color: '#FF3B30' }]}>Log Out</Text>
-              <Text style={styles.settingDesc}>Sign out of your account</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
       </ScrollView>
     </View>
   );
@@ -123,7 +162,7 @@ export default function WorkshopSettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#F2F2F7',
   },
   header: {
     flexDirection: 'row',
@@ -133,45 +172,121 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#E5E5EA',
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#000',
   },
   content: {
     flex: 1,
   },
   section: {
-    padding: 20,
     backgroundColor: '#fff',
-    marginBottom: 10,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#E5E5EA',
+    paddingLeft: 20,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 15,
+    position: 'absolute',
+    top: -28,
+    left: 20,
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#8E8E93',
+    textTransform: 'uppercase',
   },
+  // Profile Styles
+  profileCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingRight: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5EA',
+  },
+  avatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#E5E5EA',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  avatarText: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: '#8E8E93',
+  },
+  profileInfo: {
+    flex: 1,
+  },
+  profileName: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#000',
+    marginBottom: 4,
+  },
+  profileEmail: {
+    fontSize: 14,
+    color: '#8E8E93',
+    marginBottom: 6,
+  },
+  roleBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#F2F2F7',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  roleText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#8E8E93',
+  },
+  // Row Styles
   settingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 15,
+    paddingVertical: 12,
+    paddingRight: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-    gap: 15,
+    borderBottomColor: '#E5E5EA',
+  },
+  iconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 6,
+    backgroundColor: '#F2F2F7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
   settingInfo: {
     flex: 1,
   },
   settingLabel: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 4,
+    color: '#000',
   },
   settingDesc: {
     fontSize: 12,
-    color: '#666',
+    color: '#8E8E93',
+    marginTop: 2,
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    gap: 8,
+  },
+  logoutText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FF3B30',
   },
 });
-

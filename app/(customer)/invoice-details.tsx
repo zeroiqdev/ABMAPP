@@ -271,7 +271,7 @@ export default function InvoiceDetailsScreen() {
           </View>
           {invoice.vat > 0 && (
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>VAT:</Text>
+              <Text style={styles.summaryLabel}>VAT {invoice.vatRate ? `(${invoice.vatRate}%)` : ''}:</Text>
               <Text style={styles.summaryValue}>₦{invoice.vat.toLocaleString()}</Text>
             </View>
           )}

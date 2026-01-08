@@ -5,7 +5,8 @@ export type UserRole =
   | 'storekeeper'
   | 'accountant'
   | 'service_advisor'
-  | 'vendor';
+  | 'vendor'
+  | string;
 
 export type JobStatus =
   | 'received'
@@ -78,13 +79,18 @@ export interface PaymentRecord {
 
 export interface Invoice {
   id: string;
-  jobId: string;
-  userId: string;
+  jobId?: string;
+  userId?: string;
+  customerName?: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  customerAddress?: string;
   workshopId: string;
   items: InvoiceItem[];
   subtotal: number;
   vat: number;
-  discount: number;
+  vatRate?: number; // VAT percentage
+  discount: number; // Discount amount
   total: number;
   paymentStatus: PaymentStatus;
   paymentMethod?: string;
@@ -162,6 +168,10 @@ export interface Order {
   status: 'pending' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled';
   deliveryMethod: 'delivery' | 'pickup';
   shippingAddress?: string;
+  vendorIds?: string[];
+  customerName?: string;
+  customerPhone?: string;
+  customerEmail?: string;
   createdAt: Date;
 }
 
@@ -170,6 +180,8 @@ export interface OrderItem {
   productName: string;
   quantity: number;
   price: number;
+  vendorId?: string; // Add vendorId to item for easier extraction
+  image?: string;
 }
 
 export interface Workshop {
@@ -189,9 +201,11 @@ export interface Notification {
   id: string;
   userId: string;
   title: string;
-  message: string;
-  type: 'job_update' | 'payment' | 'inventory' | 'general';
+  message?: string; // specific to old usages
+  body?: string; // explicit body content
+  type: 'job_update' | 'payment' | 'inventory' | 'general' | 'order';
   read: boolean;
+  metadata?: Record<string, any>;
   createdAt: Date;
 }
 
@@ -233,4 +247,18 @@ export interface ChatMessage {
   imageUrl?: string;
   createdAt: Date;
   readBy: string[];
+}
+
+export interface RolePermissions {
+  role: UserRole;
+  permissions: {
+    canManageJobs: boolean;
+    canViewInventory: boolean;
+    canManageInventory: boolean;
+    canViewFinance: boolean;
+    canManageFinance: boolean;
+    canManageStaff: boolean;
+    canManageSettings: boolean;
+    canViewReports: boolean;
+  };
 }
