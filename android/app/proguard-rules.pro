@@ -12,3 +12,10 @@
 -keep class com.facebook.react.turbomodule.** { *; }
 
 # Add any project specific keep options here:
+
+# Expo Notifications & Modules (Fix for Release Crash)
+-keep class expo.modules.** { *; }
+-keep interface expo.modules.** { *; }
+
+# Firebase
+-keep class com.google.firebase.** { *; }
