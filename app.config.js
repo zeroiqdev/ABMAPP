@@ -38,7 +38,7 @@ export default {
   expo: {
     name: "ABM Workshop & Marketplace",
     slug: "abmapp",
-    version: "1.0.1",
+    version: "1.0.2",
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
@@ -66,7 +66,7 @@ export default {
         backgroundColor: "#ffffff"
       },
       package: "com.abmtek.abmapp",
-      versionCode: 2,
+      versionCode: 3,
       googleServicesFile: './google-services.json',
       config: {
         googleMaps: {
