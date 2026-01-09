@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "238945016694",
+    "firebase_url": "https://abmapp-59580-default-rtdb.firebaseio.com",
+    "project_id": "abmapp-59580",
+    "storage_bucket": "abmapp-59580.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:238945016694:android:3a97364c27a7d6ffbeb857",
+        "android_client_info": {
+          "package_name": "com.abmtek.abmapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCunckdzHbmEVOTo0__H8Lur3XFozDeRYk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

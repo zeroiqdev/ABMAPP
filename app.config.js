@@ -56,6 +56,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.abmtek.abmapp",
+      googleServicesFile: './GoogleService-Info.plist',
       config: {
         googleMapsApiKey: getEnv('EXPO_PUBLIC_GOOGLE_MAPS_API_KEY')
       }
