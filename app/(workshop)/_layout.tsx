@@ -1,4 +1,6 @@
 import { Tabs, Redirect } from 'expo-router';
+import { Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/store/authStore';
 import { Colors } from '@/constants/design';
 import {
@@ -22,6 +24,7 @@ import { firebaseService } from '@/services/firebaseService';
 import { View, ActivityIndicator } from 'react-native';
 
 export default function WorkshopLayout() {
+  const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
   const [permissions, setPermissions] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -88,8 +91,8 @@ export default function WorkshopLayout() {
           backgroundColor: Colors.surface,
           borderTopWidth: 1,
           borderTopColor: Colors.border,
-          height: 50,
-          paddingBottom: 4,
+          height: 60 + (Platform.OS === 'ios' ? insets.bottom : Math.max(insets.bottom, 10)),
+          paddingBottom: Platform.OS === 'ios' ? insets.bottom : Math.max(insets.bottom, 10),
           paddingTop: 4,
           paddingHorizontal: 10,
         },

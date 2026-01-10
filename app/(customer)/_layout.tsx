@@ -1,5 +1,6 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Platform, View, StyleSheet } from 'react-native';
 import { Tabs } from 'expo-router';
-import { View, StyleSheet } from 'react-native';
 import { BlurView } from 'expo-blur';
 import {
   HomeIcon,
@@ -18,6 +19,8 @@ import {
 import { Colors } from '@/constants/design';
 
 export default function CustomerLayout() {
+  const insets = useSafeAreaInsets();
+
   return (
     <Tabs
       screenOptions={{
@@ -29,8 +32,8 @@ export default function CustomerLayout() {
           backgroundColor: 'transparent',
           borderTopWidth: 0,
           elevation: 0,
-          height: 80,
-          paddingBottom: 20,
+          height: 60 + (Platform.OS === 'ios' ? insets.bottom : Math.max(insets.bottom, 20)),
+          paddingBottom: Platform.OS === 'ios' ? insets.bottom : Math.max(insets.bottom, 20),
         },
         tabBarBackground: () => (
           <BlurView intensity={80} tint="light" style={StyleSheet.absoluteFill} />

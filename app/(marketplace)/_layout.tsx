@@ -1,5 +1,6 @@
 import { Tabs, useRouter, useSegments } from 'expo-router';
 import { Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useEffect } from 'react';
 
 import {
@@ -19,6 +20,7 @@ import {
 import { useAuthStore } from '@/store/authStore';
 
 export default function MarketplaceLayout() {
+  const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
   const router = useRouter();
   const segments = useSegments();
@@ -53,8 +55,8 @@ export default function MarketplaceLayout() {
           borderTopWidth: 1,
           borderTopColor: '#f0f0f0',
           backgroundColor: '#fff',
-          height: Platform.OS === 'ios' ? 85 : 60,
-          paddingBottom: Platform.OS === 'ios' ? 30 : 10,
+          height: 60 + (Platform.OS === 'ios' ? insets.bottom : Math.max(insets.bottom, 10)),
+          paddingBottom: Platform.OS === 'ios' ? insets.bottom : Math.max(insets.bottom, 10),
           paddingTop: 10,
         },
         tabBarActiveTintColor: '#000',

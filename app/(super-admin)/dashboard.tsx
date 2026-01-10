@@ -146,6 +146,50 @@ export default function SuperAdminDashboard() {
                     <Ionicons name="add" size={20} color="#fff" />
                     <Text style={styles.addButtonText}>Add Workshop</Text>
                 </TouchableOpacity>
+
+                <View style={[styles.dangerZone, { marginTop: 20 }]}>
+                    <Text style={styles.dangerTitle}>Danger Zone</Text>
+                    <TouchableOpacity
+                        style={styles.resetButton}
+                        onPress={() => {
+                            Alert.alert(
+                                'Reset Database',
+                                'DANGER: This will delete ALL workshops, jobs, invoices, vehicles, and users (except YOU). Using this requires Cloud Functions to be deployed.\n\nAre you absolutely sure?',
+                                [
+                                    { text: 'Cancel', style: 'cancel' },
+                                    {
+                                        text: 'Yes, Wipe Everything',
+                                        style: 'destructive',
+                                        onPress: async () => {
+                                            try {
+                                                const { getFunctions, httpsCallable } = require('firebase/functions');
+                                                const functions = getFunctions();
+                                                const resetDatabase = httpsCallable(functions, 'resetDatabase');
+
+                                                Alert.alert('Processing', 'Resetting database... This may take a few moments.');
+
+                                                const result: any = await resetDatabase();
+
+                                                if (result.data.success) {
+                                                    Alert.alert('Success', result.data.message);
+                                                    setWorkshops([]); // Clear local state immediately
+                                                } else {
+                                                    Alert.alert('Error', 'Reset returned invalid response.');
+                                                }
+                                            } catch (error: any) {
+                                                console.error('Reset Error:', error);
+                                                Alert.alert('Reset Failed', error.message || 'Unknown error occurred.');
+                                            }
+                                        }
+                                    }
+                                ]
+                            );
+                        }}
+                    >
+                        <Ionicons name="nuclear" size={20} color="#fff" />
+                        <Text style={styles.resetButtonText}>Reset Database</Text>
+                    </TouchableOpacity>
+                </View>
             </View>
 
             <FlatList
