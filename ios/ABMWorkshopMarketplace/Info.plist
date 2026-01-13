@@ -19,7 +19,7 @@
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0.2</string>
+	<string>1.0.6</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleURLTypes</key>
@@ -35,9 +35,9 @@
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>GMSApiKey</key>
-	<string></string>
+	<string>AIzaSyChylco5l23uHIiYJXIXYRe6zesDnkZvYE</string>
 	<key>LSMinimumSystemVersion</key>
-	<string>12.0</string>
+	<string>15.1</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>
