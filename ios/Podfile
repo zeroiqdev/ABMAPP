@@ -70,6 +70,14 @@ target 'ABMWorkshopMarketplace' do
       :mac_catalyst_enabled => false,
       :ccache_enabled => ccache_enabled?(podfile_properties),
     )
+    
+    # Fix for React Native Firebase: Allow non-modular includes in framework modules
+    # This is needed because RNFBApp imports React headers which are not modular
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |build_config|
+        build_config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+      end
+    end
   end
 end
 
