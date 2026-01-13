@@ -107,8 +107,14 @@ export default {
           cameraPermission: "The app accesses your camera to capture service images."
         }
       ],
-      "@react-native-firebase/app",
-      "@react-native-firebase/crashlytics"
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
+          }
+        }
+      ]
     ],
     scheme: "abmapp",
     extra: {

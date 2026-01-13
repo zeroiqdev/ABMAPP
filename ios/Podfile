@@ -1,51 +1,90 @@
 require File.join(File.dirname(`node --print "require.resolve('expo/package.json')"`), "scripts/autolinking")
 require File.join(File.dirname(`node --print "require.resolve('react-native/package.json')"`), "scripts/react_native_pods")
 
-platform :ios, '15.1'
+require 'json'
+podfile_properties = JSON.parse(File.read(File.join(__dir__, 'Podfile.properties.json'))) rescue {}
+
+def ccache_enabled?(podfile_properties)
+  return ENV['USE_CCACHE'] == '1' if ENV['USE_CCACHE']
+  podfile_properties['apple.ccacheEnabled'] == 'true'
+end
+
+ENV['EX_DEV_CLIENT_NETWORK_INSPECTOR'] ||= podfile_properties['EX_DEV_CLIENT_NETWORK_INSPECTOR']
+ENV['RCT_NEW_ARCH_ENABLED'] ||= '0' if podfile_properties['newArchEnabled'] == 'false'
+ENV['RCT_USE_RN_DEP'] ||= '1' if podfile_properties['ios.buildReactNativeFromSource'] != 'true' && podfile_properties['newArchEnabled'] != 'false'
+ENV['RCT_USE_PREBUILT_RNCORE'] ||= '1' if podfile_properties['ios.buildReactNativeFromSource'] != 'true' && podfile_properties['newArchEnabled'] != 'false'
+
+platform :ios, podfile_properties['ios.deploymentTarget'] || '15.1'
+
 prepare_react_native_project!
 
 target 'ABMWorkshopMarketplace' do
   use_expo_modules!
-  
-  config = use_native_modules!
+
+  if ENV['EXPO_USE_COMMUNITY_AUTOLINKING'] == '1'
+    config_command = ['node', '-e', "process.argv=['', '', 'config'];require('@react-native-community/cli').run()"];
+  else
+    config_command = [
+      'npx',
+      'expo-modules-autolinking',
+      'react-native-config',
+      '--json',
+      '--platform',
+      'ios'
+    ]
+  end
+
+  config = use_native_modules!(config_command)
+
+  use_frameworks! :linkage => podfile_properties['ios.useFrameworks'].to_sym if podfile_properties['ios.useFrameworks']
+  use_frameworks! :linkage => ENV['USE_FRAMEWORKS'].to_sym if ENV['USE_FRAMEWORKS']
+
+  # React Native Firebase - added manually since Expo plugin is incompatible
+  pod 'RNFBApp', :path => '../node_modules/@react-native-firebase/app'
+  pod 'RNFBCrashlytics', :path => '../node_modules/@react-native-firebase/crashlytics'
+
   use_react_native!(
     :path => config[:reactNativePath],
-    :hermes_enabled => true
+    :hermes_enabled => podfile_properties['expo.jsEngine'] == nil || podfile_properties['expo.jsEngine'] == 'hermes',
+    :app_path => "#{Pod::Config.instance.installation_root}/..",
+    :privacy_file_aggregation_enabled => podfile_properties['apple.privacyManifestAggregationEnabled'] != 'false',
   )
 
   post_install do |installer|
     react_native_post_install(
       installer,
       config[:reactNativePath],
-      :mac_catalyst_enabled => false
+      :mac_catalyst_enabled => false,
+      :ccache_enabled => ccache_enabled?(podfile_properties),
     )
     
-    # This section fixes BOTH issues
+    # Fix for Firebase with static frameworks
     installer.pods_project.targets.each do |target|
-      target.build_configurations.each do |config|
-        # Fix 1: Disable warnings as errors (prevents fastlane build failures)
-        config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
-        config.build_settings['CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER'] = 'NO'
+      target.build_configurations.each do |build_config|
+        # Disable warnings as errors
+        build_config.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
+        build_config.build_settings['CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER'] = 'NO'
         
-        # Fix 2: Enable modular headers for Firebase (fixes CocoaPods error)
+        # Enable modular headers for Firebase pods
         if ['FirebaseCore', 'FirebaseInstallations', 'FirebaseCoreExtension',
+            'FirebaseCoreInternal', 'FirebaseSessions', 'FirebaseCrashlytics',
             'GoogleDataTransport', 'GoogleUtilities', 'nanopb'].include? target.name
-          config.build_settings['DEFINES_MODULE'] = 'YES'
+          build_config.build_settings['DEFINES_MODULE'] = 'YES'
         end
         
-        # Fix 3: Allow non-modular includes for RNFB (prevents header errors)
+        # Allow non-modular includes for RNFB pods
         if target.name.start_with?('RNFB')
-          config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+          build_config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
         end
         
-        # Fix 4: Set deployment target consistently
-        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.1'
+        # Consistent deployment target
+        build_config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.1'
       end
     end
     
-    # Fix 5: Ensure proper build settings for all targets
-    installer.pods_project.build_configurations.each do |config|
-      config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+    # Project-level settings for RNFB compatibility
+    installer.pods_project.build_configurations.each do |build_config|
+      build_config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
     end
   end
 end
