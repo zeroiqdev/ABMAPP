@@ -117,7 +117,7 @@ export default {
           }
         }
       ],
-      "./plugins/withModularHeaders"
+      "./plugins/withFirebaseStaticFramework"
     ],
     scheme: "abmapp",
     extra: {
