@@ -114,7 +114,8 @@ export default {
             "useFrameworks": "static"
           }
         }
-      ]
+      ],
+      "./plugins/withFirebaseFixes"
     ],
     scheme: "abmapp",
     extra: {
