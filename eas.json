@@ -3,6 +3,24 @@
     "production": {
       "android": {
         "buildType": "app-bundle"
+      },
+      "ios": {
+        "buildConfiguration": "Release",
+        "cocoapods": {
+          "installFlags": [
+            "--repo-update"
+          ]
+        }
+      }
+    },
+    "development": {
+      "ios": {
+        "buildConfiguration": "Debug",
+        "cocoapods": {
+          "installFlags": [
+            "--repo-update"
+          ]
+        }
       }
     }
   }
