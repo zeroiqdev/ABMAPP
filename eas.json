@@ -5,22 +5,12 @@
         "buildType": "app-bundle"
       },
       "ios": {
-        "buildConfiguration": "Release",
-        "cocoapods": {
-          "installFlags": [
-            "--repo-update"
-          ]
-        }
+        "buildConfiguration": "Release"
       }
     },
     "development": {
       "ios": {
-        "buildConfiguration": "Debug",
-        "cocoapods": {
-          "installFlags": [
-            "--repo-update"
-          ]
-        }
+        "buildConfiguration": "Debug"
       }
     }
   }
