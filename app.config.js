@@ -108,16 +108,7 @@ export default {
         }
       ],
       "@react-native-firebase/app",
-      "@react-native-firebase/crashlytics",
-      [
-        "expo-build-properties",
-        {
-          "ios": {
-            "useFrameworks": "static"
-          }
-        }
-      ],
-      "./plugins/withFirebaseStaticFramework"
+      "@react-native-firebase/crashlytics"
     ],
     scheme: "abmapp",
     extra: {
