@@ -488,25 +488,28 @@ const styles = StyleSheet.create({
   },
   tab: {
     flex: 1,
-    flexDirection: 'row',
+    flexDirection: 'column', // Changed to column for better text display
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: Spacing.md,
-    paddingHorizontal: 4, // Reduced from Spacing.base to fit text
+    paddingHorizontal: 6,
     borderRadius: BorderRadius.md,
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
-    gap: 4, // Reduced gap
+    gap: 2,
+    minHeight: 48,
   },
   tabActive: {
     backgroundColor: Colors.secondary,
     borderColor: Colors.secondary,
   },
   tabText: {
-    fontSize: 12, // Reduced from sm (14)
+    fontSize: 11, // Slightly smaller for Android fit
     color: Colors.textSecondary,
     fontWeight: Typography.fontWeight.medium,
+    textAlign: 'center',
+    flexShrink: 1,
   },
   tabTextActive: {
     color: Colors.textInverse,

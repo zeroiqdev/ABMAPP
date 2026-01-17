@@ -216,29 +216,81 @@ export default function StaffInvitationsScreen() {
     return <View key={staff.id}>{content}</View>;
   };
 
-  const renderInviteCard = (invite: StaffInvitation) => (
-    <View key={invite.id} style={styles.itemCard}>
-      <View style={[styles.iconBox, { backgroundColor: '#000' }]}>
-        <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#fff' }}>
-          {(invite.name || invite.email || '?').charAt(0).toUpperCase()}
-        </Text>
-      </View>
-      <View style={styles.itemInfo}>
-        <Text style={styles.itemName}>{invite.name || invite.email}</Text>
-        <Text style={styles.itemSubtitle}>Role: {invite.role.replace('_', ' ')}</Text>
-      </View>
-      <View style={styles.itemRight}>
-        <View style={[styles.statusBadge, { backgroundColor: invite.used ? '#f1f5f9' : '#fffbeb' }]}>
-          <Text style={[styles.statusText, { color: invite.used ? '#64748b' : '#b45309' }]}>
-            {invite.used ? 'Used' : 'Pending'}
+  const handleCancelInvitation = async (invite: StaffInvitation) => {
+    Alert.alert(
+      'Cancel Invitation',
+      `Are you sure you want to cancel the invitation for ${invite.name || invite.email}?`,
+      [
+        { text: 'Keep', style: 'cancel' },
+        {
+          text: 'Cancel Invitation',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await firebaseService.cancelStaffInvitation(invite.id);
+              await loadData();
+              Alert.alert('Success', 'Invitation cancelled.');
+            } catch (error) {
+              console.error('Error cancelling invitation:', error);
+              Alert.alert('Error', 'Failed to cancel invitation.');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const renderCancelInviteAction = (progress: any, dragX: any, invite: StaffInvitation) => {
+    return (
+      <TouchableOpacity
+        style={styles.deleteAction}
+        onPress={() => handleCancelInvitation(invite)}
+      >
+        <Ionicons name="close-outline" size={24} color="#fff" />
+        <Text style={styles.deleteActionText}>Cancel</Text>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderInviteCard = (invite: StaffInvitation) => {
+    const content = (
+      <View style={styles.itemCard}>
+        <View style={[styles.iconBox, { backgroundColor: '#000' }]}>
+          <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#fff' }}>
+            {(invite.name || invite.email || '?').charAt(0).toUpperCase()}
           </Text>
         </View>
-        <Text style={[styles.metaTimestamp, { fontSize: 13, fontWeight: '600', color: '#111' }]}>
-          {invite.invitationCode}
-        </Text>
+        <View style={styles.itemInfo}>
+          <Text style={styles.itemName}>{invite.name || invite.email}</Text>
+          <Text style={styles.itemSubtitle}>Role: {invite.role.replace('_', ' ')}</Text>
+        </View>
+        <View style={styles.itemRight}>
+          <View style={[styles.statusBadge, { backgroundColor: invite.used ? '#f1f5f9' : '#fffbeb' }]}>
+            <Text style={[styles.statusText, { color: invite.used ? '#64748b' : '#b45309' }]}>
+              {invite.used ? 'Used' : 'Pending'}
+            </Text>
+          </View>
+          <Text style={[styles.metaTimestamp, { fontSize: 13, fontWeight: '600', color: '#111', marginTop: 4 }]}>
+            {invite.invitationCode}
+          </Text>
+        </View>
       </View>
-    </View>
-  );
+    );
+
+    // Wrap in Swipeable only for pending (unused) invites
+    if (!invite.used) {
+      return (
+        <Swipeable
+          key={invite.id}
+          renderRightActions={(p, d) => renderCancelInviteAction(p, d, invite)}
+        >
+          {content}
+        </Swipeable>
+      );
+    }
+
+    return <View key={invite.id}>{content}</View>;
+  };
 
   if (!canInvite) {
     return (

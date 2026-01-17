@@ -38,14 +38,15 @@ export default {
   expo: {
     name: "ABM Workshop & Marketplace",
     slug: "abmapp",
-    version: "1.0.6",
+    version: "1.0.7",
     orientation: "portrait",
     icon: "./assets/icon.png",
-    userInterfaceStyle: "light",
+    userInterfaceStyle: "automatic",
+    backgroundColor: "#000000",
     splash: {
       image: "./assets/splash.png",
       resizeMode: "contain",
-      backgroundColor: "#ffffff"
+      backgroundColor: "#000000"
     },
     _internal: {
       isDebug: true
@@ -56,18 +57,20 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.abmtek.abmapp",
+      backgroundColor: "#000000",
       googleServicesFile: './GoogleService-Info.plist',
       config: {
-        googleMapsApiKey: getEnv('EXPO_PUBLIC_GOOGLE_MAPS_API_KEY')
+        googleMapsApiKey: getEnv('EXPO_PUBLIC_GOOGLE_MAPS_API_KEY'),
+        usesNonExemptEncryption: false
       }
     },
     android: {
       adaptiveIcon: {
         foregroundImage: "./assets/adaptive-icon.png",
-        backgroundColor: "#ffffff"
+        backgroundColor: "#000000"
       },
       package: "com.abmtek.abmapp",
-      versionCode: 7,
+      versionCode: 8,
       googleServicesFile: './google-services.json',
       config: {
         googleMaps: {

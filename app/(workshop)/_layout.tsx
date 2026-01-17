@@ -9,7 +9,8 @@ import {
   BriefcaseIcon as BriefcaseIconOutline,
   UserGroupIcon as UserGroupIconOutline,
   ArchiveBoxIcon as ArchiveBoxIconOutline,
-  ShoppingBagIcon as ShoppingBagIconOutline
+  ShoppingBagIcon as ShoppingBagIconOutline,
+  UserIcon as UserIconOutline
 } from 'react-native-heroicons/outline';
 import {
   HomeIcon as HomeIconSolid,
@@ -17,7 +18,8 @@ import {
   BriefcaseIcon as BriefcaseIconSolid,
   UserGroupIcon as UserGroupIconSolid,
   ArchiveBoxIcon as ArchiveBoxIconSolid,
-  ShoppingBagIcon as ShoppingBagIconSolid
+  ShoppingBagIcon as ShoppingBagIconSolid,
+  UserIcon as UserIconSolid
 } from 'react-native-heroicons/solid';
 import { useEffect, useState } from 'react';
 import { firebaseService } from '@/services/firebaseService';
@@ -27,13 +29,24 @@ export default function WorkshopLayout() {
   const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
   const [permissions, setPermissions] = useState<any>(null);
+  const [customRoles, setCustomRoles] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const SYSTEM_WORKSHOP_ROLES = ['super_admin', 'admin', 'technician', 'storekeeper', 'accountant', 'service_advisor'];
 
   useEffect(() => {
     const fetchPermissions = async () => {
       if (user?.workshopId && user?.role) {
         try {
-          // Admins always have full access, no need to fetch if we just check role
+          const allPerms = await firebaseService.getWorkshopPermissions(user.workshopId);
+
+          // Extract custom role keys (any role in permissions that's not a system role or customer/vendor)
+          const customRoleKeys = Object.keys(allPerms || {}).filter(
+            r => !SYSTEM_WORKSHOP_ROLES.includes(r) && r !== 'customer' && r !== 'vendor'
+          );
+          setCustomRoles(customRoleKeys);
+
+          // Admins always have full access
           if (user.role === 'admin' || user.role === 'super_admin') {
             setPermissions({
               canViewFinance: true,
@@ -42,7 +55,6 @@ export default function WorkshopLayout() {
               canManageJobs: true,
             });
           } else {
-            const allPerms = await firebaseService.getWorkshopPermissions(user.workshopId);
             setPermissions(allPerms[user.role] || {});
           }
         } catch (error) {
@@ -57,17 +69,7 @@ export default function WorkshopLayout() {
     fetchPermissions();
   }, [user]);
 
-  // Redirect based on role
-  if (!user) {
-    return <Redirect href="/(auth)/login" />;
-  }
-
-  const workshopRoles = ['super_admin', 'admin', 'technician', 'storekeeper', 'accountant', 'service_advisor'];
-
-  if (!workshopRoles.includes(user.role)) {
-    return <Redirect href="/(customer)/home" />;
-  }
-
+  // Redirect based on role - must wait for loading to complete to know custom roles
   if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -76,12 +78,33 @@ export default function WorkshopLayout() {
     );
   }
 
+  if (!user) {
+    return <Redirect href="/(auth)/login" />;
+  }
+
+  // Build workshopRoles dynamically: system roles + custom roles from Firestore
+  const workshopRoles = [...SYSTEM_WORKSHOP_ROLES, ...customRoles];
+
+  if (!workshopRoles.includes(user.role)) {
+    return <Redirect href="/(customer)/home" />;
+  }
+
+  const canViewDashboard = user.role === 'admin' || user.role === 'super_admin' || permissions?.canViewDashboard;
   const canViewFinance = user.role === 'admin' || user.role === 'super_admin' || permissions?.canViewFinance;
   const canViewInventory = user.role === 'admin' || user.role === 'super_admin' || permissions?.canViewInventory;
   // const canManageStaff = user.role === 'admin' || permissions?.canManageStaff; // For Customers tab?
 
+  // Determine the first available tab to avoid flash
+  const getInitialRoute = () => {
+    if (canViewDashboard) return 'dashboard';
+    if (canViewFinance) return 'finance';
+    // Jobs tab is always visible
+    return 'jobs';
+  };
+
   return (
     <Tabs
+      initialRouteName={getInitialRoute()}
       screenOptions={{
         headerShown: false,
         tabBarShowLabel: false,
@@ -105,6 +128,7 @@ export default function WorkshopLayout() {
       <Tabs.Screen
         name="dashboard"
         options={{
+          href: canViewDashboard ? undefined : null,
           title: 'Home',
           tabBarIcon: ({ focused, color, size }) => (
             focused ? <HomeIconSolid size={size || 24} color={color} /> : <HomeIconOutline size={size || 24} color={color} />
@@ -158,12 +182,13 @@ export default function WorkshopLayout() {
           ),
         }}
       />
-
-      {/* Hidden screens (not in tab bar) */}
       <Tabs.Screen
         name="settings"
         options={{
-          href: null,
+          title: 'Account',
+          tabBarIcon: ({ focused, color, size }) => (
+            focused ? <UserIconSolid size={size || 24} color={color} /> : <UserIconOutline size={size || 24} color={color} />
+          ),
         }}
       />
       <Tabs.Screen

@@ -181,18 +181,21 @@ export default function VendorRegistrationScreen() {
                         placeholder="Business Name"
                         value={businessName}
                         onChangeText={setBusinessName}
+                        placeholderTextColor="#666"
                     />
                     <TextInput
                         style={styles.input}
                         placeholder="RC Number"
                         value={rcNumber}
                         onChangeText={setRcNumber}
+                        placeholderTextColor="#666"
                     />
                     <TextInput
                         style={styles.input}
                         placeholder="Certificate of Incorporation (Optional)"
                         editable={false} selectTextOnFocus={false}
                         value={certificateImage ? "Image Selected" : ""}
+                        placeholderTextColor="#666"
                     />
                     <TouchableOpacity style={styles.uploadBtn} onPress={() => pickImage(setCertificateImage)}>
                         <Ionicons name="cloud-upload-outline" size={20} color="#000" />
@@ -205,6 +208,7 @@ export default function VendorRegistrationScreen() {
                         value={address}
                         onChangeText={setAddress}
                         multiline
+                        placeholderTextColor="#666"
                     />
                     <View style={styles.row}>
                         <TextInput
@@ -212,12 +216,14 @@ export default function VendorRegistrationScreen() {
                             placeholder="City"
                             value={city}
                             onChangeText={setCity}
+                            placeholderTextColor="#666"
                         />
                         <TextInput
                             style={[styles.input, styles.halfInput]}
                             placeholder="State"
                             value={state}
                             onChangeText={setState}
+                            placeholderTextColor="#666"
                         />
                     </View>
                     <TextInput
@@ -225,6 +231,7 @@ export default function VendorRegistrationScreen() {
                         placeholder="Country"
                         value={country}
                         onChangeText={setCountry}
+                        placeholderTextColor="#666"
                     />
                     <TouchableOpacity style={styles.uploadBtn} onPress={() => pickImage(setProofAddressImage)}>
                         <Ionicons name="cloud-upload-outline" size={20} color="#000" />
@@ -241,12 +248,14 @@ export default function VendorRegistrationScreen() {
                         placeholder="Full Name"
                         value={fullName}
                         onChangeText={setFullName}
+                        placeholderTextColor="#666"
                     />
                     <TextInput
                         style={styles.input}
                         placeholder="Role (e.g. Manager, Owner)"
                         value={role}
                         onChangeText={setRole}
+                        placeholderTextColor="#666"
                     />
                     <TextInput
                         style={styles.input}
@@ -254,6 +263,7 @@ export default function VendorRegistrationScreen() {
                         value={nin}
                         onChangeText={setNin}
                         keyboardType="numeric"
+                        placeholderTextColor="#666"
                     />
                     <TouchableOpacity style={styles.uploadBtn} onPress={() => pickImage(setNinImage)}>
                         <Ionicons name="cloud-upload-outline" size={20} color="#000" />
@@ -269,6 +279,7 @@ export default function VendorRegistrationScreen() {
                         placeholder="Bank Name"
                         value={bankName}
                         onChangeText={setBankName}
+                        placeholderTextColor="#666"
                     />
                     <TextInput
                         style={styles.input}
@@ -276,12 +287,14 @@ export default function VendorRegistrationScreen() {
                         value={accountNumber}
                         onChangeText={setAccountNumber}
                         keyboardType="numeric"
+                        placeholderTextColor="#666"
                     />
                     <TextInput
                         style={styles.input}
                         placeholder="Account Name"
                         value={accountName}
                         onChangeText={setAccountName}
+                        placeholderTextColor="#666"
                     />
                 </View>
 
@@ -361,6 +374,7 @@ const styles = StyleSheet.create({
         marginBottom: 15,
         fontSize: 16,
         backgroundColor: '#fff',
+        color: '#000',
     },
     textArea: {
         height: 100,

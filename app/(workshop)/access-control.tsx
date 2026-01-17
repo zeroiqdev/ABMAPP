@@ -26,6 +26,7 @@ const SYSTEM_ROLES: string[] = [
 ];
 
 const PERMISSIONS = [
+    { key: 'canViewDashboard', label: 'View Dashboard', description: 'Access the home dashboard' },
     { key: 'canManageJobs', label: 'Manage Jobs', description: 'Create, update, and delete jobs' },
     { key: 'canViewInventory', label: 'View Inventory', description: 'View items in inventory' },
     { key: 'canManageInventory', label: 'Manage Inventory', description: 'Add, update, and delete inventory items' },
@@ -38,6 +39,7 @@ const PERMISSIONS = [
 ];
 
 const DEFAULT_PERMISSIONS = {
+    canViewDashboard: false,
     canManageJobs: false,
     canViewInventory: false,
     canManageInventory: false,
@@ -47,6 +49,70 @@ const DEFAULT_PERMISSIONS = {
     canManageStaff: false,
     canManageSettings: false,
     canViewReports: false,
+};
+
+// Default permissions for system roles - these are ON by default when no custom settings exist
+const DEFAULT_ROLE_PERMISSIONS: Record<string, Record<string, boolean>> = {
+    admin: {
+        canViewDashboard: true,
+        canManageJobs: true,
+        canViewInventory: true,
+        canManageInventory: true,
+        canViewFinance: true,
+        canManageFinance: true,
+        canInviteStaff: true,
+        canManageStaff: true,
+        canManageSettings: true,
+        canViewReports: true,
+    },
+    technician: {
+        canViewDashboard: true,
+        canManageJobs: true,
+        canViewInventory: true,
+        canManageInventory: false,
+        canViewFinance: false,
+        canManageFinance: false,
+        canInviteStaff: false,
+        canManageStaff: false,
+        canManageSettings: false,
+        canViewReports: false,
+    },
+    storekeeper: {
+        canViewDashboard: true,
+        canManageJobs: false,
+        canViewInventory: true,
+        canManageInventory: true,
+        canViewFinance: false,
+        canManageFinance: false,
+        canInviteStaff: false,
+        canManageStaff: false,
+        canManageSettings: false,
+        canViewReports: false,
+    },
+    accountant: {
+        canViewDashboard: true,
+        canManageJobs: false,
+        canViewInventory: true,
+        canManageInventory: false,
+        canViewFinance: true,
+        canManageFinance: true,
+        canInviteStaff: false,
+        canManageStaff: false,
+        canManageSettings: false,
+        canViewReports: true,
+    },
+    service_advisor: {
+        canViewDashboard: true,
+        canManageJobs: true,
+        canViewInventory: true,
+        canManageInventory: false,
+        canViewFinance: true,
+        canManageFinance: false,
+        canInviteStaff: false,
+        canManageStaff: false,
+        canManageSettings: false,
+        canViewReports: true,
+    },
 };
 
 export default function AccessControlScreen() {
@@ -61,6 +127,7 @@ export default function AccessControlScreen() {
     const [availableRoles, setAvailableRoles] = useState<string[]>(SYSTEM_ROLES);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [newRoleName, setNewRoleName] = useState('');
+    const [newRolePermissions, setNewRolePermissions] = useState<typeof DEFAULT_PERMISSIONS>(DEFAULT_PERMISSIONS);
 
     useEffect(() => {
         fetchPermissions();
@@ -128,9 +195,10 @@ export default function AccessControlScreen() {
 
         setSaving(true);
         try {
-            // Create with empty permissions
-            await firebaseService.updateWorkshopPermissions(user.workshopId, roleKey, DEFAULT_PERMISSIONS);
+            // Create with selected permissions
+            await firebaseService.updateWorkshopPermissions(user.workshopId, roleKey, newRolePermissions);
             setNewRoleName('');
+            setNewRolePermissions(DEFAULT_PERMISSIONS);
             setShowCreateModal(false);
             await fetchPermissions();
             Alert.alert('Success', `Role "${newRoleName}" created.`);
@@ -205,16 +273,13 @@ export default function AccessControlScreen() {
                     const isSystem = SYSTEM_ROLES.includes(role);
                     return (
                         <View key={role} style={styles.roleCard}>
-                            <TouchableOpacity
-                                style={styles.roleHeader}
-                                onPress={() => setSelectedRole(selectedRole === role ? null : role)}
-                            >
+                            <View style={styles.roleHeader}>
                                 <View style={styles.roleHeaderLeft}>
-                                    <View style={[styles.roleIcon, !isSystem && styles.customRoleIcon]}>
+                                    <View style={styles.roleIcon}>
                                         <Ionicons
                                             name={isSystem ? "shield-checkmark-outline" : "person-outline"}
                                             size={20}
-                                            color={isSystem ? "#000" : "#007AFF"}
+                                            color="#000"
                                         />
                                     </View>
                                     <View>
@@ -224,27 +289,25 @@ export default function AccessControlScreen() {
                                         {!isSystem && <Text style={styles.customBadge}>Custom Role</Text>}
                                     </View>
                                 </View>
-                                <Ionicons
-                                    name={selectedRole === role ? "chevron-up" : "chevron-down"}
-                                    size={20}
-                                    color="#666"
-                                />
-                            </TouchableOpacity>
+                                <TouchableOpacity
+                                    onPress={() => setSelectedRole(selectedRole === role ? null : role)}
+                                    style={{ padding: 8 }}
+                                >
+                                    <Ionicons
+                                        name={selectedRole === role ? "chevron-up" : "chevron-down"}
+                                        size={20}
+                                        color="#666"
+                                    />
+                                </TouchableOpacity>
+                            </View>
 
                             {selectedRole === role && (
                                 <View style={styles.permissionsList}>
-                                    {!isSystem && (
-                                        <TouchableOpacity
-                                            style={styles.deleteButton}
-                                            onPress={() => handleDeleteRole(role)}
-                                        >
-                                            <Ionicons name="trash-outline" size={18} color="#ef4444" />
-                                            <Text style={styles.deleteButtonText}>Delete Role</Text>
-                                        </TouchableOpacity>
-                                    )}
-
                                     {PERMISSIONS.map((perm) => {
-                                        const isEnabled = permissions[role]?.[perm.key] || false;
+                                        // Use saved permissions, or fall back to role defaults for system roles
+                                        const savedValue = permissions[role]?.[perm.key];
+                                        const defaultValue = DEFAULT_ROLE_PERMISSIONS[role]?.[perm.key] || false;
+                                        const isEnabled = savedValue !== undefined ? savedValue : defaultValue;
                                         return (
                                             <View key={perm.key} style={styles.permissionRow}>
                                                 <View style={styles.permissionInfo}>
@@ -261,14 +324,25 @@ export default function AccessControlScreen() {
                                             </View>
                                         );
                                     })}
+
+                                    {!isSystem && (
+                                        <TouchableOpacity
+                                            style={styles.deleteButton}
+                                            onPress={() => handleDeleteRole(role)}
+                                        >
+                                            <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                                            <Text style={styles.deleteButtonText}>Delete Role</Text>
+                                        </TouchableOpacity>
+                                    )}
                                 </View>
                             )}
                         </View>
-                    );
-                })}
+                    )
+                }
+                )}
 
                 <View style={{ height: 40 }} />
-            </ScrollView>
+            </ScrollView >
 
             <Modal
                 visible={showCreateModal}
@@ -277,36 +351,52 @@ export default function AccessControlScreen() {
                 onRequestClose={() => setShowCreateModal(false)}
             >
                 <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
+                    <View style={[styles.modalContent, { maxHeight: '80%' }]}>
+                        <TouchableOpacity
+                            style={{ position: 'absolute', top: 16, left: 16, zIndex: 1 }}
+                            onPress={() => setShowCreateModal(false)}
+                        >
+                            <Ionicons name="close" size={24} color="#666" />
+                        </TouchableOpacity>
                         <Text style={styles.modalTitle}>Create New Role</Text>
-                        <Text style={styles.modalSubtitle}>Enter a name for the new role</Text>
+                        <Text style={styles.modalSubtitle}>Enter info and select permissions</Text>
 
                         <TextInput
                             style={styles.input}
-                            placeholder="e.g. Supervisor"
+                            placeholder="Role Name (e.g. Supervisor)"
                             value={newRoleName}
                             onChangeText={setNewRoleName}
                             autoFocus
                         />
 
-                        <View style={styles.modalActions}>
-                            <TouchableOpacity
-                                style={[styles.modalButton, styles.cancelButton]}
-                                onPress={() => setShowCreateModal(false)}
-                            >
-                                <Text style={styles.cancelButtonText}>Cancel</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[styles.modalButton, styles.createButton]}
-                                onPress={handleCreateRole}
-                            >
-                                <Text style={styles.createButtonText}>Create</Text>
-                            </TouchableOpacity>
-                        </View>
+                        <ScrollView style={{ marginBottom: 20 }}>
+                            <Text style={{ fontWeight: '600', marginBottom: 10 }}>Permissions</Text>
+                            {PERMISSIONS.map((perm) => (
+                                <View key={perm.key} style={styles.permissionRow}>
+                                    <View style={styles.permissionInfo}>
+                                        <Text style={styles.permissionLabel}>{perm.label}</Text>
+                                        <Text style={styles.permissionDesc}>{perm.description}</Text>
+                                    </View>
+                                    <Switch
+                                        trackColor={{ false: '#ddd', true: '#000' }}
+                                        thumbColor={(newRolePermissions as any)[perm.key] ? '#fff' : '#f4f3f4'}
+                                        value={!!(newRolePermissions as any)[perm.key]}
+                                        onValueChange={(val) => setNewRolePermissions((prev) => ({ ...prev, [perm.key]: val }))}
+                                    />
+                                </View>
+                            ))}
+                        </ScrollView>
+
+                        <TouchableOpacity
+                            style={[styles.modalButton, styles.createButton, { flex: 1 }]}
+                            onPress={handleCreateRole}
+                        >
+                            <Text style={styles.createButtonText}>Create</Text>
+                        </TouchableOpacity>
                     </View>
                 </View>
             </Modal>
-        </View>
+        </View >
     );
 }
 
@@ -336,10 +426,12 @@ const styles = StyleSheet.create({
     },
     content: {
         flex: 1,
-        padding: 20,
+        padding: 0,
     },
     infoSection: {
         marginBottom: 20,
+        marginHorizontal: 20,
+        marginTop: 20,
         padding: 15,
         backgroundColor: '#fff',
         borderRadius: 8,
@@ -350,8 +442,10 @@ const styles = StyleSheet.create({
     },
     roleCard: {
         backgroundColor: '#fff',
-        marginBottom: 15,
-        borderRadius: 8,
+        marginBottom: 0,
+        borderRadius: 0,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f0f0f0',
         overflow: 'hidden',
     },
     roleHeader: {
@@ -373,22 +467,21 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
     },
-    customRoleIcon: {
-        backgroundColor: '#e0f2fe',
-    },
+
     roleTitle: {
         fontSize: 16,
         fontWeight: '600',
     },
     customBadge: {
         fontSize: 10,
-        color: '#007AFF',
+        color: '#000',
         fontWeight: '500',
     },
     permissionsList: {
         borderTopWidth: 1,
         borderTopColor: '#f0f0f0',
-        padding: 15,
+        paddingHorizontal: 20,
+        paddingVertical: 15,
     },
     permissionRow: {
         flexDirection: 'row',

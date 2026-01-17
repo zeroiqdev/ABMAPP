@@ -118,6 +118,7 @@ export default function SignupScreen() {
               onChangeText={setEmail}
               keyboardType="email-address"
               autoCapitalize="none"
+              placeholderTextColor="#666"
               autoComplete="email"
             />
 
@@ -128,6 +129,7 @@ export default function SignupScreen() {
               onChangeText={setRegistrationCode}
               autoCapitalize="characters"
               autoComplete="off"
+              placeholderTextColor="#666"
             />
 
             <TextInput
@@ -142,6 +144,7 @@ export default function SignupScreen() {
               importantForAutofill="no"
               passwordRules=""
               keyboardType="default"
+              placeholderTextColor="#666"
             />
 
             <TextInput
@@ -156,6 +159,7 @@ export default function SignupScreen() {
               importantForAutofill="no"
               passwordRules=""
               keyboardType="default"
+              placeholderTextColor="#666"
             />
 
             <TouchableOpacity
@@ -206,10 +210,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 8,
     textAlign: 'center',
+    color: '#000',
   },
   subtitle: {
     fontSize: 16,
-    color: '#666',
+    color: '#333',
     marginBottom: 40,
     textAlign: 'center',
   },
@@ -223,6 +228,7 @@ const styles = StyleSheet.create({
     padding: 15,
     marginBottom: 15,
     fontSize: 16,
+    color: '#000',
   },
   button: {
     backgroundColor: '#000',

@@ -125,6 +125,22 @@ export default function ProfileScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Settings</Text>
           <View style={styles.settingsCard}>
+            <TouchableOpacity
+              style={styles.settingRow}
+              onPress={() => router.push('/(customer)/settings')}
+            >
+              <View style={styles.settingInfo}>
+                <Ionicons name="settings-outline" size={24} color="#666" />
+                <View style={styles.settingText}>
+                  <Text style={styles.settingLabel}>General Settings</Text>
+                  <Text style={styles.settingDesc}>
+                    Account deletion and other preferences
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#999" />
+            </TouchableOpacity>
+
             {user?.connectedWorkshopIds && user.connectedWorkshopIds.length > 1 && (
               <TouchableOpacity
                 style={styles.settingRow}

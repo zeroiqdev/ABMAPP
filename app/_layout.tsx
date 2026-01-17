@@ -44,6 +44,15 @@ export default function RootLayout() {
               } as User;
               setUser(userData);
 
+              // Register for push notifications
+              if (userData.id) {
+                // We import notificationService dynamically or at top level, assuming it's safe
+                const { notificationService } = require('@/services/notificationService');
+                notificationService.registerAndSavePushToken(userData.id).catch((err: any) =>
+                  console.log('Push registration failed silently:', err)
+                );
+              }
+
               // *** SUBSCRIPTION GATING START ***
               const gatedRoles = ['admin', 'technician', 'storekeeper', 'accountant', 'service_advisor'];
               if (userData.workshopId && gatedRoles.includes(userData.role)) {

@@ -60,6 +60,14 @@ class NotificationService {
     }
   }
 
+  async registerAndSavePushToken(userId: string): Promise<string | null> {
+    const token = await this.registerForPushNotifications();
+    if (token) {
+      await firebaseService.savePushToken(userId, token);
+    }
+    return token;
+  }
+
   async sendLocalNotification(title: string, body: string, data?: any): Promise<void> {
     if (!Notifications) return;
     try {
@@ -124,7 +132,52 @@ class NotificationService {
   getExpoPushToken(): string | null {
     return this.expoPushToken;
   }
+
+  /**
+   * Sends a push notification to all admins/managers.
+   * Uses Expo Push API directly via fetch to work without Cloud Functions.
+   */
+  async sendPushToAdmins(title: string, body: string, data: any = {}): Promise<void> {
+    try {
+      const tokens = await firebaseService.getAdminTokens();
+      if (tokens.length === 0) {
+        console.log('No admin tokens found for push notification.');
+        return;
+      }
+
+      console.log(`Sending push to ${tokens.length} admins: ${title}`);
+
+      // Expo Push Endpoint
+      const EXPO_PUSH_ENDPOINT = 'https://exp.host/--/api/v2/push/send';
+
+      // Construct messages
+      const messages = tokens.map(token => ({
+        to: token,
+        sound: 'default',
+        title: title,
+        body: body,
+        data: data,
+      }));
+
+      // Send requests
+      // Note: For production with many tokens, we should chunk this (max 100 per request).
+      // But for admins only, it's unlikely to exceed 100 limit.
+      const response = await fetch(EXPO_PUSH_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Accept-encoding': 'gzip, deflate',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(messages),
+      });
+
+      const result = await response.json();
+      console.log('Push result:', JSON.stringify(result));
+    } catch (error) {
+      console.error('Error sending push to admins:', error);
+    }
+  }
 }
 
 export const notificationService = new NotificationService();
-

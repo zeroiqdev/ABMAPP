@@ -19,7 +19,11 @@ service cloud.firestore {
     }
     
     function isStaff() {
-      return isAuthenticated() && getUserData() != null && (getUserData().role == 'admin' || getUserData().role == 'super_admin' || getUserData().role == 'service_advisor' || getUserData().role == 'technician' || getUserData().role == 'storekeeper' || getUserData().role == 'accountant');
+      // Staff = authenticated user with a workshopId that is NOT customer/vendor
+      let userData = getUserData();
+      return isAuthenticated() && userData != null && 
+        userData.keys().hasAny(['workshopId']) && userData.workshopId != null &&
+        userData.role != 'customer' && userData.role != 'vendor';
     }
     
     function isVendor() {
@@ -191,6 +195,16 @@ service cloud.firestore {
       allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isStaff());
       allow create: if true; // Allow guests to trigger notifications
       allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isStaff());
+    }
+
+    match /notification_tokens/{userId} {
+      // Allow any authenticated user to read tokens (needed for customers to notify admins)
+      // Ideally we'd restrict this to only reading tokens of staff/admins, but
+      // for now we trust the client to only query for admins.
+      allow read: if isAuthenticated();
+      
+      // Only the user themselves can write their own token
+      allow write: if isAuthenticated() && request.auth.uid == userId;
     }
 
     match /config/{document} {

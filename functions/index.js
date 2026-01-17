@@ -118,24 +118,38 @@ const getMonnifyToken = async () => {
   }
 };
 
-exports.initializeMonnifyTransaction = functions.https.onCall(async (data, context) => {
+/**
+ * Initializes a Monnify transaction by reserving a bank account.
+ * @param {object} data - The request data.
+ * @param {string} data.orderId - The unique ID for the order.
+ * @param {string} data.customerName - The name of the customer.
+ * @param {string} data.customerEmail - The email of the customer.
+ * @return {Promise<object>} An object containing transaction details
+ *   or an error message.
+ */
+exports.initializeMonnifyTransaction = functions.https.onCall(async (data) => {
   // data: { orderId, customerName, customerEmail }
   try {
     const token = await getMonnifyToken();
     const config = functions.config().monnify;
     const contractCode = config.contract_code;
-    const baseUrl = config.base_url || 'https://sandbox.monnify.com';
+    const baseUrl = config.base_url || "https://sandbox.monnify.com";
+
+    // Sanitize customer name for account name
+    const sanitizedName = data.customerName
+      .replace(/[^a-zA-Z0-9 ]/g, "")
+      .substring(0, 20);
 
     const response = await axios.post(
       `${baseUrl}/api/v2/bank-transfer/reserved-accounts`,
       {
         accountReference: data.orderId,
-        accountName: `ABM-${data.customerName.replace(/[^a-zA-Z0-9 ]/g, "").substring(0, 20)}`,
-        currencyCode: 'NGN',
+        accountName: `ABM-${sanitizedName}`,
+        currencyCode: "NGN",
         contractCode: contractCode,
         customerEmail: data.customerEmail,
         customerName: data.customerName,
-        getAllAvailableBanks: true
+        getAllAvailableBanks: true,
       },
       { headers: { Authorization: `Bearer ${token}` } }
     );
@@ -146,38 +160,46 @@ exports.initializeMonnifyTransaction = functions.https.onCall(async (data, conte
       accountNumber: account.accountNumber,
       accountName: account.accountName,
       bankName: account.bankName,
-      reference: account.accountReference
+      reference: account.accountReference,
     };
   } catch (error) {
-    console.error('Monnify Reservation Error:', error.response?.data || error.message);
-    return { success: false, error: 'Failed to reserve Monnify account' };
+    console.error("Monnify Reservation Error:",
+      error.response?.data || error.message);
+    return { success: false, error: "Failed to reserve Monnify account" };
   }
 });
 
+/**
+ * Handles incoming webhooks from Monnify for transaction notifications.
+ * @param {object} req - The Express request object.
+ * @param {object} res - The Express response object.
+ */
 exports.monnifyWebhook = functions.https.onRequest(async (req, res) => {
   try {
     const body = req.body;
-    console.log('Monnify Webhook Received:', JSON.stringify(body));
+    console.log("Monnify Webhook Received:", JSON.stringify(body));
 
-    // Basic validation could involve checking signature hash, but skipping for MVP speed
+    // Basic validation could involve checking signature hash,
+    // but skipping for MVP speed
     const eventType = body.eventType;
 
-    if (eventType === 'SUCCESSFUL_TRANSACTION_NOTIFICATION') {
+    if (eventType === "SUCCESSFUL_TRANSACTION_NOTIFICATION") {
       const eventData = body.eventData;
-      const orderId = eventData.product.reference; // accountReference passed during reservation
+      // accountReference passed during reservation
+      const orderId = eventData.product.reference;
       const paidAmount = eventData.amountPaid;
 
       // Verify order exists
-      const orderRef = admin.firestore().collection('orders').doc(orderId);
+      const orderRef = admin.firestore().collection("orders").doc(orderId);
       const orderSnap = await orderRef.get();
 
       if (orderSnap.exists) {
         await orderRef.update({
-          status: 'confirmed', // Mark as paid/confirmed
-          monnifyPaymentStatus: 'paid',
+          status: "confirmed", // Mark as paid/confirmed
+          monnifyPaymentStatus: "paid",
           monnifyTransactionRef: eventData.transactionReference,
           amountPaid: paidAmount, // Store actual paid amount
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
         console.log(`Order ${orderId} confirmed via Monnify`);
       } else {
@@ -185,9 +207,17 @@ exports.monnifyWebhook = functions.https.onRequest(async (req, res) => {
       }
     }
 
-    res.status(200).send('OK');
+    res.status(200).send("OK");
   } catch (error) {
-    console.error('Webhook Error:', error);
-    res.status(500).send('Error processing webhook');
+    console.error("Webhook Error:", error);
+    res.status(500).send("Error processing webhook");
   }
 });
+
+// ============================================================================
+// PUSH NOTIFICATION HELPERS & TRIGGERS (REMOVED FOR CLIENT-SIDE STRATEGY)
+// ============================================================================
+// Since the project is on the Spark plan (Free), we cannot use Cloud Functions
+// for triggers that require Node.js 10+ (which is all of them now).
+// We have moved the push notification logic to the client-side app.
+// It directly calls the Expo Push API upon job/order creation.

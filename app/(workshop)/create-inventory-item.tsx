@@ -276,6 +276,7 @@ export default function CreateInventoryItemScreen() {
                     <TextInput
                         style={styles.input}
                         placeholder="Enter vendor name"
+                        placeholderTextColor="#999"
                         value={vendorName}
                         onChangeText={setVendorName}
                     />
@@ -287,6 +288,7 @@ export default function CreateInventoryItemScreen() {
                     <TextInput
                         style={styles.input}
                         placeholder="Enter the item name"
+                        placeholderTextColor="#999"
                         value={itemName}
                         onChangeText={setItemName}
                     />
@@ -298,6 +300,7 @@ export default function CreateInventoryItemScreen() {
                         <TextInput
                             style={[styles.input, { flex: 1, marginBottom: 0 }]}
                             placeholder="Enter SKU"
+                            placeholderTextColor="#999"
                             value={sku}
                             onChangeText={setSku}
                         />
@@ -360,6 +363,7 @@ export default function CreateInventoryItemScreen() {
                                         <TextInput
                                             style={[styles.unitInput, !isEmpty && styles.unitInputFilled]}
                                             placeholder={`New Unit ${index + 1} ID`}
+                                            placeholderTextColor="#999"
                                             value={uid}
                                             onChangeText={(text) => updateNewUnitId(index, text)}
                                             autoCapitalize="none"
@@ -387,6 +391,7 @@ export default function CreateInventoryItemScreen() {
                         <TextInput
                             style={styles.input}
                             placeholder="Amount"
+                            placeholderTextColor="#999"
                             value={costPrice}
                             onChangeText={setCostPrice}
                             keyboardType="numeric"
@@ -397,6 +402,7 @@ export default function CreateInventoryItemScreen() {
                         <TextInput
                             style={styles.input}
                             placeholder="Amount"
+                            placeholderTextColor="#999"
                             value={sellingPrice}
                             onChangeText={setSellingPrice}
                             keyboardType="numeric"

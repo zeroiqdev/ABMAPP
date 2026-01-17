@@ -23,6 +23,7 @@ interface AuthState {
   registerCustomerAccount: (email: string, password: string, registrationCode: string) => Promise<void>;
   acceptStaffInvite: (email: string, password: string, invitationCode: string) => Promise<void>;
   logout: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   setUser: (user: User | null) => void;
   setFirebaseUser: (user: FirebaseUser | null) => void;
@@ -260,6 +261,17 @@ export const useAuthStore = create<AuthState>()(
           await signOut(auth);
           set({ user: null, firebaseUser: null, isGuest: false, guestEmail: null });
         } catch (error: any) {
+          throw error;
+        }
+      },
+
+      deleteAccount: async () => {
+        set({ loading: true });
+        try {
+          await firebaseService.deleteAccount();
+          set({ user: null, firebaseUser: null, isGuest: false, guestEmail: null, loading: false });
+        } catch (error: any) {
+          set({ loading: false });
           throw error;
         }
       },

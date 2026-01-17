@@ -50,6 +50,11 @@ export interface User {
     certificateOfIncorporation?: string;
   };
 
+  // Notification preferences
+  pushNotificationsEnabled?: boolean;
+  emailNotificationsEnabled?: boolean;
+  pushToken?: string;
+
   createdAt: Date;
   updatedAt: Date;
 }

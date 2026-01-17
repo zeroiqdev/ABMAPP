@@ -70,6 +70,7 @@ export default function StaffInviteScreen() {
             <TextInput
               style={styles.input}
               placeholder="Work Email"
+              placeholderTextColor="#999"
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -80,6 +81,7 @@ export default function StaffInviteScreen() {
             <TextInput
               style={styles.input}
               placeholder="Invitation Code"
+              placeholderTextColor="#999"
               value={invitationCode}
               onChangeText={setInvitationCode}
               autoCapitalize="characters"
@@ -89,6 +91,7 @@ export default function StaffInviteScreen() {
             <TextInput
               style={styles.input}
               placeholder="Create Password"
+              placeholderTextColor="#999"
               value={password}
               onChangeText={setPassword}
               secureTextEntry
@@ -103,6 +106,7 @@ export default function StaffInviteScreen() {
             <TextInput
               style={styles.input}
               placeholder="Confirm Password"
+              placeholderTextColor="#666"
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               secureTextEntry
@@ -152,10 +156,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 10,
     textAlign: 'center',
+    color: '#000',
   },
   subtitle: {
     fontSize: 16,
-    color: '#666',
+    color: '#333',
     textAlign: 'center',
     marginBottom: 30,
   },
@@ -169,6 +174,7 @@ const styles = StyleSheet.create({
     padding: 15,
     marginBottom: 15,
     fontSize: 16,
+    color: '#000',
   },
   button: {
     backgroundColor: '#000',

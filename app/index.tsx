@@ -16,9 +16,9 @@ import {
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
 import { Colors } from '@/constants/design';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, limit } from 'firebase/firestore';
 import { db } from '@/config/firebase';
-import { signInWithEmailAndPassword, fetchSignInMethodsForEmail } from 'firebase/auth';
+import { signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '@/config/firebase';
 import { Ionicons } from '@expo/vector-icons';
 import CustomAlertModal from '@/components/CustomAlertModal';
@@ -33,6 +33,7 @@ export default function Index() {
   const router = useRouter();
   const { user, isGuest, setGuest, setGuestEmail } = useAuthStore();
   const [isReady, setIsReady] = useState(false);
+  const [authInitialized, setAuthInitialized] = useState(false);
 
   // Auth State
   const [email, setEmail] = useState('');
@@ -45,6 +46,17 @@ export default function Index() {
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
 
+  // Wait for Firebase auth to initialize before showing login UI
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      setAuthInitialized(true);
+      // If user is already authenticated, the _layout.tsx will set user state
+      // and the next useEffect will route them
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Splash screen timer
   useEffect(() => {
     const timer = setTimeout(() => {
       setIsReady(true);
@@ -53,14 +65,14 @@ export default function Index() {
   }, []);
 
   useEffect(() => {
-    // Check if we have a user and are ready to route
-    if (isReady && user && !loading) {
+    // Only route when auth is initialized, ready, and not loading
+    if (isReady && authInitialized && user && !loading) {
       routeUser(user);
-    } else if (isReady && !loading && isGuest && step === 'email') {
+    } else if (isReady && authInitialized && !user && !loading && isGuest && step === 'email') {
       // Only route to guest home if we are in the landing state and not trying to log in
       router.replace('/(marketplace)/home');
     }
-  }, [isReady, user, isGuest, step, loading]);
+  }, [isReady, authInitialized, user, isGuest, step, loading]);
 
   const routeUser = (userData: any) => {
     console.log('[Routing] User:', userData.email, 'Role:', userData.role); // Debug Log
@@ -82,10 +94,14 @@ export default function Index() {
     } else if (userData.role === 'customer') {
       router.replace('/(customer)/home');
     } else if (workshopRoles.includes(userData.role)) {
+      // System workshop roles
+      router.replace('/(workshop)/dashboard');
+    } else if (userData.workshopId && userData.role !== 'customer' && userData.role !== 'vendor') {
+      // Custom roles: if user has workshopId and is not customer/vendor, route to workshop
       router.replace('/(workshop)/dashboard');
     } else {
-      // Create/Fallback -> Default to Marketplace for unmatched roles
-      router.replace('/(marketplace)/home');
+      // Fallback -> Default to Customer App for truly unmatched roles
+      router.replace('/(customer)/home');
     }
   };
 
@@ -108,80 +124,67 @@ export default function Index() {
 
     setLoading(true);
     try {
-      const methods = await fetchSignInMethodsForEmail(auth, email.toLowerCase().trim());
-      if (methods && methods.length > 0) {
+      // Check for Invitations or registrations first (these have public read access)
+      const invitesRef = collection(db, 'staffInvitations');
+      const inviteQ = query(invitesRef, where('email', '==', email.toLowerCase().trim()));
+      const inviteSnap = await getDocs(inviteQ);
+
+      const registrationsRef = collection(db, 'customerRegistrations');
+      const regQ = query(registrationsRef, where('email', '==', email.toLowerCase().trim()));
+      const regSnap = await getDocs(regQ);
+
+      let hasPendingInvite = false;
+      let hasUsedInvite = false;
+      let hasPendingReg = false;
+      let hasUsedReg = false;
+
+      inviteSnap.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.used === false) hasPendingInvite = true;
+        else hasUsedInvite = true;
+      });
+
+      regSnap.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.used === false) hasPendingReg = true;
+        else hasUsedReg = true;
+      });
+
+      if (hasPendingInvite) {
+        Alert.alert('Welcome!', 'You have been invited. Please complete your registration using the code sent to your email.', [
+          { text: 'OK', onPress: () => router.push('/(auth)/staff-invite') }
+        ]);
+        setLoading(false);
+        return;
+      }
+
+      if (hasPendingReg) {
+        Alert.alert('Welcome!', 'You have been invited as a customer. Please complete your registration using the code sent to your email.', [
+          {
+            text: 'OK',
+            onPress: () => router.push({
+              pathname: '/(auth)/signup',
+              params: { email: email.toLowerCase().trim() }
+            })
+          }
+        ]);
+        setLoading(false);
+        return;
+      }
+
+      if (hasUsedInvite || hasUsedReg) {
+        // User has a record - show password field
         setStep('password');
         setLoading(false);
         return;
       }
 
-      // ... (invite check etc)
-      const invitesRef = collection(db, 'staffInvitations');
-      const inviteQ = query(invitesRef, where('email', '==', email.toLowerCase().trim()));
-      const inviteSnap = await getDocs(inviteQ);
-
-      if (!inviteSnap.empty) {
-        // ... logic
-        let hasPendingInvite = false;
-        let hasUsedInvite = false;
-        inviteSnap.docs.forEach(doc => {
-          const data = doc.data();
-          if (data.used === false) hasPendingInvite = true;
-          else hasUsedInvite = true;
-        });
-
-        if (hasPendingInvite) {
-          Alert.alert('Welcome!', 'You have been invited. Please complete your registration using the code sent to your email.', [
-            { text: 'OK', onPress: () => router.push('/(auth)/staff-invite') }
-          ]);
-          setLoading(false);
-          return;
-        }
-        if (hasUsedInvite) {
-          setStep('password');
-          setLoading(false);
-          return;
-        }
-      }
-
-      // Check for Customer Registrations (Invited Customers)
-      const registrationsRef = collection(db, 'customerRegistrations');
-      const regQ = query(registrationsRef, where('email', '==', email.toLowerCase().trim()));
-      const regSnap = await getDocs(regQ);
-
-      if (!regSnap.empty) {
-        let hasPendingReg = false;
-        let hasUsedReg = false;
-        regSnap.docs.forEach(doc => {
-          const data = doc.data();
-          if (data.used === false) hasPendingReg = true;
-          else hasUsedReg = true;
-        });
-
-        if (hasPendingReg) {
-          Alert.alert('Welcome!', 'You have been invited as a customer. Please complete your registration using the code sent to your email.', [
-            {
-              text: 'OK',
-              onPress: () => router.push({
-                pathname: '/(auth)/signup',
-                params: { email: email.toLowerCase().trim() }
-              })
-            }
-          ]);
-          setLoading(false);
-          return;
-        }
-
-        if (hasUsedReg) {
-          setStep('password');
-          setLoading(false);
-          return;
-        }
-      }
-
+      // Default for no account/invite found
       setGuestEmail(email.toLowerCase().trim());
       setGuest(true);
       router.replace('/(marketplace)/home');
+      setLoading(false);
+      return;
 
     } catch (error) {
       console.error('Error checking email:', error);
@@ -227,13 +230,26 @@ export default function Index() {
 
   // ...
 
+  // Show splash screen while initializing
+  if (!isReady || !authInitialized) {
+    return (
+      <View style={styles.splashContainer}>
+        <Image
+          source={{ uri: LOGO_URL }}
+          style={styles.splashLogo}
+          resizeMode="contain"
+        />
+        <ActivityIndicator size="small" color="#fff" style={{ marginTop: 30 }} />
+      </View>
+    );
+  }
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
       <View style={styles.contentContainer}>
-        {/* ... UI Content ... */}
         {/* Re-implementing the existing UI exactly as is, just need reference to previous Step */}
         {step === 'email' ? (
           // ... email step
@@ -248,6 +264,7 @@ export default function Index() {
                 autoCapitalize="none"
                 keyboardType="email-address"
                 autoCorrect={false}
+                placeholderTextColor="#666"
               />
             </View>
 
@@ -289,6 +306,7 @@ export default function Index() {
                 autoCapitalize="none"
                 keyboardType="email-address"
                 autoCorrect={false}
+                placeholderTextColor="#666"
               />
             </View>
 
@@ -299,6 +317,7 @@ export default function Index() {
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
+                placeholderTextColor="#666"
               />
             </View>
 
@@ -353,7 +372,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 16,
-    color: '#666',
+    color: '#333',
     marginBottom: 30,
     textAlign: 'center',
   },
@@ -368,6 +387,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     borderWidth: 1,
     borderColor: '#eee',
+    color: '#000',
   },
   button: {
     backgroundColor: '#000',
@@ -389,5 +409,15 @@ const styles = StyleSheet.create({
   forgotText: {
     color: '#666',
     fontSize: 14,
+  },
+  splashContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  splashLogo: {
+    width: width * 0.7,
+    height: width * 0.35,
   },
 });

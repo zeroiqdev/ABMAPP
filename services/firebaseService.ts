@@ -112,8 +112,84 @@ export const firebaseService = {
     });
   },
 
+  async savePushToken(userId: string, token: string): Promise<void> {
+    const batch = writeBatch(db);
+
+    // 1. Save to private user profile (legacy/admin view)
+    const userRef = doc(db, 'users', userId);
+    batch.update(userRef, {
+      pushToken: token,
+      updatedAt: Timestamp.now(),
+    });
+
+    // 2. Save to public/shared notification_tokens collection
+    // We need to fetch the user's role to store it here for filtering
+    // This optimization prevents needing to join with users collection on read
+    // But since this is called on login, we might not have fresh role if we don't fetch.
+    // However, saving just the token is enough if we trust the client logic, 
+    // BUT getAdminTokens needs to filter by role. 
+    // So we should fetch the user role first or assume it's passed or stored.
+    // Let's just update it.
+
+    // We can't easily get the role inside a batch without a read.
+    // Let's just do a set functionality.
+
+    const tokenRef = doc(db, 'notification_tokens', userId);
+    // We will update the token. Role might be updated separately or we assume it's set.
+    // Actually, to make getAdminTokens work, we MUST store the role here.
+    // Let's fetch the user first to be safe, or just accept that maybe we only update token.
+    // Better strategy: The App should pass the role to savePushToken or we fetch it.
+    // For now, let's fetch the user to get the role.
+    const userSnap = await getDoc(userRef);
+    if (userSnap.exists()) {
+      const userData = userSnap.data();
+      batch.set(tokenRef, {
+        token: token,
+        role: userData.role || 'customer',
+        workshopId: userData.workshopId || null,
+        pushEnabled: userData.pushNotificationsEnabled !== false,
+        updatedAt: Timestamp.now(),
+      });
+    }
+
+    await batch.commit();
+  },
+
+  async getAdminTokens(): Promise<string[]> {
+    try {
+      const q = query(
+        collection(db, 'notification_tokens'),
+        where('role', 'in', ['admin', 'manager', 'super_admin'])
+      );
+      const snapshot = await getDocs(q);
+      const tokens = snapshot.docs
+        .filter(doc => doc.data().pushEnabled !== false) // Respect user preference
+        .map(doc => doc.data().token)
+        .filter(token => token && token.startsWith('ExponentPushToken'));
+
+      // Remove duplicates
+      return [...new Set(tokens)];
+    } catch (error) {
+      console.error('Error fetching admin tokens:', error);
+      return [];
+    }
+  },
+
   async deleteUser(userId: string): Promise<void> {
     await deleteDoc(doc(db, 'users', userId));
+  },
+
+  async deleteAccount(): Promise<void> {
+    const user = auth.currentUser;
+    if (!user) throw new Error('No user logged in');
+
+    // 1. Delete Firestore user document
+    await deleteDoc(doc(db, 'users', user.uid));
+
+    // 2. Delete Authentication user
+    // Note: This requires recent login. If it fails with 'auth/requires-recent-login',
+    // the UI should prompt user to re-login.
+    await user.delete();
   },
 
   async createCustomer(customer: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
@@ -254,6 +330,15 @@ export const firebaseService = {
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
     });
+
+    // Send Push Notification to Admins
+    const { notificationService } = require('./notificationService');
+    notificationService.sendPushToAdmins(
+      'New Job Request',
+      `New ${job.type} request created.`,
+      { type: 'job', id: docRef.id }
+    ).catch((err: any) => console.log('Failed to send admin push:', err));
+
     return docRef.id;
   },
 
@@ -342,6 +427,15 @@ export const firebaseService = {
       status: 'draft', // Default status
       createdAt: Timestamp.now(),
     });
+
+    // Send Push Notification to Admins
+    const { notificationService } = require('./notificationService');
+    notificationService.sendPushToAdmins(
+      'New Invoice Created',
+      `Invoice #${invoiceId} created for ${customerIdentifier}`,
+      { type: 'invoice', id: invoiceId }
+    ).catch((err: any) => console.log('Failed to send admin push:', err));
+
     return invoiceId;
   },
 
@@ -632,6 +726,15 @@ export const firebaseService = {
       ...order,
       createdAt: Timestamp.now(),
     });
+
+    // Send Push Notification to Admins
+    const { notificationService } = require('./notificationService');
+    notificationService.sendPushToAdmins(
+      'New Market Order',
+      `New order received for ₦${order.total?.toLocaleString()}`,
+      { type: 'order', id: docRef.id }
+    ).catch((err: any) => console.log('Failed to send admin push:', err));
+
     return docRef.id;
   },
 
@@ -1089,6 +1192,11 @@ export const firebaseService = {
         expiresAt: data.expiresAt?.toDate(),
       } as StaffInvitation;
     });
+  },
+
+  async cancelStaffInvitation(invitationId: string): Promise<void> {
+    const docRef = doc(db, 'staffInvitations', invitationId);
+    await deleteDoc(docRef);
   },
 
   async sendJobMessage(jobId: string, message: Omit<ChatMessage, 'id' | 'jobId' | 'createdAt'>): Promise<string> {

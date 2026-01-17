@@ -130,6 +130,7 @@ export default function RegisterCustomerScreen() {
             <TextInput
               style={styles.input}
               placeholder="Full Name"
+              placeholderTextColor="#999"
               value={name}
               onChangeText={setName}
               autoCapitalize="words"
@@ -138,6 +139,7 @@ export default function RegisterCustomerScreen() {
             <TextInput
               style={styles.input}
               placeholder="Email Address"
+              placeholderTextColor="#999"
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -148,6 +150,7 @@ export default function RegisterCustomerScreen() {
             <TextInput
               style={styles.input}
               placeholder="Phone Number"
+              placeholderTextColor="#999"
               value={phone}
               onChangeText={setPhone}
               keyboardType="phone-pad"

@@ -196,12 +196,14 @@ export default function CreateInvoiceScreen() {
                     <TextInput
                         style={styles.input}
                         placeholder="Customer Name"
+                        placeholderTextColor="#999"
                         value={selectedCustomer?.name || ''}
                         onChangeText={(text) => setSelectedCustomer(prev => ({ ...prev, name: text }))}
                     />
                     <TextInput
                         style={styles.input}
                         placeholder="Phone Number"
+                        placeholderTextColor="#999"
                         value={selectedCustomer?.phone || ''}
                         onChangeText={(text) => setSelectedCustomer(prev => ({ ...prev, phone: text }))}
                         keyboardType="phone-pad"
@@ -209,6 +211,7 @@ export default function CreateInvoiceScreen() {
                     <TextInput
                         style={styles.input}
                         placeholder="Email (Optional)"
+                        placeholderTextColor="#999"
                         value={selectedCustomer?.email || ''}
                         onChangeText={(text) => setSelectedCustomer(prev => ({ ...prev, email: text }))}
                         keyboardType="email-address"
@@ -217,6 +220,7 @@ export default function CreateInvoiceScreen() {
                     <TextInput
                         style={styles.input}
                         placeholder="Address (Optional)"
+                        placeholderTextColor="#999"
                         value={selectedCustomer?.address || ''}
                         onChangeText={(text) => setSelectedCustomer(prev => ({ ...prev, address: text }))}
                     />
@@ -248,6 +252,7 @@ export default function CreateInvoiceScreen() {
                         <TextInput
                             style={[styles.input, styles.descInput]}
                             placeholder="Description (e.g. Service Fee)"
+                            placeholderTextColor="#999"
                             value={newItemDescription}
                             onChangeText={setNewItemDescription}
                         />
@@ -255,6 +260,7 @@ export default function CreateInvoiceScreen() {
                             <TextInput
                                 style={[styles.input, styles.halfInput]}
                                 placeholder="Qty"
+                                placeholderTextColor="#999"
                                 value={newItemQuantity}
                                 onChangeText={setNewItemQuantity}
                                 keyboardType="numeric"
@@ -262,6 +268,7 @@ export default function CreateInvoiceScreen() {
                             <TextInput
                                 style={[styles.input, styles.halfInput]}
                                 placeholder="Price"
+                                placeholderTextColor="#999"
                                 value={newItemPrice}
                                 onChangeText={setNewItemPrice}
                                 keyboardType="numeric"
@@ -291,6 +298,7 @@ export default function CreateInvoiceScreen() {
                             onChangeText={setVatRate}
                             keyboardType="numeric"
                             placeholder="0"
+                            placeholderTextColor="#999"
                         />
                     </View>
 
@@ -307,6 +315,7 @@ export default function CreateInvoiceScreen() {
                             onChangeText={setDiscount}
                             keyboardType="numeric"
                             placeholder="0"
+                            placeholderTextColor="#999"
                         />
                     </View>
 

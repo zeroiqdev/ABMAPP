@@ -111,6 +111,46 @@ export default function WorkshopSettingsScreen() {
             <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
           </TouchableOpacity>
 
+          <TouchableOpacity
+            style={styles.settingRow}
+            onPress={() => {
+              Alert.alert(
+                'Delete Account',
+                'Are you sure you want to delete your account? This action involves deleting all your data permanently and cannot be undone.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                      try {
+                        const { deleteAccount } = useAuthStore.getState();
+                        await deleteAccount();
+                        // Redirect handled by auth state change or router logic
+                      } catch (error: any) {
+                        console.error('Delete account error:', error);
+                        if (error.code === 'auth/requires-recent-login') {
+                          Alert.alert('Authentication Required', 'Please log out and log back in to delete your account.');
+                        } else {
+                          Alert.alert('Error', error.message || 'Failed to delete account');
+                        }
+                      }
+                    },
+                  },
+                ]
+              );
+            }}
+          >
+            <View style={[styles.iconContainer, { backgroundColor: '#fee2e2' }]}>
+              <Ionicons name="trash" size={20} color="#FF3B30" />
+            </View>
+            <View style={styles.settingInfo}>
+              <Text style={[styles.settingLabel, { color: '#FF3B30' }]}>Delete Account</Text>
+              <Text style={styles.settingDesc}>Permanently remove your account</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
             <Ionicons name="log-out-outline" size={20} color="#FF3B30" />
             <Text style={styles.logoutText}>Log Out</Text>
@@ -174,26 +214,95 @@ export default function WorkshopSettingsScreen() {
         )}
 
         {/* Preferences */}
-        <View style={[styles.section, { marginTop: 40 }]}>
-          <Text style={styles.sectionTitle}>Preferences</Text>
-          <View style={styles.settingRow}>
-            <View style={styles.iconContainer}>
-              <Ionicons name="notifications" size={22} color="#000" />
-            </View>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Push Notifications</Text>
-              <Text style={styles.settingDesc}>Receive job and system updates</Text>
-            </View>
-            <Switch
-              trackColor={{ false: '#e0e0e0', true: '#000' }}
-              value={true}
-              onValueChange={() => { }}
-              thumbColor="#fff"
-            />
-          </View>
-        </View>
+        <PreferencesSection userId={user?.id} styles={styles} />
 
       </ScrollView>
+    </View>
+  );
+}
+
+// Extracted component to handle notification preferences
+function PreferencesSection({ userId, styles }: { userId?: string; styles: any }) {
+  const [pushEnabled, setPushEnabled] = useState(true);
+  const [emailEnabled, setEmailEnabled] = useState(true);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!userId) return;
+    // Load user preferences
+    const loadPrefs = async () => {
+      try {
+        const userData = await firebaseService.getUser(userId);
+        if (userData) {
+          setPushEnabled(userData.pushNotificationsEnabled !== false);
+          setEmailEnabled(userData.emailNotificationsEnabled !== false);
+        }
+      } catch (error) {
+        console.error('Error loading preferences:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadPrefs();
+  }, [userId]);
+
+  const updatePreference = async (key: string, value: boolean) => {
+    if (!userId) return;
+    try {
+      await updateDoc(doc(db, 'users', userId), { [key]: value });
+    } catch (error) {
+      console.error('Error updating preference:', error);
+      Alert.alert('Error', 'Failed to update preference');
+    }
+  };
+
+  const handlePushToggle = (value: boolean) => {
+    setPushEnabled(value);
+    updatePreference('pushNotificationsEnabled', value);
+  };
+
+  const handleEmailToggle = (value: boolean) => {
+    setEmailEnabled(value);
+    updatePreference('emailNotificationsEnabled', value);
+  };
+
+  return (
+    <View style={[styles.section, { marginTop: 40 }]}>
+      <Text style={styles.sectionTitle}>Preferences</Text>
+
+      <View style={styles.settingRow}>
+        <View style={styles.iconContainer}>
+          <Ionicons name="notifications" size={22} color="#000" />
+        </View>
+        <View style={styles.settingInfo}>
+          <Text style={styles.settingLabel}>Push Notifications</Text>
+          <Text style={styles.settingDesc}>Receive job and system updates</Text>
+        </View>
+        <Switch
+          trackColor={{ false: '#e0e0e0', true: '#000' }}
+          value={pushEnabled}
+          onValueChange={handlePushToggle}
+          thumbColor="#fff"
+          disabled={loading}
+        />
+      </View>
+
+      <View style={styles.settingRow}>
+        <View style={styles.iconContainer}>
+          <Ionicons name="mail" size={22} color="#000" />
+        </View>
+        <View style={styles.settingInfo}>
+          <Text style={styles.settingLabel}>Email Notifications</Text>
+          <Text style={styles.settingDesc}>Receive updates via email</Text>
+        </View>
+        <Switch
+          trackColor={{ false: '#e0e0e0', true: '#000' }}
+          value={emailEnabled}
+          onValueChange={handleEmailToggle}
+          thumbColor="#fff"
+          disabled={loading}
+        />
+      </View>
     </View>
   );
 }
