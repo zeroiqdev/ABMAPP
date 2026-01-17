@@ -57,6 +57,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.abmtek.abmapp",
+      buildNumber: "8",
       backgroundColor: "#000000",
       googleServicesFile: './GoogleService-Info.plist',
       config: {
