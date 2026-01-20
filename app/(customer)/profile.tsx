@@ -221,22 +221,6 @@ export default function ProfileScreen() {
               <Text style={styles.actionText}>Change Password</Text>
               <Ionicons name="chevron-forward" size={20} color="#999" />
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.actionRow}
-              onPress={() => router.push('/(customer)/support')}
-            >
-              <Ionicons name="help-circle-outline" size={24} color="#666" />
-              <Text style={styles.actionText}>Support & Help</Text>
-              <Ionicons name="chevron-forward" size={20} color="#999" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.actionRow}
-              onPress={() => router.push('/(customer)/about')}
-            >
-              <Ionicons name="information-circle-outline" size={24} color="#666" />
-              <Text style={styles.actionText}>About</Text>
-              <Ionicons name="chevron-forward" size={20} color="#999" />
-            </TouchableOpacity>
           </View>
         </View>
 

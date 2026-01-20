@@ -91,6 +91,7 @@ export default function OrderDetailsScreen() {
         switch (status) {
             case 'pending': return Colors.warning;
             case 'confirmed': return Colors.info;
+            case 'processing': return '#9C27B0'; // Purple
             case 'shipped': return Colors.primary;
             case 'shipment_verified': return '#9C27B0';
             case 'delivered': return Colors.success;
@@ -142,7 +143,7 @@ export default function OrderDetailsScreen() {
                             <View style={[styles.statusDot, { backgroundColor: getStatusColor(order.status) }]} />
                             <Text style={styles.statusPillText}>{order.status.toUpperCase()}</Text>
                         </View>
-                        {(!isVendor || (isVendor && order.status === 'confirmed')) && (
+                        {(!isVendor || (isVendor && !['delivered', 'cancelled'].includes(order.status))) && (
                             <TouchableOpacity
                                 style={styles.updateStatusButton}
                                 onPress={() => setShowStatusModal(true)}
@@ -229,33 +230,49 @@ export default function OrderDetailsScreen() {
                         style={styles.statusModalContent}
                     >
                         <Text style={styles.modalTitle}>Update Order Status</Text>
-                        {(isVendor
-                            ? (order.status === 'confirmed' ? ['shipped'] : [])
-                            : ['pending', 'confirmed', 'shipped', 'shipment_verified', 'delivered', 'cancelled']
-                        ).map((status) => (
-                            <TouchableOpacity
-                                key={status}
-                                style={[
-                                    styles.statusOption,
-                                    order.status === status && styles.statusOptionSelected,
-                                ]}
-                                onPress={() => {
-                                    updateOrderStatus(status as any);
-                                    setShowStatusModal(false);
-                                }}
-                            >
-                                <View style={[styles.statusDot, { backgroundColor: getStatusColor(status) }]} />
-                                <Text style={styles.statusOptionText}>
-                                    {status === 'shipment_verified' ? 'Shipment Verified' : status.charAt(0).toUpperCase() + status.slice(1)}
-                                </Text>
-                                {order.status === status && (
-                                    <Ionicons name="checkmark" size={20} color="#000" />
-                                )}
-                            </TouchableOpacity>
-                        ))}
-                        {isVendor && order.status !== 'confirmed' && (
+                        {(() => {
+                            // Determine which statuses to show based on role
+                            const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+                            let availableStatuses: string[] = [];
+
+                            if (isVendor) {
+                                // Vendors can only mark as shipped (if not already delivered/cancelled)
+                                if (!['delivered', 'cancelled', 'shipped'].includes(order.status)) {
+                                    availableStatuses = ['shipped'];
+                                }
+                            } else if (isAdmin) {
+                                // Admins can mark as processing, delivered, or cancelled
+                                availableStatuses = ['processing', 'delivered', 'cancelled'].filter(s => s !== order.status);
+                            } else {
+                                // Staff or other roles - show all statuses
+                                availableStatuses = ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'].filter(s => s !== order.status);
+                            }
+
+                            return availableStatuses.map((status) => (
+                                <TouchableOpacity
+                                    key={status}
+                                    style={[
+                                        styles.statusOption,
+                                        order.status === status && styles.statusOptionSelected,
+                                    ]}
+                                    onPress={() => {
+                                        updateOrderStatus(status as any);
+                                        setShowStatusModal(false);
+                                    }}
+                                >
+                                    <View style={[styles.statusDot, { backgroundColor: getStatusColor(status) }]} />
+                                    <Text style={styles.statusOptionText}>
+                                        {status.charAt(0).toUpperCase() + status.slice(1)}
+                                    </Text>
+                                    {order.status === status && (
+                                        <Ionicons name="checkmark" size={20} color="#000" />
+                                    )}
+                                </TouchableOpacity>
+                            ));
+                        })()}
+                        {isVendor && ['delivered', 'cancelled', 'shipped'].includes(order.status) && (
                             <Text style={{ textAlign: 'center', color: '#666', marginTop: 10 }}>
-                                {order.status === 'pending' ? 'Wait for payment confirmation.' : 'No actions available.'}
+                                {order.status === 'shipped' ? 'Waiting for admin to verify shipment.' : 'No actions available.'}
                             </Text>
                         )}
                     </TouchableOpacity>

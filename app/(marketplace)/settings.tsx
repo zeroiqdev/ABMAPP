@@ -1,12 +1,66 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Switch } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
+import { firebaseService } from '@/services/firebaseService';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '@/config/firebase';
 
 export default function SettingsScreen() {
     const router = useRouter();
     const { user, logout } = useAuthStore();
+    const [pushEnabled, setPushEnabled] = useState(true);
+    const [emailEnabled, setEmailEnabled] = useState(true);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        if (!user?.id) return;
+        const loadPrefs = async () => {
+            try {
+                const userData = await firebaseService.getUser(user.id);
+                if (userData) {
+                    setPushEnabled(userData.pushNotificationsEnabled !== false);
+                    setEmailEnabled(userData.emailNotificationsEnabled !== false);
+                }
+            } catch (error) {
+                console.error('Error loading preferences:', error);
+            } finally {
+                setLoading(false);
+            }
+        };
+        loadPrefs();
+    }, [user]);
+
+    const updatePreference = async (key: string, value: boolean) => {
+        if (!user?.id) return;
+        try {
+            await updateDoc(doc(db, 'users', user.id), { [key]: value });
+        } catch (error) {
+            console.error('Error updating preference:', error);
+            Alert.alert('Error', 'Failed to update preference');
+        }
+    };
+
+    const handlePushToggle = (value: boolean) => {
+        setPushEnabled(value);
+        updatePreference('pushNotificationsEnabled', value);
+    };
+
+    const handleEmailToggle = (value: boolean) => {
+        setEmailEnabled(value);
+        updatePreference('emailNotificationsEnabled', value);
+    };
+
+    const handleResetPassword = async () => {
+        if (!user?.email) return;
+        try {
+            await firebaseService.sendPasswordResetEmail(user.email);
+            Alert.alert('Success', `Password reset email sent to ${user.email}`);
+        } catch (error: any) {
+            Alert.alert('Error', error.message || 'Failed to send reset email');
+        }
+    };
 
     const handleLogout = async () => {
         try {
@@ -35,19 +89,50 @@ export default function SettingsScreen() {
                             <Text style={styles.rowSubtitle}>{user?.email}</Text>
                         </View>
                     </View>
-                </View>
-
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Preferences</Text>
-                    <TouchableOpacity style={styles.menuItem}>
-                        <Ionicons name="notifications-outline" size={22} color="#000" />
-                        <Text style={styles.menuText}>Notifications</Text>
+                    <TouchableOpacity style={styles.menuItem} onPress={handleResetPassword}>
+                        <Ionicons name="lock-closed-outline" size={22} color="#000" />
+                        <Text style={styles.menuText}>Reset Password</Text>
                         <Ionicons name="chevron-forward" size={20} color="#ccc" />
                     </TouchableOpacity>
                 </View>
 
                 <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Danger Zone</Text>
+                    <Text style={styles.sectionTitle}>Preferences</Text>
+                    <View style={styles.toggleRow}>
+                        <View style={styles.toggleInfo}>
+                            <Ionicons name="notifications-outline" size={22} color="#000" />
+                            <View style={styles.toggleText}>
+                                <Text style={styles.toggleLabel}>Push Notifications</Text>
+                                <Text style={styles.toggleDesc}>Receive order and system updates</Text>
+                            </View>
+                        </View>
+                        <Switch
+                            value={pushEnabled}
+                            onValueChange={handlePushToggle}
+                            trackColor={{ false: '#ddd', true: '#000' }}
+                            thumbColor="#fff"
+                            disabled={loading}
+                        />
+                    </View>
+                    <View style={styles.toggleRow}>
+                        <View style={styles.toggleInfo}>
+                            <Ionicons name="mail-outline" size={22} color="#000" />
+                            <View style={styles.toggleText}>
+                                <Text style={styles.toggleLabel}>Email Notifications</Text>
+                                <Text style={styles.toggleDesc}>Receive updates via email</Text>
+                            </View>
+                        </View>
+                        <Switch
+                            value={emailEnabled}
+                            onValueChange={handleEmailToggle}
+                            trackColor={{ false: '#ddd', true: '#000' }}
+                            thumbColor="#fff"
+                            disabled={loading}
+                        />
+                    </View>
+                </View>
+
+                <View style={styles.section}>
                     <TouchableOpacity
                         style={styles.deleteButton}
                         onPress={() => {
@@ -185,5 +270,32 @@ const styles = StyleSheet.create({
         color: '#FF3B30',
         fontWeight: '600',
         fontSize: 16,
+    },
+    toggleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: 15,
+        borderTopWidth: 1,
+        borderTopColor: '#eee',
+    },
+    toggleInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+        gap: 15,
+    },
+    toggleText: {
+        flex: 1,
+    },
+    toggleLabel: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#333',
+        marginBottom: 4,
+    },
+    toggleDesc: {
+        fontSize: 12,
+        color: '#666',
     },
 });

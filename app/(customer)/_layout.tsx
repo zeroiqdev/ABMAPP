@@ -153,12 +153,6 @@ export default function CustomerLayout() {
         }}
       />
       <Tabs.Screen
-        name="support"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
         name="vehicle-history"
         options={{
           href: null,

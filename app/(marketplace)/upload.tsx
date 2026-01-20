@@ -270,7 +270,7 @@ export default function VendorUploadScreen() {
                 <Text style={styles.headerTitle}>List New Part</Text>
                 <TouchableOpacity onPress={handleSubmit} disabled={loading} style={{ marginLeft: 'auto' }}>
                     {loading ? (
-                        <ActivityIndicator color="#007AFF" />
+                        <ActivityIndicator color="#000" />
                     ) : (
                         <Text style={styles.postButton}>Post</Text>
                     )}
@@ -281,7 +281,7 @@ export default function VendorUploadScreen() {
                 {/* Images */}
                 <ScrollView horizontal style={styles.imageScroll} showsHorizontalScrollIndicator={false}>
                     <TouchableOpacity style={styles.addImageButton} onPress={pickImage}>
-                        <Ionicons name="camera-outline" size={32} color="#007AFF" />
+                        <Ionicons name="camera-outline" size={32} color="#000" />
                         <Text style={styles.addImageText}>Add Photo</Text>
                     </TouchableOpacity>
                     {images.map((img, index) => (
@@ -389,7 +389,7 @@ const styles = StyleSheet.create({
     addButton: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: Colors.primary,
+        backgroundColor: '#000',
         paddingHorizontal: Spacing.md,
         paddingVertical: Spacing.sm,
         borderRadius: BorderRadius.xl,
@@ -517,7 +517,7 @@ const styles = StyleSheet.create({
     postButton: {
         fontSize: Typography.fontSize.base,
         fontWeight: '600',
-        color: Colors.primary, // Black
+        color: '#000',
     },
     content: {
         flex: 1,
@@ -604,8 +604,8 @@ const styles = StyleSheet.create({
         borderColor: Colors.border,
     },
     categoryChipActive: {
-        backgroundColor: Colors.primary,
-        borderColor: Colors.primary,
+        backgroundColor: '#000',
+        borderColor: '#000',
     },
     categoryText: {
         fontSize: Typography.fontSize.sm,
@@ -629,8 +629,8 @@ const styles = StyleSheet.create({
         borderColor: Colors.border,
     },
     optionButtonActive: {
-        backgroundColor: Colors.primary,
-        borderColor: Colors.primary,
+        backgroundColor: '#000',
+        borderColor: '#000',
     },
     optionText: {
         fontSize: Typography.fontSize.base,
@@ -649,7 +649,7 @@ const styles = StyleSheet.create({
     },
     backButton: {
         padding: 15,
-        backgroundColor: Colors.primary,
+        backgroundColor: '#000',
         borderRadius: BorderRadius.md,
     },
     backButtonText: {

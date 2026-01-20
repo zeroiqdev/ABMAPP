@@ -32,7 +32,13 @@ export default function JobsScreen() {
 
     setRefreshing(true);
     const unsubscribe = firebaseService.subscribeToWorkshopJobs(user.workshopId, (updatedJobs) => {
-      setJobs(updatedJobs);
+      // For technicians, only show jobs assigned to them
+      if (user.role === 'technician') {
+        const assignedJobs = updatedJobs.filter(job => job.assignedTechnicianId === user.id);
+        setJobs(assignedJobs);
+      } else {
+        setJobs(updatedJobs);
+      }
       setRefreshing(false);
     });
 

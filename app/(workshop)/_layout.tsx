@@ -89,7 +89,7 @@ export default function WorkshopLayout() {
     return <Redirect href="/(customer)/home" />;
   }
 
-  const canViewDashboard = user.role === 'admin' || user.role === 'super_admin' || permissions?.canViewDashboard;
+  const canViewDashboard = user.role === 'admin' || user.role === 'super_admin' || user.role === 'technician' || permissions?.canViewDashboard;
   const canViewFinance = user.role === 'admin' || user.role === 'super_admin' || permissions?.canViewFinance;
   const canViewInventory = user.role === 'admin' || user.role === 'super_admin' || permissions?.canViewInventory;
   // const canManageStaff = user.role === 'admin' || permissions?.canManageStaff; // For Customers tab?

@@ -11,6 +11,7 @@ import {
   Dimensions,
   Platform,
   Animated,
+  TextInput,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,9 +30,17 @@ export default function ProductDetailsScreen() {
   const [product, setProduct] = useState<MarketplaceProduct | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [showToast, setShowToast] = useState(false);
   const toastOpacity = useState(new Animated.Value(0))[0];
+
+  // Edit mode state
+  const [isOwner, setIsOwner] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editPrice, setEditPrice] = useState('');
+  const [editStock, setEditStock] = useState('');
 
   useEffect(() => {
     loadProduct();
@@ -39,13 +48,18 @@ export default function ProductDetailsScreen() {
 
   const loadProduct = async () => {
     try {
-      // Ideally we should have getProductById, but getMarketplaceProducts is cached/fast enough for now or we filter client side
-      // Actually let's assume getMarketplaceProducts fetches all or we find it.
-      // Optimisation: Create getProductById in future.
       const products = await firebaseService.getMarketplaceProducts();
       const productData = products.find((p) => p.id === id);
       if (productData) {
         setProduct(productData);
+        // Check if current user is the vendor owner
+        const ownerCheck = user?.id === productData.vendorId || user?.id === productData.userId;
+        setIsOwner(ownerCheck);
+        // Initialize edit fields
+        setEditName(productData.name);
+        setEditDescription(productData.description);
+        setEditPrice(productData.price.toString());
+        setEditStock(productData.stock.toString());
       }
     } catch (error) {
       console.error('Error loading product:', error);
@@ -54,7 +68,7 @@ export default function ProductDetailsScreen() {
     }
   };
 
-  const showToastNotification = () => {
+  const showToastNotification = (message: string = 'Added to cart') => {
     setShowToast(true);
     Animated.sequence([
       Animated.timing(toastOpacity, {
@@ -81,11 +95,54 @@ export default function ProductDetailsScreen() {
       return;
     }
 
-    // Add to cart store
     addItem(product, quantity);
+    showToastNotification('Added to cart');
+  };
 
-    // Show toast notification
-    showToastNotification();
+  const handleSaveProduct = async () => {
+    if (!product || !id) return;
+
+    const newPrice = parseFloat(editPrice);
+    const newStock = parseInt(editStock);
+
+    if (!editName.trim()) {
+      Alert.alert('Error', 'Product name is required');
+      return;
+    }
+    if (isNaN(newPrice) || newPrice <= 0) {
+      Alert.alert('Error', 'Please enter a valid price');
+      return;
+    }
+    if (isNaN(newStock) || newStock < 0) {
+      Alert.alert('Error', 'Please enter a valid stock quantity');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await firebaseService.updateMarketplaceProduct(id, {
+        name: editName.trim(),
+        description: editDescription.trim(),
+        price: newPrice,
+        stock: newStock,
+      });
+
+      // Update local state
+      setProduct({
+        ...product,
+        name: editName.trim(),
+        description: editDescription.trim(),
+        price: newPrice,
+        stock: newStock,
+      });
+
+      Alert.alert('Success', 'Product updated successfully');
+    } catch (error: any) {
+      console.error('Error updating product:', error);
+      Alert.alert('Error', error.message || 'Failed to update product');
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (loading) {
@@ -100,7 +157,7 @@ export default function ProductDetailsScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.replace('/(marketplace)/home')}>
+          <TouchableOpacity onPress={() => router.back()}>
             <Ionicons name="arrow-back" size={24} color="#000" />
           </TouchableOpacity>
         </View>
@@ -115,13 +172,13 @@ export default function ProductDetailsScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.iconButton} onPress={() => router.replace('/(marketplace)/home')}>
+        <TouchableOpacity style={styles.iconButton} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>{product.name}</Text>
-        <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/(marketplace)/cart')}>
-          <Ionicons name="bag-handle-outline" size={24} color="#000" />
-        </TouchableOpacity>
+        <Text style={styles.headerTitle} numberOfLines={1}>
+          {isOwner ? 'Edit Product' : product.name}
+        </Text>
+        <View style={{ width: 40 }} />
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 140 }}>
@@ -170,83 +227,161 @@ export default function ProductDetailsScreen() {
         </View>
 
         <View style={styles.content}>
-          {/* Title & Stats */}
-          <View style={styles.titleRow}>
-            <Text style={styles.productName}>{product.name}</Text>
-            <TouchableOpacity>
-              <Ionicons name="heart-outline" size={24} color="#000" />
-            </TouchableOpacity>
-          </View>
+          {isOwner ? (
+            // Owner Edit Mode
+            <>
+              <Text style={styles.sectionTitle}>Product Name</Text>
+              <TextInput
+                style={styles.editInput}
+                value={editName}
+                onChangeText={setEditName}
+                placeholder="Product name"
+                placeholderTextColor="#999"
+              />
 
-          <View style={styles.statsRow}>
-            <View style={styles.ratingBadge}>
-              <Ionicons name="star" size={12} color="#000" />
-              <Text style={styles.ratingText}>{product.rating || 'New'}</Text>
-            </View>
-            <Text style={styles.soldCount}>{product.soldCount || 0} sold</Text>
-            {product.condition && (
-              <Text style={styles.conditionText}>{product.condition === 'new' ? 'New' : 'Used'}</Text>
-            )}
-          </View>
+              <Text style={styles.sectionTitle}>Price (₦)</Text>
+              <TextInput
+                style={styles.editInput}
+                value={editPrice}
+                onChangeText={setEditPrice}
+                placeholder="0.00"
+                keyboardType="numeric"
+                placeholderTextColor="#999"
+              />
 
-          <View style={styles.divider} />
-
-          {/* Description */}
-          <Text style={styles.sectionTitle}>Description</Text>
-          <Text style={styles.description}>{product.description}</Text>
-
-          {/* Compatibility */}
-          {product.compatibility && product.compatibility.length > 0 && (
-            <View style={styles.compatibilitySection}>
-              <Text style={styles.sectionTitle}>Compatibility</Text>
-              <View style={styles.compatibilityList}>
-                {product.compatibility.map((item, index) => (
-                  <View key={index} style={styles.compatibilityChip}>
-                    <Text style={styles.compatibilityText}>{item}</Text>
-                  </View>
-                ))}
+              <Text style={styles.sectionTitle}>Stock Quantity</Text>
+              <View style={styles.stockControl}>
+                <TouchableOpacity
+                  style={styles.stockBtn}
+                  onPress={() => setEditStock(Math.max(0, parseInt(editStock) - 1).toString())}
+                >
+                  <Ionicons name="remove" size={20} color="#000" />
+                </TouchableOpacity>
+                <TextInput
+                  style={styles.stockInput}
+                  value={editStock}
+                  onChangeText={setEditStock}
+                  keyboardType="numeric"
+                  placeholderTextColor="#999"
+                />
+                <TouchableOpacity
+                  style={styles.stockBtn}
+                  onPress={() => setEditStock((parseInt(editStock) + 1).toString())}
+                >
+                  <Ionicons name="add" size={20} color="#000" />
+                </TouchableOpacity>
               </View>
-            </View>
-          )}
 
-          {/* Quantity */}
-          <View style={styles.quantitySection}>
-            <Text style={styles.sectionTitle}>Quantity</Text>
-            <View style={styles.quantityControl}>
-              <TouchableOpacity
-                style={styles.quantityBtn}
-                onPress={() => setQuantity(Math.max(1, quantity - 1))}
-              >
-                <Ionicons name="remove" size={20} color="#000" />
-              </TouchableOpacity>
-              <Text style={styles.quantityValue}>{quantity}</Text>
-              <TouchableOpacity
-                style={styles.quantityBtn}
-                onPress={() => setQuantity(Math.min(product.stock, quantity + 1))}
-              >
-                <Ionicons name="add" size={20} color="#000" />
-              </TouchableOpacity>
-            </View>
-          </View>
+              <Text style={styles.sectionTitle}>Description</Text>
+              <TextInput
+                style={[styles.editInput, styles.textArea]}
+                value={editDescription}
+                onChangeText={setEditDescription}
+                placeholder="Product description"
+                multiline
+                numberOfLines={4}
+                placeholderTextColor="#999"
+              />
+            </>
+          ) : (
+            // Customer View Mode
+            <>
+              <View style={styles.titleRow}>
+                <Text style={styles.productName}>{product.name}</Text>
+                <TouchableOpacity>
+                  <Ionicons name="heart-outline" size={24} color="#000" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.statsRow}>
+                <View style={styles.ratingBadge}>
+                  <Ionicons name="star" size={12} color="#000" />
+                  <Text style={styles.ratingText}>{product.rating || 'New'}</Text>
+                </View>
+                <Text style={styles.soldCount}>{product.soldCount || 0} sold</Text>
+                {product.condition && (
+                  <Text style={styles.conditionText}>{product.condition === 'new' ? 'New' : 'Used'}</Text>
+                )}
+              </View>
+
+              <View style={styles.divider} />
+
+              <Text style={styles.sectionTitle}>Description</Text>
+              <Text style={styles.description}>{product.description}</Text>
+
+              {product.compatibility && product.compatibility.length > 0 && (
+                <View style={styles.compatibilitySection}>
+                  <Text style={styles.sectionTitle}>Compatibility</Text>
+                  <View style={styles.compatibilityList}>
+                    {product.compatibility.map((item, index) => (
+                      <View key={index} style={styles.compatibilityChip}>
+                        <Text style={styles.compatibilityText}>{item}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              <View style={styles.quantitySection}>
+                <Text style={styles.sectionTitle}>Quantity</Text>
+                <View style={styles.quantityControl}>
+                  <TouchableOpacity
+                    style={styles.quantityBtn}
+                    onPress={() => setQuantity(Math.max(1, quantity - 1))}
+                  >
+                    <Ionicons name="remove" size={20} color="#000" />
+                  </TouchableOpacity>
+                  <Text style={styles.quantityValue}>{quantity}</Text>
+                  <TouchableOpacity
+                    style={styles.quantityBtn}
+                    onPress={() => setQuantity(Math.min(product.stock, quantity + 1))}
+                  >
+                    <Ionicons name="add" size={20} color="#000" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </>
+          )}
         </View>
       </ScrollView>
 
       {/* Footer */}
       <View style={styles.footer}>
-        <View style={styles.priceContainer}>
-          <Text style={styles.totalLabel}>Total Price</Text>
-          <Text style={styles.totalPrice} numberOfLines={1} adjustsFontSizeToFit>
-            ₦{(product.price * quantity).toLocaleString()}
-          </Text>
-        </View>
-        <TouchableOpacity
-          style={[styles.addToCartButton, product.stock === 0 && styles.disabledButton]}
-          onPress={handleAddToCart}
-          disabled={product.stock === 0}
-        >
-          <Ionicons name="bag-handle" size={20} color="#fff" />
-          <Text style={styles.addToCartText}>Add to Cart</Text>
-        </TouchableOpacity>
+        {isOwner ? (
+          // Owner Save Button
+          <TouchableOpacity
+            style={[styles.saveButton, saving && styles.disabledButton]}
+            onPress={handleSaveProduct}
+            disabled={saving}
+          >
+            {saving ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="checkmark" size={20} color="#fff" />
+                <Text style={styles.addToCartText}>Save Changes</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        ) : (
+          // Customer Add to Cart
+          <>
+            <View style={styles.priceContainer}>
+              <Text style={styles.totalLabel}>Total Price</Text>
+              <Text style={styles.totalPrice} numberOfLines={1} adjustsFontSizeToFit>
+                ₦{(product.price * quantity).toLocaleString()}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.addToCartButton, product.stock === 0 && styles.disabledButton]}
+              onPress={handleAddToCart}
+              disabled={product.stock === 0}
+            >
+              <Ionicons name="bag-handle" size={20} color="#fff" />
+              <Text style={styles.addToCartText}>Add to Cart</Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
 
       {/* Toast Notification */}
@@ -274,6 +409,7 @@ export default function ProductDetailsScreen() {
     </View>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: {
@@ -537,5 +673,52 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
+  },
+  editInput: {
+    backgroundColor: '#f5f5f5',
+    borderRadius: 12,
+    padding: 15,
+    fontSize: 16,
+    color: '#000',
+    borderWidth: 1,
+    borderColor: '#eee',
+    marginBottom: 15,
+  },
+  textArea: {
+    height: 120,
+    textAlignVertical: 'top',
+  },
+  stockControl: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+    borderRadius: 12,
+    padding: 5,
+    marginBottom: 15,
+  },
+  stockBtn: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 10,
+  },
+  stockInput: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#000',
+  },
+  saveButton: {
+    flex: 1,
+    backgroundColor: '#000',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 16,
+    borderRadius: 30,
+    gap: 8,
   },
 });
