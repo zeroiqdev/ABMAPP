@@ -15,13 +15,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
 import { Order, OrderItem } from '@/types';
-import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/design';
+import { useColors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/design'; // Import useColors
 import { format } from 'date-fns';
 
 export default function WorkshopOrderDetailsScreen() {
     const router = useRouter();
     const { id } = useLocalSearchParams<{ id: string }>();
     const { user } = useAuthStore();
+    const colors = useColors(); // Hook
+    const styles = getStyles(colors); // Dynamic styles
+
     const [order, setOrder] = useState<Order | null>(null);
     const [loading, setLoading] = useState(true);
 
@@ -43,11 +46,11 @@ export default function WorkshopOrderDetailsScreen() {
 
     const getStatusColor = (status: Order['status']) => {
         switch (status) {
-            case 'confirmed': return Colors.success;
-            case 'shipped': return Colors.info;
-            case 'delivered': return Colors.success;
-            case 'cancelled': return Colors.error;
-            default: return Colors.warning;
+            case 'confirmed': return colors.success;
+            case 'shipped': return colors.info;
+            case 'delivered': return colors.success;
+            case 'cancelled': return colors.error;
+            default: return colors.warning;
         }
     };
 
@@ -60,7 +63,7 @@ export default function WorkshopOrderDetailsScreen() {
                 {item.image ? (
                     <Image source={{ uri: item.image }} style={styles.itemImage} />
                 ) : (
-                    <Ionicons name="image-outline" size={24} color={Colors.textTertiary} />
+                    <Ionicons name="image-outline" size={24} color={colors.textTertiary} />
                 )}
             </View>
             <View style={styles.itemInfo}>
@@ -68,14 +71,14 @@ export default function WorkshopOrderDetailsScreen() {
                 <Text style={styles.itemQuantity}>Qty: {item.quantity}</Text>
                 <Text style={styles.itemPrice}>₦{item.price.toLocaleString()}</Text>
             </View>
-            <Ionicons name="chevron-forward" size={20} color={Colors.textTertiary} />
+            <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
         </TouchableOpacity>
     );
 
     if (loading) {
         return (
             <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={Colors.primary} />
+                <ActivityIndicator size="large" color={colors.primary} />
             </View>
         );
     }
@@ -85,7 +88,7 @@ export default function WorkshopOrderDetailsScreen() {
             <View style={styles.container}>
                 <View style={styles.header}>
                     <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                        <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
+                        <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>Order Details</Text>
                     <View style={{ width: 44 }} />
@@ -101,7 +104,7 @@ export default function WorkshopOrderDetailsScreen() {
         <View style={styles.container}>
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
+                    <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Order #{order.id.slice(0, 8)}</Text>
                 <View style={{ width: 44 }} />
@@ -152,10 +155,10 @@ export default function WorkshopOrderDetailsScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     loadingContainer: {
         flex: 1,
@@ -168,9 +171,9 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         padding: Spacing.lg,
         paddingTop: Platform.OS === 'ios' ? 60 : Spacing['5xl'],
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         borderBottomWidth: 1,
-        borderBottomColor: Colors.border,
+        borderBottomColor: colors.border,
     },
     backButton: {
         padding: 10,
@@ -179,14 +182,14 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: Typography.fontSize.lg,
         fontWeight: Typography.fontWeight.bold,
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
     },
     content: {
         padding: Spacing.lg,
     },
     section: {
         marginBottom: Spacing.xl,
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         padding: Spacing.lg,
         borderRadius: BorderRadius.md,
         ...Shadows.sm,
@@ -194,7 +197,7 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: Typography.fontSize.base,
         fontWeight: Typography.fontWeight.bold,
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
         marginBottom: Spacing.md,
     },
     statusBadge: {
@@ -210,24 +213,24 @@ const styles = StyleSheet.create({
     },
     dateText: {
         fontSize: Typography.fontSize.sm,
-        color: Colors.textSecondary,
+        color: colors.textSecondary,
     },
     addressText: {
         fontSize: Typography.fontSize.base,
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
         lineHeight: 24,
     },
     itemCard: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
         padding: Spacing.md,
         borderRadius: BorderRadius.sm,
     },
     itemImageContainer: {
         width: 50,
         height: 50,
-        backgroundColor: '#f0f0f0',
+        backgroundColor: colors.background === '#000000' ? '#333' : '#f0f0f0',
         borderRadius: BorderRadius.sm,
         justifyContent: 'center',
         alignItems: 'center',
@@ -245,17 +248,17 @@ const styles = StyleSheet.create({
     itemName: {
         fontSize: Typography.fontSize.base,
         fontWeight: Typography.fontWeight.semibold,
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
     },
     itemQuantity: {
         fontSize: Typography.fontSize.sm,
-        color: Colors.textSecondary,
+        color: colors.textSecondary,
         marginTop: 2,
     },
     itemPrice: {
         fontSize: Typography.fontSize.sm,
         fontWeight: 'bold',
-        color: Colors.primary,
+        color: colors.primary,
         marginTop: 2,
     },
     summaryRow: {
@@ -266,12 +269,12 @@ const styles = StyleSheet.create({
     },
     summaryLabel: {
         fontSize: Typography.fontSize.base,
-        color: Colors.textSecondary,
+        color: colors.textSecondary,
     },
     totalPrice: {
         fontSize: Typography.fontSize.xl,
         fontWeight: Typography.fontWeight.bold,
-        color: Colors.primary,
+        color: colors.primary,
     },
     emptyState: {
         flex: 1,

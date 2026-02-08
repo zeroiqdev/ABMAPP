@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { View, Text, StyleSheet, Dimensions, FlatList, TouchableOpacity, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { firebaseService } from '@/services/firebaseService';
@@ -7,13 +7,15 @@ import { Order } from '@/types';
 import { format, subMonths, addMonths, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 import { Ionicons } from '@expo/vector-icons';
 import { MonthPickerModal } from '@/components/MonthPickerModal';
-import { Colors } from '@/constants/design';
+import { Colors, useColors } from '@/constants/design';
 
 const { width } = Dimensions.get('window');
 
 export const VendorHome = () => {
     const router = useRouter();
     const { user } = useAuthStore();
+    const colors = useColors();
+    const styles = useMemo(() => getStyles(colors), [colors]);
     const [allOrders, setAllOrders] = useState<Order[]>([]);
     const [filteredOrders, setFilteredOrders] = useState<Order[]>([]);
     const [recentOrders, setRecentOrders] = useState<Order[]>([]);
@@ -121,17 +123,17 @@ export const VendorHome = () => {
                         style={styles.dateSelector}
                         onPress={() => setPickerVisible(true)}
                     >
-                        <Ionicons name="calendar-outline" size={16} color="#000" />
+                        <Ionicons name="calendar-outline" size={16} color={colors.textPrimary} />
                         <Text style={styles.dateText}>
                             {format(dateRange.start, 'MMM yyyy') === format(dateRange.end, 'MMM yyyy')
                                 ? format(dateRange.start, 'MMM yyyy')
                                 : `${format(dateRange.start, 'MMM yyyy')} - ${format(dateRange.end, 'MMM yyyy')}`}
                         </Text>
-                        <Ionicons name="chevron-down" size={16} color="#000" />
+                        <Ionicons name="chevron-down" size={16} color={colors.textPrimary} />
                     </TouchableOpacity>
                 </View>
                 <View style={styles.statsGrid}>
-                    <View style={[styles.statCard, { backgroundColor: '#000' }]}>
+                    <View style={[styles.statCard, { backgroundColor: colors.surface }]}>
                         <Text style={styles.statLabel}>Revenue</Text>
                         <Text style={styles.statValue}>₦{vendorStats.revenue.toLocaleString()}</Text>
                     </View>
@@ -180,10 +182,10 @@ export const VendorHome = () => {
     );
 };
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#fff',
+        backgroundColor: colors.background,
         paddingTop: 60,
     },
     header: {
@@ -198,11 +200,11 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 24,
         fontWeight: 'bold',
-        color: '#000',
+        color: colors.textPrimary,
     },
     headerSubtitle: {
         fontSize: 14,
-        color: '#666',
+        color: colors.textSecondary,
         marginTop: 5,
     },
     dashboardContainer: {
@@ -212,7 +214,7 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 18,
         fontWeight: 'bold',
-        color: '#000',
+        color: colors.textPrimary,
         marginBottom: 15,
     },
     statsGrid: {
@@ -222,22 +224,24 @@ const styles = StyleSheet.create({
     },
     statCard: {
         width: (width - 52) / 2, // 20px padding * 2 + 12px gap
-        backgroundColor: '#000',
+        backgroundColor: colors.surface,
         padding: 16,
         borderRadius: 16,
         alignItems: 'flex-start',
         justifyContent: 'center',
         minHeight: 100,
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     statLabel: {
         fontSize: 14,
-        color: '#ccc',
+        color: colors.textTertiary,
         marginBottom: 8,
     },
     statValue: {
         fontSize: 28,
         fontWeight: 'bold',
-        color: '#fff',
+        color: colors.textPrimary,
     },
     recentOrdersContainer: {
         paddingHorizontal: 20,
@@ -249,16 +253,16 @@ const styles = StyleSheet.create({
         marginBottom: 15,
     },
     viewAllText: {
-        color: '#666',
+        color: colors.textSecondary,
         fontSize: 14,
     },
     recentOrderCard: {
-        backgroundColor: '#f9f9f9',
+        backgroundColor: colors.surface,
         padding: 16,
         borderRadius: 12,
         marginBottom: 12,
         borderWidth: 1,
-        borderColor: '#eee',
+        borderColor: colors.border,
     },
     recentOrderHeader: {
         flexDirection: 'row',
@@ -269,7 +273,7 @@ const styles = StyleSheet.create({
     recentOrderId: {
         fontSize: 14,
         fontWeight: '600',
-        color: '#333',
+        color: colors.textPrimary,
     },
     statusBadge: {
         paddingHorizontal: 8,
@@ -287,30 +291,32 @@ const styles = StyleSheet.create({
     },
     recentOrderDate: {
         fontSize: 12,
-        color: '#666',
+        color: colors.textSecondary,
     },
     recentOrderTotal: {
         fontSize: 16,
         fontWeight: 'bold',
-        color: '#000',
+        color: colors.textPrimary,
     },
     emptyText: {
         textAlign: 'center',
-        color: '#999',
+        color: colors.textTertiary,
         marginTop: 20,
     },
     dateSelector: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#f5f5f5',
+        backgroundColor: colors.surface,
         borderRadius: 20,
         paddingHorizontal: 12,
         paddingVertical: 8,
         gap: 8,
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     dateText: {
         fontSize: 14,
         fontWeight: '600',
-        color: '#000',
+        color: colors.textPrimary,
     },
 });

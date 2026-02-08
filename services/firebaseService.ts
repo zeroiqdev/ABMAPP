@@ -39,6 +39,10 @@ import {
   StaffInvitation,
   ChatMessage,
   RolePermissions,
+  Quote,
+  QuoteItem,
+  ApprovalEntry,
+  PaymentRecord,
 } from '@/types';
 
 export const firebaseService = {
@@ -75,6 +79,56 @@ export const firebaseService = {
         updatedAt: data.updatedAt?.toDate() || new Date(),
       };
     }) as User[];
+  },
+
+  // DEBUG ONLY: Fetch all users to diagnose missing customer issues
+  async debugGetAllUsers(): Promise<{ id: string; name: string; email: string; role: string; workshopId: string | undefined }[]> {
+    console.log('[DEBUG] Fetching ALL users from Firestore...');
+    const snapshot = await getDocs(collection(db, 'users'));
+    const users = snapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        name: data.name || 'N/A',
+        email: data.email || 'N/A',
+        role: data.role || 'N/A',
+        workshopId: data.workshopId || undefined,
+      };
+    });
+    console.log('[DEBUG] Total users found:', users.length);
+    users.forEach(u => {
+      console.log(`[DEBUG] User: ${u.name} | Email: ${u.email} | Role: ${u.role} | Workshop: ${u.workshopId || 'NONE'}`);
+    });
+    return users;
+  },
+
+  // Find user by email (without workshopId filter) and optionally fix their workshopId
+  async findAndFixUserByEmail(email: string, correctWorkshopId: string): Promise<{ found: boolean; fixed: boolean; user?: any }> {
+    console.log('[DEBUG] Searching for user with email:', email);
+    const q = query(collection(db, 'users'), where('email', '==', email.toLowerCase().trim()));
+    const snapshot = await getDocs(q);
+
+    if (snapshot.empty) {
+      console.log('[DEBUG] No user found with email:', email);
+      return { found: false, fixed: false };
+    }
+
+    const userDoc = snapshot.docs[0];
+    const userData = userDoc.data();
+    console.log('[DEBUG] Found user:', userData.name, '| Current workshopId:', userData.workshopId || 'NONE', '| Role:', userData.role);
+
+    // Check if workshopId needs fixing
+    if (userData.workshopId !== correctWorkshopId) {
+      console.log('[DEBUG] Fixing workshopId from', userData.workshopId, 'to', correctWorkshopId);
+      await updateDoc(doc(db, 'users', userDoc.id), {
+        workshopId: correctWorkshopId,
+        role: 'customer', // Ensure role is set correctly too
+        updatedAt: Timestamp.now(),
+      });
+      return { found: true, fixed: true, user: { id: userDoc.id, ...userData } };
+    }
+
+    return { found: true, fixed: false, user: { id: userDoc.id, ...userData } };
   },
 
   async updateUser(userId: string, data: Partial<User>): Promise<void> {
@@ -203,21 +257,45 @@ export const firebaseService = {
   },
 
   async getUsersByRole(role: string, workshopId: string): Promise<User[]> {
-    const q = query(
+    // Query by direct workshopId field (staff-created customers)
+    const directQuery = query(
       collection(db, 'users'),
       where('role', '==', role),
       where('workshopId', '==', workshopId)
     );
-    const snapshot = await getDocs(q);
-    const users = snapshot.docs.map((doc) => {
+
+    // Query by selectedWorkshopIds array (member mode customers)
+    const arrayQuery = query(
+      collection(db, 'users'),
+      where('role', '==', role),
+      where('selectedWorkshopIds', 'array-contains', workshopId)
+    );
+
+    // Execute both queries
+    const [directSnapshot, arraySnapshot] = await Promise.all([
+      getDocs(directQuery),
+      getDocs(arrayQuery)
+    ]);
+
+    // Combine results using Map to avoid duplicates
+    const userMap = new Map<string, User>();
+
+    const processDoc = (doc: any) => {
       const data = doc.data();
-      return {
-        id: doc.id,
-        ...data,
-        createdAt: data.createdAt?.toDate() || new Date(),
-        updatedAt: data.updatedAt?.toDate() || new Date(),
-      };
-    }) as User[];
+      if (!userMap.has(doc.id)) {
+        userMap.set(doc.id, {
+          id: doc.id,
+          ...data,
+          createdAt: data.createdAt?.toDate() || new Date(),
+          updatedAt: data.updatedAt?.toDate() || new Date(),
+        } as User);
+      }
+    };
+
+    directSnapshot.docs.forEach(processDoc);
+    arraySnapshot.docs.forEach(processDoc);
+
+    const users = Array.from(userMap.values());
 
     // Sort in memory by name ascending
     return users.sort((a, b) => {
@@ -225,6 +303,90 @@ export const firebaseService = {
       const bName = b.name?.toLowerCase() || '';
       return aName.localeCompare(bName);
     });
+  },
+
+  subscribeToUsersByRole(
+    role: string,
+    workshopId: string,
+    callback: (users: User[]) => void
+  ): () => void {
+    // Track results from both subscriptions
+    let directUsers: User[] = [];
+    let arrayUsers: User[] = [];
+
+    const combineAndCallback = () => {
+      // Combine results using Map to avoid duplicates
+      const userMap = new Map<string, User>();
+      directUsers.forEach(u => userMap.set(u.id, u));
+      arrayUsers.forEach(u => { if (!userMap.has(u.id)) userMap.set(u.id, u); });
+
+      const combinedUsers = Array.from(userMap.values());
+
+      // Sort in memory by name ascending
+      const sortedUsers = combinedUsers.sort((a, b) => {
+        const aName = a.name?.toLowerCase() || '';
+        const bName = b.name?.toLowerCase() || '';
+        return aName.localeCompare(bName);
+      });
+
+      callback(sortedUsers);
+    };
+
+    // Query by direct workshopId field (staff-created users)
+    const directQuery = query(
+      collection(db, 'users'),
+      where('role', '==', role),
+      where('workshopId', '==', workshopId)
+    );
+
+    // Query by selectedWorkshopIds array (member mode users)
+    const arrayQuery = query(
+      collection(db, 'users'),
+      where('role', '==', role),
+      where('selectedWorkshopIds', 'array-contains', workshopId)
+    );
+
+    const unsubDirect = onSnapshot(directQuery, (snapshot) => {
+      directUsers = snapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          createdAt: data.createdAt?.toDate() || new Date(),
+          updatedAt: data.updatedAt?.toDate() || new Date(),
+        };
+      }) as User[];
+      combineAndCallback();
+    }, (error) => {
+      console.error('Error subscribing to users (direct):', error);
+      if (error.message?.includes('index')) {
+        console.warn('MISSING INDEX: Please create the required Firestore index for this query.');
+      }
+    });
+
+    const unsubArray = onSnapshot(arrayQuery, (snapshot) => {
+      arrayUsers = snapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          createdAt: data.createdAt?.toDate() || new Date(),
+          updatedAt: data.updatedAt?.toDate() || new Date(),
+        };
+      }) as User[];
+      combineAndCallback();
+    }, (error) => {
+      console.error('Error subscribing to users (array):', error);
+      if (error.message?.includes('index')) {
+        console.warn('MISSING INDEX: Please create the required Firestore index for this query.');
+      }
+    });
+
+    // Return function to unsubscribe from both
+    return () => {
+      unsubDirect();
+      unsubArray();
+    };
   },
 
   async getVehicle(vehicleId: string): Promise<Vehicle | null> {
@@ -312,13 +474,18 @@ export const firebaseService = {
     const docRef = doc(db, 'jobs', jobId);
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
+      const data = docSnap.data();
       return {
         id: docSnap.id,
-        ...docSnap.data(),
-        createdAt: docSnap.data().createdAt?.toDate(),
-        updatedAt: docSnap.data().updatedAt?.toDate(),
-        scheduledDate: docSnap.data().scheduledDate?.toDate(),
-        completedAt: docSnap.data().completedAt?.toDate(),
+        ...data,
+        createdAt: data.createdAt?.toDate(),
+        updatedAt: data.updatedAt?.toDate(),
+        scheduledDate: data.scheduledDate?.toDate(),
+        completedAt: data.completedAt?.toDate(),
+        statusHistory: data.statusHistory?.map((entry: any) => ({
+          ...entry,
+          changedAt: entry.changedAt?.toDate(),
+        })),
       } as Job;
     }
     return null;
@@ -420,21 +587,33 @@ export const firebaseService = {
     const customerIdentifier = invoice.userId ? invoice.userId.slice(0, 8) : 'DIRECT';
     const invoiceId = `INV-${customerIdentifier}-${lastFour}`;
 
+    // Sanitize invoice object to remove undefined values which Firestore setDoc doesn't accept
+    const cleanInvoice = Object.entries(invoice).reduce((acc, [key, value]) => {
+      if (value !== undefined) {
+        acc[key] = value;
+      }
+      return acc;
+    }, {} as any);
+
     // Use setDoc with custom ID instead of setDoc
     const docRef = doc(db, 'invoices', invoiceId);
     await setDoc(docRef, {
-      ...invoice,
-      status: 'draft', // Default status
+      ...cleanInvoice,
+      status: cleanInvoice.status || 'draft', // Use passed status or default
       createdAt: Timestamp.now(),
     });
 
     // Send Push Notification to Admins
-    const { notificationService } = require('./notificationService');
-    notificationService.sendPushToAdmins(
-      'New Invoice Created',
-      `Invoice #${invoiceId} created for ${customerIdentifier}`,
-      { type: 'invoice', id: invoiceId }
-    ).catch((err: any) => console.log('Failed to send admin push:', err));
+    try {
+      const { notificationService } = require('./notificationService');
+      notificationService.sendPushToAdmins(
+        'New Invoice Created',
+        `Invoice #${invoiceId} created for ${customerIdentifier}`,
+        { type: 'invoice', id: invoiceId }
+      ).catch((err: any) => console.log('Failed to send admin push:', err));
+    } catch (e) {
+      console.log('Notification service not available yet');
+    }
 
     return invoiceId;
   },
@@ -872,6 +1051,17 @@ export const firebaseService = {
     return null;
   },
 
+  async getAllWorkshops(): Promise<Workshop[]> {
+    const q = query(collection(db, 'workshops'));
+    const snap = await getDocs(q);
+    return snap.docs.map(docSnap => ({
+      id: docSnap.id,
+      ...docSnap.data(),
+      createdAt: docSnap.data().createdAt?.toDate(),
+      subscriptionExpiry: docSnap.data().subscriptionExpiry?.toDate(),
+    } as Workshop));
+  },
+
   async updateWorkshop(workshopId: string, data: Partial<Workshop>): Promise<void> {
     await updateDoc(doc(db, 'workshops', workshopId), data);
   },
@@ -998,14 +1188,21 @@ export const firebaseService = {
       orderBy('createdAt', 'desc')
     );
     return onSnapshot(q, (snapshot) => {
-      const jobs = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().createdAt?.toDate(),
-        updatedAt: doc.data().updatedAt?.toDate(),
-        scheduledDate: doc.data().scheduledDate?.toDate(),
-        completedAt: doc.data().completedAt?.toDate(),
-      })) as Job[];
+      const jobs = snapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          createdAt: data.createdAt?.toDate(),
+          updatedAt: data.updatedAt?.toDate(),
+          scheduledDate: data.scheduledDate?.toDate(),
+          completedAt: data.completedAt?.toDate(),
+          statusHistory: data.statusHistory?.map((entry: any) => ({
+            ...entry,
+            changedAt: entry.changedAt?.toDate(),
+          })),
+        };
+      }) as Job[];
       callback(jobs);
     });
   },
@@ -1302,6 +1499,381 @@ export const firebaseService = {
     await updateDoc(docRef, {
       status,
       updatedAt: Timestamp.now(),
+    });
+  },
+
+  // ============ QUOTE FUNCTIONS ============
+
+  async createQuote(quote: Omit<Quote, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
+    const docRef = await addDoc(collection(db, 'quotes'), {
+      ...quote,
+      status: 'draft',
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    });
+    return docRef.id;
+  },
+
+  async getQuote(quoteId: string): Promise<Quote | null> {
+    const docRef = doc(db, 'quotes', quoteId);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      return {
+        id: docSnap.id,
+        ...data,
+        createdAt: data.createdAt?.toDate(),
+        updatedAt: data.updatedAt?.toDate(),
+        sentAt: data.sentAt?.toDate(),
+        items: data.items?.map((item: any) => ({
+          ...item,
+          addedAt: item.addedAt?.toDate(),
+          approvedAt: item.approvedAt?.toDate(),
+        })),
+        history: data.history?.map((log: any) => ({
+          ...log,
+          timestamp: log.timestamp?.toDate(),
+        })),
+      } as Quote;
+    }
+    return null;
+  },
+
+  async getQuotes(workshopId?: string, userId?: string): Promise<Quote[]> {
+    const constraints: QueryConstraint[] = [];
+    if (workshopId) {
+      constraints.push(where('workshopId', '==', workshopId));
+    }
+    if (userId) {
+      constraints.push(where('userId', '==', userId));
+    }
+    constraints.push(orderBy('createdAt', 'desc'));
+
+    const q = query(collection(db, 'quotes'), ...constraints);
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        createdAt: data.createdAt?.toDate(),
+        updatedAt: data.updatedAt?.toDate(),
+        sentAt: data.sentAt?.toDate(),
+        items: data.items?.map((item: any) => ({
+          ...item,
+          addedAt: item.addedAt?.toDate(),
+          approvedAt: item.approvedAt?.toDate(),
+        })),
+        history: data.history?.map((log: any) => ({
+          ...log,
+          timestamp: log.timestamp?.toDate(),
+        })),
+      };
+    }) as Quote[];
+  },
+
+  async updateQuote(quoteId: string, data: Partial<Quote>): Promise<void> {
+    const docRef = doc(db, 'quotes', quoteId);
+    await updateDoc(docRef, {
+      ...data,
+      updatedAt: Timestamp.now(),
+    });
+  },
+
+  async sendQuoteForApproval(quoteId: string, userId: string, userName: string): Promise<void> {
+    const docRef = doc(db, 'quotes', quoteId);
+    await updateDoc(docRef, {
+      status: 'pending_approval',
+      sentAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    });
+
+    await this.addQuoteLog(quoteId, {
+      action: 'send',
+      description: 'Quote sent for approval',
+      userId,
+      userName,
+    });
+    // TODO: Send notification to customer
+  },
+
+  // Get quotes pending approval for a customer
+  async getQuotesForCustomer(userId: string): Promise<Quote[]> {
+    // Query by userId (used by some older quotes or manual quotes)
+    const qByUserId = query(
+      collection(db, 'quotes'),
+      where('userId', '==', userId),
+      where('status', '==', 'pending_approval')
+    );
+
+    // Query by customerId (used by job-created quotes)
+    const qByCustomerId = query(
+      collection(db, 'quotes'),
+      where('customerId', '==', userId),
+      where('status', '==', 'pending_approval')
+    );
+
+    const [snapshotUserId, snapshotCustomerId] = await Promise.all([
+      getDocs(qByUserId),
+      getDocs(qByCustomerId),
+    ]);
+
+    // Combine and deduplicate by quote ID
+    const quotesMap = new Map<string, Quote>();
+
+    const processDoc = (docSnap: any) => {
+      const data = docSnap.data();
+      return {
+        id: docSnap.id,
+        ...data,
+        createdAt: data.createdAt?.toDate(),
+        updatedAt: data.updatedAt?.toDate(),
+        sentAt: data.sentAt?.toDate(),
+        items: data.items?.map((item: any) => ({
+          ...item,
+          addedAt: item.addedAt?.toDate(),
+          approvedAt: item.approvedAt?.toDate(),
+        })),
+        history: data.history?.map((log: any) => ({
+          ...log,
+          timestamp: log.timestamp?.toDate(),
+        })),
+      } as Quote;
+    };
+
+    snapshotUserId.docs.forEach((docSnap) => {
+      quotesMap.set(docSnap.id, processDoc(docSnap));
+    });
+
+    snapshotCustomerId.docs.forEach((docSnap) => {
+      if (!quotesMap.has(docSnap.id)) {
+        quotesMap.set(docSnap.id, processDoc(docSnap));
+      }
+    });
+
+    return Array.from(quotesMap.values());
+  },
+
+  // Reject a quote with optional reason
+  // Reject a quote with optional reason
+  async rejectQuote(quoteId: string, userId: string, userName: string, reason?: string): Promise<void> {
+    const docRef = doc(db, 'quotes', quoteId);
+    const updateData: any = {
+      status: 'rejected',
+      updatedAt: Timestamp.now(),
+    };
+    if (reason) {
+      updateData.rejectionReason = reason;
+    }
+    await updateDoc(docRef, updateData);
+
+    await this.addQuoteLog(quoteId, {
+      action: 'reject',
+      description: reason ? `Quote rejected: ${reason}` : 'Quote rejected',
+      userId,
+      userName,
+    });
+  },
+
+  async addQuoteLog(quoteId: string, log: { action: string; description: string; userId: string; userName: string }): Promise<void> {
+    const docRef = doc(db, 'quotes', quoteId);
+    await updateDoc(docRef, {
+      history: arrayUnion({
+        ...log,
+        timestamp: Timestamp.now(),
+      }),
+      updatedAt: Timestamp.now(),
+    });
+  },
+
+  async approveQuote(quoteId: string, approverId: string, approverName: string, expectedTotal?: number): Promise<string> {
+    // Get the quote
+    const quote = await this.getQuote(quoteId);
+    if (!quote) throw new Error('Quote not found');
+    if (quote.status !== 'pending_approval') throw new Error('Quote is not pending approval');
+
+    // Safety Check: Ensure price hasn't changed since user viewed it
+    if (expectedTotal !== undefined) {
+      // Use a small epsilon for float comparison just in case, though usually exact matching is preferred for currency integers/fixed
+      // Assuming integers or consistent rounding. Let's use strict equality but logging.
+      if (quote.total !== expectedTotal) {
+        throw new Error(`Price Mismatch: The quote total has changed from ₦${expectedTotal.toLocaleString()} to ₦${quote.total.toLocaleString()}. Please review the updated quote.`);
+      }
+    }
+
+    // Create invoice from quote
+    const invoiceId = await this.createInvoice({
+      jobId: quote.jobId,
+      userId: approverId, // Use approver's ID (Customer) to ensure invoice belongs to the authenticated user
+      customerName: quote.customerName,
+      customerPhone: quote.customerPhone,
+      customerEmail: quote.customerEmail,
+      customerAddress: quote.customerAddress,
+      workshopId: quote.workshopId,
+      items: quote.items.map(item => ({
+        description: item.description,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        total: item.total,
+      })),
+      subtotal: quote.subtotal,
+      vat: quote.vat,
+      vatRate: quote.vatRate,
+      discount: quote.discount,
+      total: quote.total,
+      paymentStatus: 'pending',
+      status: 'approved',
+      invoiceStatus: 'approved',
+      approvedAt: new Date(),
+      approvedBy: approverId,
+      approvalHistory: [{
+        approvedBy: approverId,
+        approvedByName: approverName,
+        approvedAmount: quote.total,
+        approvedAt: new Date(),
+      }],
+      sourceQuoteId: quoteId,
+    });
+
+    // Mark quote as converted
+    await this.updateQuote(quoteId, {
+      status: 'converted',
+      convertedToInvoiceId: invoiceId,
+    });
+
+    await this.addQuoteLog(quoteId, {
+      action: 'approve',
+      description: `Quote approved (₦${quote.total.toLocaleString()})`,
+      userId: approverId,
+      userName: approverName,
+    });
+
+    return invoiceId;
+  },
+
+  async addInvoiceItem(invoiceId: string, item: Omit<QuoteItem, 'id' | 'addedAt'>): Promise<void> {
+    const invoice = await this.getInvoice(invoiceId);
+    if (!invoice) throw new Error('Invoice not found');
+    if (invoice.invoiceStatus === 'settled') throw new Error('Invoice is settled and cannot be modified');
+
+    const newItem = {
+      ...item,
+      id: `item_${Date.now()}`,
+      addedAt: new Date(),
+      isAdditionalWork: true,
+    };
+
+    const pendingItems = [...(invoice.pendingItems || []), {
+      description: newItem.description,
+      quantity: newItem.quantity,
+      unitPrice: newItem.unitPrice,
+      total: newItem.total,
+    }];
+
+    await this.updateInvoice(invoiceId, {
+      pendingItems,
+      invoiceStatus: 'pending_approval',
+    });
+  },
+
+  async approveInvoiceChanges(invoiceId: string, approverId: string, approverName: string): Promise<void> {
+    const invoice = await this.getInvoice(invoiceId);
+    if (!invoice) throw new Error('Invoice not found');
+    if (invoice.invoiceStatus !== 'pending_approval') throw new Error('No pending changes to approve');
+
+    // Merge pending items into main items
+    const mergedItems = [...invoice.items, ...(invoice.pendingItems || [])];
+    const newSubtotal = mergedItems.reduce((sum, item) => sum + item.total, 0);
+    const newVat = newSubtotal * ((invoice.vatRate || 0) / 100);
+    const newTotal = newSubtotal + newVat - (invoice.discount || 0);
+
+    const approvalEntry: ApprovalEntry = {
+      approvedBy: approverId,
+      approvedByName: approverName,
+      approvedAmount: newTotal,
+      approvedAt: new Date(),
+    };
+
+    await this.updateInvoice(invoiceId, {
+      items: mergedItems,
+      pendingItems: [],
+      subtotal: newSubtotal,
+      vat: newVat,
+      total: newTotal,
+      invoiceStatus: 'approved',
+      approvalHistory: [...(invoice.approvalHistory || []), approvalEntry],
+    });
+  },
+
+  async settleInvoice(invoiceId: string): Promise<void> {
+    const invoice = await this.getInvoice(invoiceId);
+    if (!invoice) throw new Error('Invoice not found');
+
+    await this.updateInvoice(invoiceId, {
+      invoiceStatus: 'settled',
+      paymentStatus: 'paid',
+    });
+  },
+
+  async recordPayment(invoiceId: string, payment: Omit<PaymentRecord, 'date'>): Promise<void> {
+    const invoice = await this.getInvoice(invoiceId);
+    if (!invoice) throw new Error('Invoice not found');
+    if (invoice.invoiceStatus === 'settled') throw new Error('Invoice is already settled');
+
+    const paymentEntry: PaymentRecord = {
+      ...payment,
+      date: new Date(),
+      entityType: 'invoice',
+      entityId: invoiceId,
+    };
+
+    const newAmountPaid = (invoice.amountPaid || 0) + payment.amount;
+    const paymentHistory = [...(invoice.paymentHistory || []), paymentEntry];
+
+    let newPaymentStatus = invoice.paymentStatus;
+    if (newAmountPaid >= invoice.total) {
+      newPaymentStatus = 'paid';
+    } else if (newAmountPaid > 0) {
+      newPaymentStatus = 'partially_paid';
+    }
+
+    await this.updateInvoice(invoiceId, {
+      amountPaid: newAmountPaid,
+      paymentHistory,
+      paymentStatus: newPaymentStatus,
+    });
+  },
+
+  subscribeToQuotes(
+    workshopId: string,
+    callback: (quotes: Quote[]) => void
+  ): () => void {
+    const q = query(
+      collection(db, 'quotes'),
+      where('workshopId', '==', workshopId),
+      orderBy('createdAt', 'desc')
+    );
+    return onSnapshot(q, (snapshot) => {
+      const quotes = snapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          createdAt: data.createdAt?.toDate(),
+          updatedAt: data.updatedAt?.toDate(),
+          sentAt: data.sentAt?.toDate(),
+          items: data.items?.map((item: any) => ({
+            ...item,
+            addedAt: item.addedAt?.toDate(),
+            approvedAt: item.approvedAt?.toDate(),
+          })),
+          history: data.history?.map((log: any) => ({
+            ...log,
+            timestamp: log.timestamp?.toDate(),
+          })),
+        };
+      }) as Quote[];
+      callback(quotes);
     });
   },
 };

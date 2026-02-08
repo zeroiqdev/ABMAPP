@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { firebaseService } from '@/services/firebaseService';
 import { MarketplaceProduct } from '@/types';
 import { useAuthStore } from '@/store/authStore';
+import { useColors } from '@/constants/design';
 
 const { width } = Dimensions.get('window');
 const COLUMN_WIDTH = (width - 40) / 2;
@@ -36,6 +37,8 @@ const CATEGORIES = [
 export default function MarketplaceScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
+  const colors = useColors();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   const [products, setProducts] = useState<MarketplaceProduct[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
@@ -80,12 +83,9 @@ export default function MarketplaceScreen() {
           <Image source={{ uri: item.images[0] }} style={styles.productImage} />
         ) : (
           <View style={[styles.productImage, styles.placeholderImage]}>
-            <Ionicons name="image-outline" size={30} color="#ccc" />
+            <Ionicons name="image-outline" size={30} color={colors.textTertiary} />
           </View>
         )}
-        <TouchableOpacity style={styles.favoriteButton}>
-          <Ionicons name="heart-outline" size={18} color="#fff" />
-        </TouchableOpacity>
         {item.stock <= 0 && (
           <View style={styles.outOfStockOverlay}>
             <Text style={styles.outOfStockText}>SOLD OUT</Text>
@@ -99,7 +99,7 @@ export default function MarketplaceScreen() {
         </Text>
 
         <View style={styles.ratingRow}>
-          <Ionicons name="star" size={16} color="#000" />
+          <Ionicons name="star" size={16} color={colors.textPrimary} />
           <Text style={styles.ratingText}>{item.rating || 'New'}</Text>
           <Text style={styles.ratingSeparator}>|</Text>
           <View style={styles.soldBadge}>
@@ -122,20 +122,20 @@ export default function MarketplaceScreen() {
             style={styles.cartButton}
             onPress={() => router.push('/(customer)/cart')}
           >
-            <Ionicons name="bag-handle-outline" size={24} color="#000" />
+            <Ionicons name="bag-outline" size={24} color={colors.textPrimary} />
             <View style={styles.cartBadge} />
           </TouchableOpacity>
         </View>
 
         {/* Search Bar */}
         <View style={styles.searchContainer}>
-          <Ionicons name="search-outline" size={20} color="#666" />
+          <Ionicons name="search-outline" size={20} color={colors.textSecondary} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search parts, tools..."
             value={searchTerm}
             onChangeText={setSearchTerm}
-            placeholderTextColor="#999"
+            placeholderTextColor={colors.textTertiary}
           />
         </View>
       </View>
@@ -186,7 +186,7 @@ export default function MarketplaceScreen() {
           ListEmptyComponent={
             !loading ? (
               <View style={styles.emptyState}>
-                <Ionicons name="search" size={64} color="#ccc" />
+                <Ionicons name="search" size={64} color={colors.textTertiary} />
                 <Text style={styles.emptyText}>No products found</Text>
               </View>
             ) : null
@@ -197,16 +197,16 @@ export default function MarketplaceScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.background,
   },
   header: {
     paddingTop: 60,
     paddingHorizontal: 20,
     paddingBottom: 15,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
   },
   headerTop: {
     flexDirection: 'row',
@@ -218,19 +218,20 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.background,
     justifyContent: 'center',
     alignItems: 'center',
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
+    color: colors.textPrimary,
   },
   cartButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.background,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
@@ -244,24 +245,27 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: 'red',
     borderWidth: 1,
-    borderColor: '#fff',
+    borderColor: colors.textInverse,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.background,
     paddingHorizontal: 15,
     paddingVertical: 12,
     borderRadius: 25,
     gap: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   searchInput: {
     flex: 1,
     fontSize: 16,
-    color: '#000',
+    color: colors.textPrimary,
   },
   contentContainer: {
     flex: 1,
+    backgroundColor: colors.background,
   },
   categoriesWrapper: {
     paddingVertical: 10,
@@ -274,22 +278,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 25,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#eee',
+    borderColor: colors.border,
     marginRight: 8,
   },
   categoryChipActive: {
-    backgroundColor: '#000',
-    borderColor: '#000',
+    backgroundColor: colors.textPrimary, // Or colors.primary
+    borderColor: colors.textPrimary,
   },
   categoryText: {
     fontSize: 14,
-    color: '#000',
+    color: colors.textPrimary,
     fontWeight: '500',
   },
   categoryTextActive: {
-    color: '#fff',
+    color: colors.textInverse, // Or based on chip active bg
   },
   productsList: {
     paddingHorizontal: 20,
@@ -309,10 +313,12 @@ const styles = StyleSheet.create({
     width: '100%',
     height: COLUMN_WIDTH * 1.0, // Reduced height (square)
     borderRadius: 20,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.surface,
     marginBottom: 0, // Removed bottom margin from container
     overflow: 'hidden',
     position: 'relative',
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   productImage: {
     width: '100%',
@@ -322,6 +328,7 @@ const styles = StyleSheet.create({
   placeholderImage: {
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: colors.surface,
   },
   favoriteButton: {
     position: 'absolute',
@@ -330,7 +337,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#000',
+    backgroundColor: 'rgba(0,0,0,0.5)', // Keep transparent black for contrast on image
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 10,
@@ -360,88 +367,37 @@ const styles = StyleSheet.create({
   ratingText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#000',
+    color: colors.textPrimary,
     marginLeft: 4,
   },
   ratingSeparator: {
     marginHorizontal: 8,
-    color: '#ccc',
+    color: colors.textTertiary,
     fontSize: 14,
   },
   soldBadge: {
-    backgroundColor: '#f0f0f0',
+    backgroundColor: colors.surface,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
+    borderWidth: 1,
+    borderColor: colors.border, // Add border for visibility
   },
   soldText: {
     fontSize: 10,
-    color: '#666',
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   productName: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#000',
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   productPrice: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#000',
-  },
-  promoBanner: {
-    backgroundColor: '#000',
-    borderRadius: 20,
-    padding: 24,
-    marginBottom: 30,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  promoContent: {
-    flex: 1,
-  },
-  promoTitle: {
-    color: '#fff',
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  promoSubtitle: {
-    color: '#ccc',
-    fontSize: 14,
-  },
-  promoImagePlaceholder: {
-    width: 80,
-    height: 80,
-    backgroundColor: '#333',
-    borderRadius: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  fab: {
-    position: 'absolute',
-    bottom: 30,
-    right: 30,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#000',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 8,
-  },
-  productsList: {
-    paddingHorizontal: 16,
-    paddingBottom: 20,
-  },
-  columnWrapper: {
-    justifyContent: 'space-between',
+    color: colors.textPrimary,
   },
   emptyState: {
     padding: 40,
@@ -449,7 +405,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     marginTop: 10,
-    color: '#999',
+    color: colors.textTertiary,
     fontSize: 16,
   },
 });

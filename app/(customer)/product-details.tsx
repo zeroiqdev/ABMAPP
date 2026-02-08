@@ -121,9 +121,9 @@ export default function ProductDetailsScreen() {
                 <TouchableOpacity style={styles.iconButton} onPress={handleBack}>
                     <Ionicons name="arrow-back" size={24} color="#000" />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle} numberOfLines={1}>{product.name}</Text>
+                <Text style={styles.headerTitle} numberOfLines={1}>Product Details</Text>
                 <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/(customer)/cart')}>
-                    <Ionicons name="bag-handle-outline" size={24} color="#000" />
+                    <Ionicons name="bag-outline" size={24} color="#000" />
                 </TouchableOpacity>
             </View>
 
@@ -176,9 +176,6 @@ export default function ProductDetailsScreen() {
                     {/* Title & Stats */}
                     <View style={styles.titleRow}>
                         <Text style={styles.productName}>{product.name}</Text>
-                        <TouchableOpacity>
-                            <Ionicons name="heart-outline" size={24} color="#000" />
-                        </TouchableOpacity>
                     </View>
 
                     <View style={styles.statsRow}>
@@ -245,7 +242,7 @@ export default function ProductDetailsScreen() {
                     onPress={handleAddToCart}
                     disabled={product.stock === 0}
                 >
-                    <Ionicons name="bag-handle" size={20} color="#fff" />
+                    <Ionicons name="bag-outline" size={20} color="#fff" />
                     <Text style={styles.addToCartText}>Add to Cart</Text>
                 </TouchableOpacity>
             </View>

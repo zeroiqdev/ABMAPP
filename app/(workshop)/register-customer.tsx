@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -14,15 +14,17 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
+import { useColors } from '@/constants/design';
 
 export default function RegisterCustomerScreen() {
   const { user } = useAuthStore();
   const router = useRouter();
+  const colors = useColors();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
-  const [registrationCode, setRegistrationCode] = useState<string | null>(null);
 
   const handleRegister = async () => {
     if (!name || !email || !phone) {
@@ -59,7 +61,8 @@ export default function RegisterCustomerScreen() {
         return;
       }
 
-      // Create the customer in users collection first
+      // Create the customer in users collection
+      // When customer signs up with this email, they will be auto-linked to this workshop
       await firebaseService.createCustomer({
         email: email.toLowerCase().trim(),
         name,
@@ -68,30 +71,21 @@ export default function RegisterCustomerScreen() {
         workshopId: user.workshopId,
       } as any);
 
-      // Then create the registration code for account setup
-      const result = await firebaseService.createCustomerRegistration(
-        email,
-        name,
-        phone,
-        user.id,
-        user.workshopId
-      );
-      setRegistrationCode(result.registrationCode);
       Alert.alert(
         'Customer Created',
-        `Customer has been added to your list.\n\nRegistration code: ${result.registrationCode}\n\nShare this code with the customer to complete their account setup.`,
+        'Customer has been added to your list. They can now sign up using this email address to access their account.',
         [
           {
-            text: 'Copy Code',
+            text: 'Add Another',
             onPress: () => {
-              // In a real app, you'd copy to clipboard
-              Alert.alert('Code Copied', result.registrationCode);
+              setName('');
+              setEmail('');
+              setPhone('');
             },
           },
           {
             text: 'Done',
             onPress: () => {
-              setRegistrationCode(null);
               setName('');
               setEmail('');
               setPhone('');
@@ -114,7 +108,7 @@ export default function RegisterCustomerScreen() {
     >
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.push('/(workshop)/customers')}>
-          <Ionicons name="arrow-back" size={24} color="#000" />
+          <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Register Customer</Text>
         <View style={{ width: 24 }} />
@@ -130,7 +124,7 @@ export default function RegisterCustomerScreen() {
             <TextInput
               style={styles.input}
               placeholder="Full Name"
-              placeholderTextColor="#999"
+              placeholderTextColor={colors.textTertiary}
               value={name}
               onChangeText={setName}
               autoCapitalize="words"
@@ -139,7 +133,7 @@ export default function RegisterCustomerScreen() {
             <TextInput
               style={styles.input}
               placeholder="Email Address"
-              placeholderTextColor="#999"
+              placeholderTextColor={colors.textTertiary}
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -150,7 +144,7 @@ export default function RegisterCustomerScreen() {
             <TextInput
               style={styles.input}
               placeholder="Phone Number"
-              placeholderTextColor="#999"
+              placeholderTextColor={colors.textTertiary}
               value={phone}
               onChangeText={setPhone}
               keyboardType="phone-pad"
@@ -172,10 +166,10 @@ export default function RegisterCustomerScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -183,13 +177,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     paddingTop: 60,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: colors.border,
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
+    color: colors.textPrimary,
   },
   scrollContent: {
     flexGrow: 1,
@@ -200,7 +195,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 16,
-    color: '#666',
+    color: colors.textSecondary,
     marginBottom: 30,
     textAlign: 'center',
   },
@@ -209,14 +204,16 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: colors.border,
     borderRadius: 8,
     padding: 15,
     marginBottom: 15,
     fontSize: 16,
+    color: colors.textPrimary,
+    backgroundColor: colors.surface,
   },
   button: {
-    backgroundColor: '#000',
+    backgroundColor: colors.secondary,
     padding: 15,
     borderRadius: 8,
     alignItems: 'center',
@@ -226,9 +223,8 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   buttonText: {
-    color: '#fff',
+    color: colors.textInverse,
     fontSize: 16,
     fontWeight: '600',
   },
 });
-

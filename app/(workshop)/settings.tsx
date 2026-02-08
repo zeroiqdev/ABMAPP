@@ -11,6 +11,8 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
+import { useThemeStore, ThemeMode } from '@/store/themeStore';
+import { useColors } from '@/constants/design';
 import { firebaseService } from '@/services/firebaseService';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/config/firebase';
@@ -18,6 +20,9 @@ import { db } from '@/config/firebase';
 export default function WorkshopSettingsScreen() {
   const router = useRouter();
   const { user, logout } = useAuthStore();
+  const colors = useColors();
+  const styles = getStyles(colors);
+  const appearanceStyles = getAppearanceStyles(colors);
 
   const [permissions, setPermissions] = useState<any>(null);
 
@@ -71,13 +76,13 @@ export default function WorkshopSettingsScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#000" />
+          <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Settings</Text>
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView style={styles.content}>
+      <ScrollView style={[styles.content, { backgroundColor: colors.background }]}>
 
         {/* Account Section - First */}
         <View style={[styles.section, { marginTop: 30 }]}>
@@ -102,7 +107,7 @@ export default function WorkshopSettingsScreen() {
 
           <TouchableOpacity style={styles.settingRow} onPress={handleResetPassword}>
             <View style={styles.iconContainer}>
-              <Ionicons name="lock-closed" size={20} color="#000" />
+              <Ionicons name="lock-closed" size={20} color={colors.textPrimary} />
             </View>
             <View style={styles.settingInfo}>
               <Text style={styles.settingLabel}>Reset Password</Text>
@@ -141,18 +146,18 @@ export default function WorkshopSettingsScreen() {
               );
             }}
           >
-            <View style={[styles.iconContainer, { backgroundColor: '#fee2e2' }]}>
-              <Ionicons name="trash" size={20} color="#FF3B30" />
+            <View style={[styles.iconContainer, { backgroundColor: colors.error + '20' }]}>
+              <Ionicons name="trash" size={20} color={colors.error} />
             </View>
             <View style={styles.settingInfo}>
-              <Text style={[styles.settingLabel, { color: '#FF3B30' }]}>Delete Account</Text>
+              <Text style={[styles.settingLabel, { color: colors.error }]}>Delete Account</Text>
               <Text style={styles.settingDesc}>Permanently remove your account</Text>
             </View>
-            <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
+            <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-            <Ionicons name="log-out-outline" size={20} color="#FF3B30" />
+            <Ionicons name="log-out-outline" size={20} color={colors.error} />
             <Text style={styles.logoutText}>Log Out</Text>
           </TouchableOpacity>
         </View>
@@ -167,13 +172,13 @@ export default function WorkshopSettingsScreen() {
               onPress={() => router.push('/(super-admin)/dashboard')}
             >
               <View style={styles.iconContainer}>
-                <Ionicons name="settings" size={22} color="#000" />
+                <Ionicons name="settings" size={22} color={colors.textPrimary} />
               </View>
               <View style={styles.settingInfo}>
                 <Text style={styles.settingLabel}>Manage Workshops</Text>
                 <Text style={styles.settingDesc}>Manage workshops and subscriptions</Text>
               </View>
-              <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
+              <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
             </TouchableOpacity>
           </View>
         )}
@@ -188,13 +193,13 @@ export default function WorkshopSettingsScreen() {
               onPress={() => router.push('/(workshop)/staff-invitations')}
             >
               <View style={styles.iconContainer}>
-                <Ionicons name="people" size={22} color="#000" />
+                <Ionicons name="people" size={22} color={colors.textPrimary} />
               </View>
               <View style={styles.settingInfo}>
                 <Text style={styles.settingLabel}>Staff Management</Text>
                 <Text style={styles.settingDesc}>Manage invites, roles, and vendors</Text>
               </View>
-              <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
+              <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -202,16 +207,19 @@ export default function WorkshopSettingsScreen() {
               onPress={() => router.push('/(workshop)/access-control')}
             >
               <View style={styles.iconContainer}>
-                <Ionicons name="shield-checkmark" size={22} color="#000" />
+                <Ionicons name="shield-checkmark" size={22} color={colors.textPrimary} />
               </View>
               <View style={styles.settingInfo}>
                 <Text style={styles.settingLabel}>Access Control</Text>
                 <Text style={styles.settingDesc}>Configure detailed permissions</Text>
               </View>
-              <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
+              <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
             </TouchableOpacity>
           </View>
         )}
+
+        {/* Appearance */}
+        <AppearanceSection styles={styles} appearanceStyles={appearanceStyles} />
 
         {/* Preferences */}
         <PreferencesSection userId={user?.id} styles={styles} />
@@ -226,6 +234,7 @@ function PreferencesSection({ userId, styles }: { userId?: string; styles: any }
   const [pushEnabled, setPushEnabled] = useState(true);
   const [emailEnabled, setEmailEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
+  const colors = useColors();
 
   useEffect(() => {
     if (!userId) return;
@@ -272,14 +281,14 @@ function PreferencesSection({ userId, styles }: { userId?: string; styles: any }
 
       <View style={styles.settingRow}>
         <View style={styles.iconContainer}>
-          <Ionicons name="notifications" size={22} color="#000" />
+          <Ionicons name="notifications" size={22} color={colors.textPrimary} />
         </View>
         <View style={styles.settingInfo}>
           <Text style={styles.settingLabel}>Push Notifications</Text>
           <Text style={styles.settingDesc}>Receive job and system updates</Text>
         </View>
         <Switch
-          trackColor={{ false: '#e0e0e0', true: '#000' }}
+          trackColor={{ false: colors.border, true: colors.primary }}
           value={pushEnabled}
           onValueChange={handlePushToggle}
           thumbColor="#fff"
@@ -289,14 +298,14 @@ function PreferencesSection({ userId, styles }: { userId?: string; styles: any }
 
       <View style={styles.settingRow}>
         <View style={styles.iconContainer}>
-          <Ionicons name="mail" size={22} color="#000" />
+          <Ionicons name="mail" size={22} color={colors.textPrimary} />
         </View>
         <View style={styles.settingInfo}>
           <Text style={styles.settingLabel}>Email Notifications</Text>
           <Text style={styles.settingDesc}>Receive updates via email</Text>
         </View>
         <Switch
-          trackColor={{ false: '#e0e0e0', true: '#000' }}
+          trackColor={{ false: colors.border, true: colors.primary }}
           value={emailEnabled}
           onValueChange={handleEmailToggle}
           thumbColor="#fff"
@@ -307,10 +316,100 @@ function PreferencesSection({ userId, styles }: { userId?: string; styles: any }
   );
 }
 
-const styles = StyleSheet.create({
+// Appearance Section for theme selection
+function AppearanceSection({ styles, appearanceStyles }: { styles: any; appearanceStyles: any }) {
+  const { themeMode, setThemeMode } = useThemeStore();
+  const colors = useColors();
+
+  const themeOptions: { value: ThemeMode; label: string; icon: string }[] = [
+    { value: 'light', label: 'Light', icon: 'sunny' },
+    { value: 'dark', label: 'Dark', icon: 'moon' },
+    { value: 'system', label: 'System', icon: 'phone-portrait' },
+  ];
+
+  return (
+    <View style={[styles.section, { marginTop: 40 }]}>
+      <Text style={styles.sectionTitle}>Appearance</Text>
+
+      <View style={styles.settingRow}>
+        <View style={styles.iconContainer}>
+          <Ionicons name="contrast" size={22} color={colors.textPrimary} />
+        </View>
+        <View style={styles.settingInfo}>
+          <Text style={styles.settingLabel}>Theme</Text>
+          <Text style={styles.settingDesc}>Choose your preferred appearance</Text>
+        </View>
+      </View>
+
+      <View style={appearanceStyles.themeSelector}>
+        {themeOptions.map((option) => (
+          <TouchableOpacity
+            key={option.value}
+            style={[
+              appearanceStyles.themeOption,
+              themeMode === option.value && appearanceStyles.themeOptionActive,
+            ]}
+            onPress={() => setThemeMode(option.value)}
+          >
+            <Ionicons
+              name={option.icon as any}
+              size={20}
+              color="#555"
+            />
+            <Text
+              style={[
+                appearanceStyles.themeOptionText,
+                themeMode === option.value && appearanceStyles.themeOptionTextActive,
+              ]}
+            >
+              {option.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const getAppearanceStyles = (colors: any) => StyleSheet.create({
+  themeSelector: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingVertical: 12,
+    paddingRight: 20,
+  },
+  themeOption: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: colors.background,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  themeOptionActive: {
+    backgroundColor: colors.primary + '20',
+    borderColor: colors.textPrimary,
+  },
+  themeOptionText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
+  themeOptionTextActive: {
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+});
+
+const getStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F2F2F7',
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -318,23 +417,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     paddingTop: 60,
-    backgroundColor: '#fff',
+    backgroundColor: colors.background,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
+    borderBottomColor: colors.border,
   },
   headerTitle: {
     fontSize: 17,
     fontWeight: '600',
-    color: '#000',
+    color: colors.textPrimary,
   },
   content: {
     flex: 1,
   },
   section: {
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
+    backgroundColor: colors.background,
     borderBottomWidth: 1,
-    borderColor: '#E5E5EA',
+    borderColor: colors.border,
     paddingLeft: 20,
   },
   sectionTitle: {
@@ -343,7 +441,7 @@ const styles = StyleSheet.create({
     left: 20,
     fontSize: 13,
     fontWeight: '500',
-    color: '#8E8E93',
+    color: colors.textSecondary,
     textTransform: 'uppercase',
   },
   // Profile Styles
@@ -353,13 +451,13 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingRight: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
+    borderBottomColor: colors.border,
   },
   avatar: {
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: '#E5E5EA',
+    backgroundColor: colors.background,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
@@ -367,7 +465,7 @@ const styles = StyleSheet.create({
   avatarText: {
     fontSize: 24,
     fontWeight: '600',
-    color: '#8E8E93',
+    color: colors.textSecondary,
   },
   profileInfo: {
     flex: 1,
@@ -375,17 +473,17 @@ const styles = StyleSheet.create({
   profileName: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#000',
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   profileEmail: {
     fontSize: 14,
-    color: '#8E8E93',
+    color: colors.textSecondary,
     marginBottom: 6,
   },
   roleBadge: {
     alignSelf: 'flex-start',
-    backgroundColor: '#F2F2F7',
+    backgroundColor: colors.background,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 4,
@@ -393,7 +491,7 @@ const styles = StyleSheet.create({
   roleText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#8E8E93',
+    color: colors.textSecondary,
   },
   // Row Styles
   settingRow: {
@@ -402,13 +500,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingRight: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
+    borderBottomColor: colors.border,
   },
   iconContainer: {
     width: 32,
     height: 32,
     borderRadius: 6,
-    backgroundColor: '#F2F2F7',
+    backgroundColor: colors.background,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -418,11 +516,11 @@ const styles = StyleSheet.create({
   },
   settingLabel: {
     fontSize: 16,
-    color: '#000',
+    color: colors.textPrimary,
   },
   settingDesc: {
     fontSize: 12,
-    color: '#8E8E93',
+    color: colors.textSecondary,
     marginTop: 2,
   },
   logoutButton: {
@@ -435,6 +533,6 @@ const styles = StyleSheet.create({
   logoutText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#FF3B30',
+    color: colors.error,
   },
 });

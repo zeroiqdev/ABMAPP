@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
     View,
     Text,
@@ -16,7 +16,11 @@ import MapView, { Marker, Region, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
-import { Colors, Spacing, Typography, BorderRadius } from '@/constants/design';
+import { Workshop } from '@/types';
+import { WorkshopSelectorModal } from '@/components/WorkshopSelectorModal';
+import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { db } from '@/config/firebase';
+import { Colors, Spacing, Typography, BorderRadius, useColors } from '@/constants/design';
 import { Vehicle } from '@/types';
 
 // Workshop Location (Provided by User)
@@ -32,6 +36,8 @@ const { width } = Dimensions.get('window');
 export default function TowRequestScreen() {
     const router = useRouter();
     const { user } = useAuthStore();
+    const colors = useColors();
+    const styles = useMemo(() => getStyles(colors), [colors]);
     const mapRef = useRef<MapView>(null);
 
     const [loading, setLoading] = useState(true);
@@ -44,6 +50,11 @@ export default function TowRequestScreen() {
     const [vehicles, setVehicles] = useState<Vehicle[]>([]);
     const [selectedVehicle, setSelectedVehicle] = useState<string>('');
 
+    // Workshop selection state
+    const [selectedWorkshopId, setSelectedWorkshopId] = useState<string>('');
+    const [availableWorkshops, setAvailableWorkshops] = useState<Workshop[]>([]);
+    const [showWorkshopSelector, setShowWorkshopSelector] = useState(false);
+
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [processing, setProcessing] = useState(false);
@@ -54,6 +65,7 @@ export default function TowRequestScreen() {
 
     useEffect(() => {
         loadVehicles();
+        loadWorkshops();
     }, [user]);
 
     useEffect(() => {
@@ -76,6 +88,44 @@ export default function TowRequestScreen() {
                 setLoading(false);
             }
         } else {
+            setLoading(false);
+        }
+    };
+
+    const loadWorkshops = async () => {
+        if (!user) return;
+        const ids = new Set([
+            ...(user.selectedWorkshopIds || []),
+            ...(user.addedByWorkshopIds || []),
+            ...(user.connectedWorkshopIds || []),
+            ...(user.workshopId ? [user.workshopId] : [])
+        ]);
+
+        const workshops: Workshop[] = [];
+        for (const id of Array.from(ids)) {
+            if (!id) continue;
+            const w = await firebaseService.getWorkshop(id);
+            if (w) workshops.push(w);
+        }
+        setAvailableWorkshops(workshops);
+        if (workshops.length > 0 && !selectedWorkshopId) {
+            setSelectedWorkshopId(workshops[0].id);
+        }
+    };
+
+    const handleAddNewWorkshops = async (newIds: string[]) => {
+        if (!user?.id) return;
+        try {
+            setLoading(true);
+            await updateDoc(doc(db, 'users', user.id), {
+                selectedWorkshopIds: arrayUnion(...newIds)
+            });
+            await loadWorkshops();
+            if (newIds.length > 0) setSelectedWorkshopId(newIds[newIds.length - 1]);
+        } catch (e) {
+            console.error(e);
+            Alert.alert('Error', 'Failed to add workshops');
+        } finally {
             setLoading(false);
         }
     };
@@ -185,6 +235,10 @@ export default function TowRequestScreen() {
             Alert.alert('Error', 'Please select a vehicle');
             return;
         }
+        if (!selectedWorkshopId) {
+            Alert.alert('Error', 'Please select a workshop');
+            return;
+        }
         if (!location) {
             Alert.alert('Error', 'Please detect your location first');
             return;
@@ -200,11 +254,10 @@ export default function TowRequestScreen() {
             const vehicle = vehicles.find(v => v.id === selectedVehicle);
             const vehicleName = vehicle ? `${vehicle.make} ${vehicle.model}` : 'Unknown Vehicle';
 
-            // 1. Create Job
             const jobId = await firebaseService.createJob({
                 userId: user.id,
                 vehicleId: selectedVehicle,
-                workshopId: user.workshopId || 'default_workshop',
+                workshopId: selectedWorkshopId || user.workshopId || 'default_workshop',
                 type: 'tow',
                 description: `Tow Request for ${vehicleName}. \nPickup: ${address || 'Coordinates provided'}. \nLat: ${location.latitude}, Long: ${location.longitude}. \nDistance: ${distance.toFixed(2)}km`,
                 status: 'received',
@@ -212,11 +265,10 @@ export default function TowRequestScreen() {
                 serviceCharge: price,
             });
 
-            // 2. Create Invoice
-            await firebaseService.createInvoice({
+            const invoiceId = await firebaseService.createInvoice({
                 jobId,
                 userId: user.id,
-                workshopId: user.workshopId || 'default_workshop',
+                workshopId: selectedWorkshopId || user.workshopId || 'default_workshop',
                 items: [{
                     description: `Tow Service from ${address ? address.substring(0, 20) + '...' : 'Location'}`,
                     quantity: 1,
@@ -259,7 +311,7 @@ export default function TowRequestScreen() {
         <View style={styles.container}>
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => router.back()}>
-                    <Ionicons name="arrow-back" size={24} color="#000" />
+                    <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Request Tow</Text>
                 <View style={{ width: 24 }} />
@@ -280,12 +332,55 @@ export default function TowRequestScreen() {
                                 <Text style={[styles.vehicleText, selectedVehicle === v.id && styles.vehicleTextSelected]}>
                                     {v.make} {v.model} ({v.licensePlate})
                                 </Text>
-                                {selectedVehicle === v.id && <Ionicons name="checkmark-circle" size={20} color="#000" />}
+                                {selectedVehicle === v.id && <Ionicons name="checkmark-circle" size={20} color={colors.primary} />}
                             </TouchableOpacity>
                         ))
                     ) : (
                         <Text style={styles.noVehicleText}>No vehicles found. Please add a vehicle first.</Text>
                     )}
+                </View>
+
+                {/* Workshop Selection */}
+                <View style={[styles.card, { padding: 15 }]}>
+                    <Text style={styles.cardTitle}>Destination Workshop</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 20 }}>
+                        {availableWorkshops.map(workshop => (
+                            <TouchableOpacity
+                                key={workshop.id}
+                                style={[
+                                    styles.vehicleOption,
+                                    selectedWorkshopId === workshop.id && styles.vehicleSelected,
+                                    { margin: 0, paddingVertical: 10, paddingHorizontal: 15, width: 150, height: 80, justifyContent: 'center', borderColor: selectedWorkshopId === workshop.id ? colors.textPrimary : colors.border, borderWidth: selectedWorkshopId === workshop.id ? 2 : 1 }
+                                ]}
+                                onPress={() => setSelectedWorkshopId(workshop.id)}
+                            >
+                                <Text style={[
+                                    styles.vehicleText,
+                                    selectedWorkshopId === workshop.id && styles.vehicleTextSelected,
+                                    { textAlign: 'center' }
+                                ]}>
+                                    {workshop.name}
+                                </Text>
+                                {workshop.address && (
+                                    <Text numberOfLines={1} style={{ fontSize: 10, color: colors.textSecondary, marginTop: 4, textAlign: 'center' }}>
+                                        {workshop.address}
+                                    </Text>
+                                )}
+                            </TouchableOpacity>
+                        ))}
+                        <TouchableOpacity
+                            style={[
+                                styles.vehicleOption,
+                                { margin: 0, paddingVertical: 10, paddingHorizontal: 15, width: 100, height: 80, justifyContent: 'center', borderStyle: 'dashed', borderColor: colors.textPrimary }
+                            ]}
+                            onPress={() => setShowWorkshopSelector(true)}
+                        >
+                            <View style={{ alignItems: 'center', gap: 4 }}>
+                                <Ionicons name="add" size={24} color={colors.textPrimary} />
+                                <Text style={{ color: colors.textPrimary, fontWeight: '600', fontSize: 12 }}>Add</Text>
+                            </View>
+                        </TouchableOpacity>
+                    </ScrollView>
                 </View>
 
                 {/* Location Info & Map */}
@@ -305,10 +400,10 @@ export default function TowRequestScreen() {
                                 disabled={locating}
                             >
                                 {locating ? (
-                                    <ActivityIndicator color="#fff" size="small" />
+                                    <ActivityIndicator color={colors.textInverse} size="small" />
                                 ) : (
                                     <>
-                                        <Ionicons name="navigate" size={20} color="#fff" />
+                                        <Ionicons name="navigate" size={20} color={colors.textInverse} />
                                         <Text style={styles.detectButtonText}>Detect My Location</Text>
                                     </>
                                 )}
@@ -330,7 +425,7 @@ export default function TowRequestScreen() {
                                 />
                                 {/* Fixed Center Marker */}
                                 <View style={styles.centerMarkerContainer} pointerEvents="none">
-                                    <Ionicons name="location" size={36} color="#000" />
+                                    <Ionicons name="location" size={36} color={colors.primary} />
                                 </View>
                             </View>
 
@@ -339,7 +434,7 @@ export default function TowRequestScreen() {
 
                                 <View style={styles.addressContainer}>
                                     <View style={styles.addressIcon}>
-                                        <Ionicons name="location" size={24} color="#000" />
+                                        <Ionicons name="location" size={24} color={colors.textPrimary} />
                                     </View>
                                     <View style={styles.addressDetails}>
                                         <Text style={styles.addressLabel}>Selected Address</Text>
@@ -428,19 +523,29 @@ export default function TowRequestScreen() {
                     </View>
                 </View>
             </Modal>
-        </View>
+
+
+            <WorkshopSelectorModal
+                visible={showWorkshopSelector}
+                onClose={() => setShowWorkshopSelector(false)}
+                onSelect={handleAddNewWorkshops}
+                excludeIds={availableWorkshops.map(w => w.id)}
+                title="Add Workshop"
+            />
+        </View >
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f5f5f5',
+        backgroundColor: colors.background,
     },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
+        backgroundColor: colors.background,
     },
     header: {
         flexDirection: 'row',
@@ -448,40 +553,42 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         padding: 20,
         paddingTop: 60,
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        borderBottomColor: colors.border,
         zIndex: 10,
     },
     headerTitle: {
         fontSize: 20,
         fontWeight: 'bold',
+        color: colors.textPrimary,
     },
     content: {
         flex: 1,
         padding: 20,
+        backgroundColor: colors.background,
     },
     card: {
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
         padding: 20,
         borderRadius: 16,
         marginBottom: 20,
         borderWidth: 1,
-        borderColor: '#eee',
+        borderColor: colors.border,
     },
     cardTitle: {
         fontSize: 16,
         fontWeight: '600',
         marginBottom: 15,
-        color: '#333',
+        color: colors.textPrimary,
     },
     locationHelpText: {
-        color: '#666',
+        color: colors.textSecondary,
         marginBottom: 15,
         textAlign: 'center',
     },
     detectButton: {
-        backgroundColor: '#000',
+        backgroundColor: colors.textPrimary,
         flexDirection: 'row',
         alignItems: 'center',
         paddingHorizontal: 20,
@@ -490,7 +597,7 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     detectButtonText: {
-        color: '#fff',
+        color: colors.textInverse,
         fontWeight: '600',
     },
     mapContainer: {
@@ -498,6 +605,8 @@ const styles = StyleSheet.create({
         width: '100%',
         marginBottom: 10,
         position: 'relative',
+        borderRadius: 12,
+        overflow: 'hidden',
     },
     map: {
         ...StyleSheet.absoluteFillObject,
@@ -514,7 +623,7 @@ const styles = StyleSheet.create({
     },
     dragMapText: {
         textAlign: 'center',
-        color: '#888',
+        color: colors.textTertiary,
         fontSize: 12,
         marginBottom: 10,
         fontStyle: 'italic',
@@ -522,15 +631,17 @@ const styles = StyleSheet.create({
     addressContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#f9f9f9',
+        backgroundColor: colors.background,
         padding: 15,
         borderRadius: 12,
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     addressIcon: {
         width: 40,
         height: 40,
         borderRadius: 20,
-        backgroundColor: '#eee',
+        backgroundColor: colors.surface,
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 15,
@@ -540,13 +651,13 @@ const styles = StyleSheet.create({
     },
     addressLabel: {
         fontSize: 12,
-        color: '#888',
+        color: colors.textTertiary,
         marginBottom: 4,
     },
     addressText: {
         fontSize: 15,
         fontWeight: '600',
-        color: '#000',
+        color: colors.textPrimary,
     },
     errorText: {
         color: Colors.error || 'red',
@@ -554,14 +665,16 @@ const styles = StyleSheet.create({
     },
     distanceBadge: {
         marginTop: 15,
-        backgroundColor: '#eee',
+        backgroundColor: colors.background,
         padding: 10,
         borderRadius: 8,
         alignSelf: 'flex-start',
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     distanceText: {
         fontSize: 14,
-        color: '#333',
+        color: colors.textSecondary,
         fontWeight: '500',
     },
     vehicleOption: {
@@ -570,45 +683,50 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         padding: 15,
         borderWidth: 1,
-        borderColor: '#eee',
+        borderColor: colors.border,
         borderRadius: 12,
         marginBottom: 10,
+        backgroundColor: colors.background,
     },
     vehicleSelected: {
-        backgroundColor: '#eee',
+        backgroundColor: colors.surface,
+        borderColor: colors.textPrimary,
+        borderWidth: 2,
     },
     vehicleText: {
         fontSize: 15,
-        color: '#000',
+        color: colors.textPrimary,
     },
     vehicleTextSelected: {
         fontWeight: '600',
-        color: '#000',
+        color: colors.textPrimary,
     },
     noVehicleText: {
-        color: '#999',
+        color: colors.textTertiary,
         fontStyle: 'italic',
     },
     quoteCard: {
-        backgroundColor: '#000',
+        backgroundColor: colors.surface, // Use surface instead of black
         padding: 20,
         borderRadius: 16,
         alignItems: 'center',
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     quoteLabel: {
-        color: '#fff',
+        color: colors.textSecondary,
         fontSize: 14,
         opacity: 0.8,
         marginBottom: 5,
     },
     quotePrice: {
-        color: '#fff',
+        color: colors.primary, // Use primary color for price
         fontSize: 32,
         fontWeight: 'bold',
         marginBottom: 5,
     },
     quoteNote: {
-        color: '#fff',
+        color: colors.textSecondary,
         fontSize: 12,
         opacity: 0.6,
     },
@@ -618,22 +736,23 @@ const styles = StyleSheet.create({
         left: 0,
         right: 0,
         padding: 20,
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface, // Changed from #fff
         borderTopWidth: 1,
-        borderTopColor: '#eee',
+        borderTopColor: colors.border,
         paddingBottom: 40,
     },
     bookButton: {
-        backgroundColor: '#000',
+        backgroundColor: colors.primary, // Changed from #000
         padding: 16,
         borderRadius: 30,
         alignItems: 'center',
     },
     disabledButton: {
-        backgroundColor: '#ccc',
+        backgroundColor: colors.border, // Changed from #ccc
+        opacity: 0.5,
     },
     bookButtonText: {
-        color: '#fff',
+        color: colors.textInverse, // Changed from #fff
         fontSize: 16,
         fontWeight: 'bold',
     },
@@ -644,51 +763,54 @@ const styles = StyleSheet.create({
         padding: 20,
     },
     modalContent: {
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
         borderRadius: 20,
         padding: 25,
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     modalTitle: {
         fontSize: 20,
         fontWeight: 'bold',
         textAlign: 'center',
         marginBottom: 20,
+        color: colors.textPrimary,
     },
     paymentDetails: {
-        backgroundColor: '#f9f9f9',
+        backgroundColor: colors.background,
         padding: 20,
         borderRadius: 12,
         marginBottom: 20,
     },
     paymentLabel: {
         fontSize: 14,
-        color: '#666',
+        color: colors.textSecondary,
     },
     paymentValue: {
         fontSize: 16,
         fontWeight: '600',
-        color: '#000',
+        color: colors.textPrimary,
     },
     paymentValueHighlight: {
         fontSize: 24,
         fontWeight: 'bold',
-        color: '#000',
+        color: colors.textPrimary,
         marginTop: 4,
     },
     paymentValuePrice: {
         fontSize: 28,
         fontWeight: 'bold',
-        color: '#000',
+        color: colors.primary,
         marginTop: 4,
     },
     divider: {
         height: 1,
-        backgroundColor: '#ddd',
+        backgroundColor: colors.border,
         marginVertical: 15,
     },
     modalNote: {
         fontSize: 14,
-        color: '#666',
+        color: colors.textSecondary,
         marginBottom: 25,
         textAlign: 'center',
     },
@@ -701,22 +823,22 @@ const styles = StyleSheet.create({
         padding: 15,
         borderRadius: 12,
         borderWidth: 1,
-        borderColor: '#ddd',
+        borderColor: colors.border,
         alignItems: 'center',
     },
     cancelButtonText: {
-        color: '#000',
+        color: colors.textPrimary,
         fontWeight: '600',
     },
     confirmButton: {
         flex: 1,
-        backgroundColor: '#000',
+        backgroundColor: colors.primary,
         padding: 15,
         borderRadius: 12,
         alignItems: 'center',
     },
     confirmButtonText: {
-        color: '#fff',
+        color: colors.textInverse,
         fontWeight: '600',
     },
 });

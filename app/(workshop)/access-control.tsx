@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
     View,
     Text,
@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
 import { UserRole } from '@/types';
+import { useColors } from '@/constants/design';
 
 const SYSTEM_ROLES: string[] = [
     'admin',
@@ -28,6 +29,8 @@ const SYSTEM_ROLES: string[] = [
 const PERMISSIONS = [
     { key: 'canViewDashboard', label: 'View Dashboard', description: 'Access the home dashboard' },
     { key: 'canManageJobs', label: 'Manage Jobs', description: 'Create, update, and delete jobs' },
+    { key: 'canViewCustomers', label: 'View Customers', description: 'View customer list and details' },
+    { key: 'canManageCustomers', label: 'Manage Customers', description: 'Create, update, and delete customers' },
     { key: 'canViewInventory', label: 'View Inventory', description: 'View items in inventory' },
     { key: 'canManageInventory', label: 'Manage Inventory', description: 'Add, update, and delete inventory items' },
     { key: 'canViewFinance', label: 'View Finance', description: 'View financial reports and invoices' },
@@ -41,6 +44,8 @@ const PERMISSIONS = [
 const DEFAULT_PERMISSIONS = {
     canViewDashboard: false,
     canManageJobs: false,
+    canViewCustomers: false,
+    canManageCustomers: false,
     canViewInventory: false,
     canManageInventory: false,
     canViewFinance: false,
@@ -118,6 +123,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, Record<string, boolean>> = {
 export default function AccessControlScreen() {
     const router = useRouter();
     const { user } = useAuthStore();
+    const colors = useColors();
+    const styles = useMemo(() => getStyles(colors), [colors]);
     const [loading, setLoading] = useState(true);
     const [permissions, setPermissions] = useState<Record<string, any>>({});
     const [selectedRole, setSelectedRole] = useState<string | null>(null);
@@ -245,7 +252,7 @@ export default function AccessControlScreen() {
     if (loading) {
         return (
             <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#000" />
+                <ActivityIndicator size="large" color={colors.textPrimary} />
             </View>
         );
     }
@@ -253,12 +260,12 @@ export default function AccessControlScreen() {
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()}>
-                    <Ionicons name="arrow-back" size={24} color="#000" />
+                <TouchableOpacity onPress={() => router.push('/(workshop)/settings')}>
+                    <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Access Control</Text>
                 <TouchableOpacity onPress={() => setShowCreateModal(true)}>
-                    <Ionicons name="add" size={24} color="#000" />
+                    <Ionicons name="add" size={24} color={colors.textPrimary} />
                 </TouchableOpacity>
             </View>
 
@@ -279,7 +286,7 @@ export default function AccessControlScreen() {
                                         <Ionicons
                                             name={isSystem ? "shield-checkmark-outline" : "person-outline"}
                                             size={20}
-                                            color="#000"
+                                            color={colors.textPrimary}
                                         />
                                     </View>
                                     <View>
@@ -296,7 +303,7 @@ export default function AccessControlScreen() {
                                     <Ionicons
                                         name={selectedRole === role ? "chevron-up" : "chevron-down"}
                                         size={20}
-                                        color="#666"
+                                        color={colors.textSecondary}
                                     />
                                 </TouchableOpacity>
                             </View>
@@ -356,7 +363,7 @@ export default function AccessControlScreen() {
                             style={{ position: 'absolute', top: 16, left: 16, zIndex: 1 }}
                             onPress={() => setShowCreateModal(false)}
                         >
-                            <Ionicons name="close" size={24} color="#666" />
+                            <Ionicons name="close" size={24} color={colors.textSecondary} />
                         </TouchableOpacity>
                         <Text style={styles.modalTitle}>Create New Role</Text>
                         <Text style={styles.modalSubtitle}>Enter info and select permissions</Text>
@@ -369,7 +376,7 @@ export default function AccessControlScreen() {
                             autoFocus
                         />
 
-                        <ScrollView style={{ marginBottom: 20 }}>
+                        <ScrollView style={{ marginBottom: 20, maxHeight: 300 }}>
                             <Text style={{ fontWeight: '600', marginBottom: 10 }}>Permissions</Text>
                             {PERMISSIONS.map((perm) => (
                                 <View key={perm.key} style={styles.permissionRow}>
@@ -388,10 +395,10 @@ export default function AccessControlScreen() {
                         </ScrollView>
 
                         <TouchableOpacity
-                            style={[styles.modalButton, styles.createButton, { flex: 1 }]}
+                            style={[styles.modalButton, styles.createButton]}
                             onPress={handleCreateRole}
                         >
-                            <Text style={styles.createButtonText}>Create</Text>
+                            <Text style={styles.createButtonText}>Create Role</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -400,15 +407,16 @@ export default function AccessControlScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f5f5f5',
+        backgroundColor: colors.background,
     },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
+        backgroundColor: colors.background,
     },
     header: {
         flexDirection: 'row',
@@ -416,13 +424,14 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         padding: 20,
         paddingTop: 60,
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        borderBottomColor: colors.border,
     },
     headerTitle: {
         fontSize: 20,
         fontWeight: 'bold',
+        color: colors.textPrimary,
     },
     content: {
         flex: 1,
@@ -433,19 +442,19 @@ const styles = StyleSheet.create({
         marginHorizontal: 20,
         marginTop: 20,
         padding: 15,
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
         borderRadius: 8,
     },
     infoText: {
-        color: '#666',
+        color: colors.textSecondary,
         lineHeight: 20,
     },
     roleCard: {
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
         marginBottom: 0,
         borderRadius: 0,
         borderBottomWidth: 1,
-        borderBottomColor: '#f0f0f0',
+        borderBottomColor: colors.border,
         overflow: 'hidden',
     },
     roleHeader: {
@@ -463,7 +472,7 @@ const styles = StyleSheet.create({
         width: 32,
         height: 32,
         borderRadius: 16,
-        backgroundColor: '#f5f5f5',
+        backgroundColor: colors.background,
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -471,15 +480,16 @@ const styles = StyleSheet.create({
     roleTitle: {
         fontSize: 16,
         fontWeight: '600',
+        color: colors.textPrimary,
     },
     customBadge: {
         fontSize: 10,
-        color: '#000',
+        color: colors.textSecondary,
         fontWeight: '500',
     },
     permissionsList: {
         borderTopWidth: 1,
-        borderTopColor: '#f0f0f0',
+        borderTopColor: colors.border,
         paddingHorizontal: 20,
         paddingVertical: 15,
     },
@@ -497,10 +507,11 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '500',
         marginBottom: 4,
+        color: colors.textPrimary,
     },
     permissionDesc: {
         fontSize: 12,
-        color: '#666',
+        color: colors.textSecondary,
     },
     deleteButton: {
         flexDirection: 'row',
@@ -526,7 +537,7 @@ const styles = StyleSheet.create({
         padding: 20,
     },
     modalContent: {
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
         width: '100%',
         maxWidth: 400,
         borderRadius: 16,
@@ -542,20 +553,23 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         marginBottom: 8,
         textAlign: 'center',
+        color: colors.textPrimary,
     },
     modalSubtitle: {
         fontSize: 14,
-        color: '#666',
+        color: colors.textSecondary,
         textAlign: 'center',
         marginBottom: 24,
     },
     input: {
         borderWidth: 1,
-        borderColor: '#e0e0e0',
+        borderColor: colors.border,
         borderRadius: 8,
         padding: 12,
         fontSize: 16,
         marginBottom: 24,
+        color: colors.textPrimary,
+        backgroundColor: colors.background,
     },
     modalActions: {
         flexDirection: 'row',
@@ -563,22 +577,26 @@ const styles = StyleSheet.create({
     },
     modalButton: {
         flex: 1,
-        padding: 14,
-        borderRadius: 8,
+        paddingVertical: 16,
+        paddingHorizontal: 14,
+        borderRadius: 10,
         alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: 50,
     },
     cancelButton: {
-        backgroundColor: '#f5f5f5',
+        backgroundColor: colors.background,
     },
     createButton: {
-        backgroundColor: '#111827',
+        backgroundColor: colors.secondary,
     },
     cancelButtonText: {
-        color: '#666',
+        color: colors.textSecondary,
         fontWeight: '600',
     },
     createButtonText: {
-        color: '#fff',
-        fontWeight: '600',
+        color: colors.textInverse,
+        fontWeight: '700',
+        fontSize: 16,
     },
 });

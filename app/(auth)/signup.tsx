@@ -9,20 +9,33 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Modal,
+  FlatList,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
+import { firebaseService } from '@/services/firebaseService';
+import { Workshop } from '@/types';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function SignupScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const initialEmail = params.email as string;
 
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
-  const [registrationCode, setRegistrationCode] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const { registerCustomerAccount, acceptStaffInvite, loading, user } = useAuthStore();
+  const [selectedWorkshop, setSelectedWorkshop] = useState<Workshop | null>(null);
+  const [workshops, setWorkshops] = useState<Workshop[]>([]);
+  const [showWorkshopModal, setShowWorkshopModal] = useState(false);
+  const [loadingWorkshops, setLoadingWorkshops] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const { registerCustomerAccount, loading, user } = useAuthStore();
 
   useEffect(() => {
     if (initialEmail) {
@@ -30,23 +43,40 @@ export default function SignupScreen() {
     }
   }, [initialEmail]);
 
+  // Load workshops on mount
+  useEffect(() => {
+    loadWorkshops();
+  }, []);
+
+  const loadWorkshops = async () => {
+    setLoadingWorkshops(true);
+    try {
+      const allWorkshops = await firebaseService.getAllWorkshops();
+      setWorkshops(allWorkshops);
+    } catch (error) {
+      console.error('Error loading workshops:', error);
+    } finally {
+      setLoadingWorkshops(false);
+    }
+  };
+
+  const filteredWorkshops = workshops.filter(w =>
+    w.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    w.address?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   useEffect(() => {
     if (user) {
-      console.log('[Signup] User created:', user.email, 'Role:', user.role, 'VendorStatus:', user.vendorStatus);
+      console.log('[Signup] User created:', user.email, 'Role:', user.role, 'WorkshopId:', user.workshopId);
 
-      const workshopRoles = ['admin', 'technician', 'storekeeper', 'accountant', 'service_advisor'];
+      const workshopRoles = ['admin', 'technician', 'storekeeper', 'accountant', 'service_advisor', 'super_admin'];
 
-      // CRITICAL: If role is vendor, go directly to registration form - never customer app, never home screen
       if (user.role === 'vendor') {
-        // All vendors (invited or otherwise) go to registration form first
-        // Only approved vendors (active status) should see home screen, but that's handled by marketplace layout
         router.replace('/(marketplace)/vendor-registration');
         return;
       }
 
-      // Also check vendorStatus as a fallback (in case role isn't set correctly)
       if (user.vendorStatus) {
-        // This is a vendor - redirect to registration form, never customer app
         router.replace('/(marketplace)/vendor-registration');
         return;
       }
@@ -55,16 +85,17 @@ export default function SignupScreen() {
         router.replace('/(customer)/home');
       } else if (workshopRoles.includes(user.role)) {
         router.replace('/(workshop)/dashboard');
+      } else if (user.workshopId && user.role !== 'customer' && user.role !== 'vendor') {
+        router.replace('/(workshop)/dashboard');
       } else {
-        // Fallback
-        router.replace('/(auth)/login');
+        router.replace('/');
       }
     }
   }, [user, router]);
 
   const handleSignup = async () => {
-    if (!email || !registrationCode || !password || !confirmPassword) {
-      Alert.alert('Error', 'Please fill in all fields');
+    if (!name || !email || !password || !confirmPassword) {
+      Alert.alert('Error', 'Please fill in all required fields (Name, Email, Password)');
       return;
     }
 
@@ -84,7 +115,7 @@ export default function SignupScreen() {
     }
 
     try {
-      await registerCustomerAccount(email, password, registrationCode);
+      await registerCustomerAccount(email, password, name, phone, selectedWorkshop?.id);
     } catch (error: any) {
       let errorMessage = 'Unable to create account';
       if (error.code === 'auth/email-already-in-use') {
@@ -108,12 +139,33 @@ export default function SignupScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.content}>
           <Text style={styles.title}>Create Account</Text>
-          <Text style={styles.subtitle}>Enter your registered email and code</Text>
+          <Text style={styles.subtitle}>Sign up to access workshop services</Text>
 
           <View style={styles.form}>
+            {/* Name Field */}
             <TextInput
               style={styles.input}
-              placeholder="Email Address"
+              placeholder="Full Name *"
+              value={name}
+              onChangeText={setName}
+              autoCapitalize="words"
+              placeholderTextColor="#666"
+            />
+
+            {/* Phone Field */}
+            <TextInput
+              style={styles.input}
+              placeholder="Phone Number"
+              value={phone}
+              onChangeText={setPhone}
+              keyboardType="phone-pad"
+              placeholderTextColor="#666"
+            />
+
+            {/* Email Field */}
+            <TextInput
+              style={styles.input}
+              placeholder="Email Address *"
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -122,43 +174,40 @@ export default function SignupScreen() {
               autoComplete="email"
             />
 
-            <TextInput
-              style={styles.input}
-              placeholder="Registration Code"
-              value={registrationCode}
-              onChangeText={setRegistrationCode}
-              autoCapitalize="characters"
-              autoComplete="off"
-              placeholderTextColor="#666"
-            />
+            {/* Workshop Selector */}
+            <TouchableOpacity
+              style={styles.workshopSelector}
+              onPress={() => setShowWorkshopModal(true)}
+            >
+              <Ionicons name="business-outline" size={20} color="#666" />
+              <Text style={[styles.workshopSelectorText, selectedWorkshop && styles.workshopSelected]}>
+                {selectedWorkshop ? selectedWorkshop.name : 'Select a Workshop (Optional)'}
+              </Text>
+              <Ionicons name="chevron-down" size={20} color="#666" />
+            </TouchableOpacity>
 
+            {/* Password Fields */}
             <TextInput
               style={styles.input}
-              placeholder="Password"
+              placeholder="Password *"
               value={password}
               onChangeText={setPassword}
               secureTextEntry
               autoCapitalize="none"
               textContentType="oneTimeCode"
               autoComplete="off"
-              importantForAutofill="no"
-              passwordRules=""
-              keyboardType="default"
               placeholderTextColor="#666"
             />
 
             <TextInput
               style={styles.input}
-              placeholder="Confirm Password"
+              placeholder="Confirm Password *"
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               secureTextEntry
               autoCapitalize="none"
               textContentType="oneTimeCode"
               autoComplete="off"
-              importantForAutofill="no"
-              passwordRules=""
-              keyboardType="default"
               placeholderTextColor="#666"
             />
 
@@ -188,6 +237,75 @@ export default function SignupScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {/* Workshop Selection Modal */}
+      <Modal
+        visible={showWorkshopModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowWorkshopModal(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Select Workshop</Text>
+            <TouchableOpacity onPress={() => setShowWorkshopModal(false)}>
+              <Ionicons name="close" size={24} color="#000" />
+            </TouchableOpacity>
+          </View>
+
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search workshops..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholderTextColor="#666"
+          />
+
+          {loadingWorkshops ? (
+            <ActivityIndicator size="large" color="#000" style={{ marginTop: 40 }} />
+          ) : (
+            <FlatList
+              data={filteredWorkshops}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.workshopItem}
+                  onPress={() => {
+                    setSelectedWorkshop(item);
+                    setShowWorkshopModal(false);
+                    setSearchQuery('');
+                  }}
+                >
+                  <View>
+                    <Text style={styles.workshopName}>{item.name}</Text>
+                    {item.address && (
+                      <Text style={styles.workshopAddress}>{item.address}</Text>
+                    )}
+                  </View>
+                  {selectedWorkshop?.id === item.id && (
+                    <Ionicons name="checkmark-circle" size={24} color="#007AFF" />
+                  )}
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={
+                <Text style={styles.emptyText}>
+                  {searchQuery ? 'No workshops found' : 'No workshops available'}
+                </Text>
+              }
+            />
+          )}
+
+          <TouchableOpacity
+            style={styles.clearButton}
+            onPress={() => {
+              setSelectedWorkshop(null);
+              setShowWorkshopModal(false);
+            }}
+          >
+            <Text style={styles.clearButtonText}>Skip - I'll join a workshop later</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -269,6 +387,87 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     textDecorationLine: 'underline',
+  },
+  // Workshop selector styles
+  workshopSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 15,
+    marginBottom: 15,
+    gap: 10,
+  },
+  workshopSelectorText: {
+    flex: 1,
+    fontSize: 16,
+    color: '#666',
+  },
+  workshopSelected: {
+    color: '#000',
+  },
+  // Modal styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#fff',
+    padding: 20,
+    paddingTop: 60,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#000',
+  },
+  searchInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 15,
+    fontSize: 16,
+    color: '#000',
+  },
+  workshopItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  workshopName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000',
+    marginBottom: 4,
+  },
+  workshopAddress: {
+    fontSize: 14,
+    color: '#666',
+  },
+  emptyText: {
+    textAlign: 'center',
+    color: '#666',
+    marginTop: 40,
+    fontSize: 16,
+  },
+  clearButton: {
+    padding: 15,
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    marginTop: 'auto',
+  },
+  clearButtonText: {
+    color: '#666',
+    fontSize: 16,
   },
 });
 

@@ -14,6 +14,7 @@ import { db } from '@/config/firebase';
 import { Vehicle } from '@/types';
 import { Ionicons } from '@expo/vector-icons';
 import { BrandLogo } from '@/components/BrandLogo';
+import { useColors } from '@/constants/design';
 
 export default function VehiclesScreen() {
   const { user } = useAuthStore();
@@ -71,10 +72,13 @@ export default function VehiclesScreen() {
     );
   };
 
+  const colors = useColors();
+  const styles = getStyles(colors);
+
   if (loading) {
     return (
       <View style={styles.container}>
-        <Text>Loading...</Text>
+        <Text style={{ color: colors.textPrimary }}>Loading...</Text>
       </View>
     );
   }
@@ -82,19 +86,22 @@ export default function VehiclesScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
+        </TouchableOpacity>
         <Text style={styles.headerTitle}>My Vehicles</Text>
         <TouchableOpacity
           style={styles.addButton}
           onPress={() => router.push('/(customer)/add-vehicle')}
         >
-          <Ionicons name="add" size={24} color="#fff" />
+          <Ionicons name="add" size={24} color={colors.textInverse} />
         </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.content}>
         {vehicles.length === 0 ? (
           <View style={styles.emptyState}>
-            <Ionicons name="car-outline" size={64} color="#ccc" />
+            <Ionicons name="car-outline" size={64} color={colors.textTertiary} />
             <Text style={styles.emptyText}>No vehicles added yet</Text>
             <TouchableOpacity
               style={styles.emptyButton}
@@ -124,7 +131,7 @@ export default function VehiclesScreen() {
               </View>
 
               <View style={styles.itemRight}>
-                <Ionicons name="chevron-forward" size={20} color="#ccc" />
+                <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
               </View>
             </TouchableOpacity>
           ))
@@ -134,10 +141,10 @@ export default function VehiclesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -145,16 +152,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     paddingTop: 60,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: colors.border,
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
+    color: colors.textPrimary,
   },
   addButton: {
-    backgroundColor: '#000',
+    backgroundColor: colors.primary,
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -168,10 +176,12 @@ const styles = StyleSheet.create({
   itemCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#f5f5f5',
+    borderBottomColor: colors.border,
     padding: 15,
+    marginBottom: 10,
+    borderRadius: 12,
   },
   iconBox: {
     width: 48,
@@ -180,6 +190,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 15,
+    backgroundColor: colors.background,
   },
   itemInfo: {
     flex: 1,
@@ -187,12 +198,12 @@ const styles = StyleSheet.create({
   itemName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   itemSubtitle: {
     fontSize: 13,
-    color: '#888',
+    color: colors.textSecondary,
   },
   itemRight: {
     alignItems: 'flex-end',
@@ -207,18 +218,18 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    color: '#999',
+    color: colors.textSecondary,
     marginTop: 20,
     marginBottom: 20,
   },
   emptyButton: {
-    backgroundColor: '#000',
+    backgroundColor: colors.primary,
     paddingHorizontal: 30,
     paddingVertical: 12,
     borderRadius: 8,
   },
   emptyButtonText: {
-    color: '#fff',
+    color: colors.textInverse,
     fontSize: 16,
     fontWeight: '600',
   },

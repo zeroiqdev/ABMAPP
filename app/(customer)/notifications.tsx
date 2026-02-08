@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -13,10 +13,13 @@ import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
 import { Notification } from '@/types';
 import { format } from 'date-fns';
+import { useColors } from '@/constants/design';
 
 export default function NotificationsScreen() {
   const { user } = useAuthStore();
   const router = useRouter();
+  const colors = useColors();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -103,7 +106,7 @@ export default function NotificationsScreen() {
         <Ionicons
           name={getNotificationIcon(item.type) as any}
           size={24}
-          color="#fff"
+          color={colors.textInverse}
         />
       </View>
       <View style={styles.notificationContent}>
@@ -118,7 +121,7 @@ export default function NotificationsScreen() {
           {format(item.createdAt, 'MMM dd, yyyy HH:mm')}
         </Text>
       </View>
-      <Ionicons name="chevron-forward" size={20} color="#999" />
+      <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
     </TouchableOpacity>
   );
 
@@ -144,7 +147,7 @@ export default function NotificationsScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#000" />
+          <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Notifications</Text>
         {unreadCount > 0 && (
@@ -164,7 +167,7 @@ export default function NotificationsScreen() {
         }
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Ionicons name="notifications-outline" size={64} color="#ccc" />
+            <Ionicons name="notifications-outline" size={64} color={colors.textTertiary} />
             <Text style={styles.emptyText}>No notifications</Text>
           </View>
         }
@@ -173,10 +176,10 @@ export default function NotificationsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -185,16 +188,17 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingTop: 60,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-    backgroundColor: '#fff',
+    borderBottomColor: colors.border,
+    backgroundColor: colors.surface,
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
+    color: colors.textPrimary,
   },
   markAllText: {
     fontSize: 14,
-    color: '#000',
+    color: colors.textPrimary,
     fontWeight: '600',
   },
   listContent: {
@@ -205,16 +209,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 15,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: colors.border,
   },
   unreadCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface, // Or a slightly highlighted color if needed, but surface is fine for read/unread distinction often handled by dot
   },
   iconContainer: {
     width: 48,
     height: 48,
     borderRadius: 8,
-    backgroundColor: '#000',
+    backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 15,
@@ -231,25 +235,25 @@ const styles = StyleSheet.create({
   notificationTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#000',
+    color: colors.textPrimary,
     flex: 1,
   },
   unreadDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#000',
+    backgroundColor: colors.primary,
     marginLeft: 8,
   },
   notificationMessage: {
     fontSize: 14,
-    color: '#666',
+    color: colors.textSecondary,
     marginBottom: 4,
     lineHeight: 20,
   },
   notificationTime: {
     fontSize: 12,
-    color: '#999',
+    color: colors.textTertiary,
   },
   emptyState: {
     padding: 60,
@@ -258,7 +262,7 @@ const styles = StyleSheet.create({
   emptyText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#999',
+    color: colors.textTertiary,
   },
 });
 

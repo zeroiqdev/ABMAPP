@@ -15,13 +15,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
 import { Order, OrderItem } from '@/types';
-import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/design';
+import { useColors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/design'; // Import useColors
 import { format } from 'date-fns';
 
 export default function MarketplaceOrderDetailsScreen() {
     const router = useRouter();
     const { id } = useLocalSearchParams<{ id: string }>();
     const { user } = useAuthStore();
+    const colors = useColors(); // Hook
+    const styles = getStyles(colors); // Dynamic styles
+
     const [order, setOrder] = useState<Order | null>(null);
     const [loading, setLoading] = useState(true);
     const [processing, setProcessing] = useState(false);
@@ -80,12 +83,12 @@ export default function MarketplaceOrderDetailsScreen() {
 
     const getStatusColor = (status: string) => {
         switch (status) {
-            case 'confirmed': return Colors.info;
-            case 'shipped': return Colors.secondary;
+            case 'confirmed': return colors.info;
+            case 'shipped': return colors.secondary;
             case 'shipment_verified': return '#9C27B0'; // Purple for verified shipment
-            case 'delivered': return Colors.success;
-            case 'cancelled': return Colors.error;
-            default: return Colors.warning;
+            case 'delivered': return colors.success;
+            case 'cancelled': return colors.error;
+            default: return colors.warning;
         }
     };
 
@@ -178,7 +181,7 @@ export default function MarketplaceOrderDetailsScreen() {
                 {item.image ? (
                     <Image source={{ uri: item.image }} style={styles.itemImage} />
                 ) : (
-                    <Ionicons name="image-outline" size={24} color={Colors.textTertiary} />
+                    <Ionicons name="image-outline" size={24} color={colors.textTertiary} />
                 )}
             </View>
             <View style={styles.itemInfo}>
@@ -195,7 +198,7 @@ export default function MarketplaceOrderDetailsScreen() {
     if (loading) {
         return (
             <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={Colors.primary} />
+                <ActivityIndicator size="large" color={colors.primary} />
             </View>
         );
     }
@@ -206,7 +209,7 @@ export default function MarketplaceOrderDetailsScreen() {
         <View style={styles.container}>
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
+                    <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Review Order</Text>
                 <View style={{ width: 44 }} />
@@ -237,8 +240,8 @@ export default function MarketplaceOrderDetailsScreen() {
                                     {
                                         backgroundColor:
                                             order.payoutStatus === 'paid'
-                                                ? Colors.success + '20'
-                                                : Colors.warning + '20',
+                                                ? colors.success + '20'
+                                                : colors.warning + '20',
                                     },
                                 ]}
                             >
@@ -248,8 +251,8 @@ export default function MarketplaceOrderDetailsScreen() {
                                         {
                                             color:
                                                 order.payoutStatus === 'paid'
-                                                    ? Colors.success
-                                                    : Colors.warning,
+                                                    ? colors.success
+                                                    : colors.warning,
                                         },
                                     ]}
                                 >
@@ -301,10 +304,10 @@ export default function MarketplaceOrderDetailsScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     loadingContainer: {
         flex: 1,
@@ -317,9 +320,9 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         padding: Spacing.lg,
         paddingTop: Platform.OS === 'ios' ? 60 : Spacing['5xl'],
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         borderBottomWidth: 1,
-        borderBottomColor: Colors.border,
+        borderBottomColor: colors.border,
     },
     backButton: {
         padding: 10,
@@ -328,7 +331,7 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: Typography.fontSize.lg,
         fontWeight: Typography.fontWeight.bold,
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
     },
     content: {
         padding: Spacing.lg,
@@ -336,7 +339,7 @@ const styles = StyleSheet.create({
     },
     section: {
         marginBottom: Spacing.xl,
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         padding: Spacing.lg,
         borderRadius: BorderRadius.md,
         ...Shadows.sm,
@@ -344,7 +347,7 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: Typography.fontSize.base,
         fontWeight: Typography.fontWeight.bold,
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
         marginBottom: Spacing.sm,
     },
     statusBadge: {
@@ -360,25 +363,25 @@ const styles = StyleSheet.create({
     },
     dateText: {
         fontSize: Typography.fontSize.sm,
-        color: Colors.textSecondary,
+        color: colors.textSecondary,
         marginTop: Spacing.sm,
     },
     detailText: {
         fontSize: Typography.fontSize.base,
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
         marginBottom: 4,
     },
     itemCard: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
         padding: Spacing.md,
         borderRadius: BorderRadius.sm,
     },
     itemImageContainer: {
         width: 50,
         height: 50,
-        backgroundColor: '#f0f0f0',
+        backgroundColor: colors.background === '#000000' ? '#333' : '#f0f0f0',
         borderRadius: BorderRadius.sm,
         justifyContent: 'center',
         alignItems: 'center',
@@ -396,22 +399,22 @@ const styles = StyleSheet.create({
     itemName: {
         fontSize: Typography.fontSize.base,
         fontWeight: Typography.fontWeight.semibold,
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
     },
     itemQuantity: {
         fontSize: Typography.fontSize.sm,
-        color: Colors.textSecondary,
+        color: colors.textSecondary,
         marginTop: 2,
     },
     itemPrice: {
         fontSize: Typography.fontSize.sm,
         fontWeight: 'bold',
-        color: Colors.primary,
+        color: colors.primary,
         marginTop: 2,
     },
     vendorText: {
         fontSize: 10,
-        color: Colors.textTertiary,
+        color: colors.textTertiary,
         marginTop: 2,
     },
     summaryRow: {
@@ -422,12 +425,12 @@ const styles = StyleSheet.create({
     },
     summaryLabel: {
         fontSize: Typography.fontSize.base,
-        color: Colors.textSecondary,
+        color: colors.textSecondary,
     },
     totalPrice: {
         fontSize: Typography.fontSize.xl,
         fontWeight: Typography.fontWeight.bold,
-        color: Colors.primary,
+        color: colors.primary,
     },
     actionsContainer: {
         flexDirection: 'row',
@@ -443,15 +446,18 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     acceptButton: {
-        backgroundColor: '#000',
+        backgroundColor: colors.primary, // Black in light, White in dark (handled by theme usually but primary is #000/#FFF)
+        // Wait, primary is #E21A42 (Red-ish or similar?). No, Colors.primary.
+        // Let's check Colors again. primary: '#DAA520' (Gold?) or '#000'.
+        // In previous files it was using colors.primary for prices.
     },
     acceptButtonText: {
-        color: '#fff',
+        color: colors.textInverse, // White/Black
         fontWeight: 'bold',
         fontSize: 16,
     },
     rejectButton: {
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
         borderWidth: 1,
         borderColor: '#e74c3c',
     },

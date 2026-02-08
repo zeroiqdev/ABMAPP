@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
     View,
     Text,
@@ -22,7 +22,7 @@ import { useAuthStore } from '@/store/authStore';
 import * as ImagePicker from 'expo-image-picker';
 import { validateImageWithAlert, formatFileSize } from '@/utils/imageValidation';
 import { MarketplaceProduct } from '@/types';
-import { Colors, Typography, Spacing, BorderRadius } from '@/constants/design';
+import { Colors, Typography, Spacing, BorderRadius, useColors } from '@/constants/design';
 
 const { width } = Dimensions.get('window');
 const COLUMN_WIDTH = (width - 40) / 2;
@@ -43,6 +43,8 @@ const CATEGORIES = [
 export default function VendorUploadScreen() {
     const router = useRouter();
     const { user } = useAuthStore();
+    const colors = useColors();
+    const styles = useMemo(() => getStyles(colors), [colors]);
 
     const [view, setView] = useState<'list' | 'form'>('list');
     const [products, setProducts] = useState<MarketplaceProduct[]>([]);
@@ -182,7 +184,7 @@ export default function VendorUploadScreen() {
                     <Image source={{ uri: item.images[0] }} style={styles.productImage} />
                 ) : (
                     <View style={[styles.productImage, styles.placeholderImage]}>
-                        <Ionicons name="image-outline" size={30} color="#ccc" />
+                        <Ionicons name="image-outline" size={30} color={colors.textTertiary} />
                     </View>
                 )}
                 {item.stock <= 0 && (
@@ -212,7 +214,7 @@ export default function VendorUploadScreen() {
     if (!user || user.role !== 'vendor') {
         return (
             <View style={styles.centerContainer}>
-                <Ionicons name="lock-closed-outline" size={64} color="#ccc" />
+                <Ionicons name="lock-closed-outline" size={64} color={colors.textTertiary} />
                 <Text style={styles.errorText}>Vendor Access Required</Text>
                 <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
                     <Text style={styles.backButtonText}>Go Back</Text>
@@ -247,12 +249,12 @@ export default function VendorUploadScreen() {
                     ListEmptyComponent={
                         !loadingProducts ? (
                             <View style={styles.emptyState}>
-                                <Ionicons name="cube-outline" size={64} color="#ccc" />
+                                <Ionicons name="cube-outline" size={64} color={colors.textTertiary} />
                                 <Text style={styles.emptyText}>No products listed yet.</Text>
                                 <Text style={styles.emptySubText}>Start selling by adding your first product.</Text>
                             </View>
                         ) : (
-                            <ActivityIndicator style={{ marginTop: 50 }} />
+                            <ActivityIndicator style={{ marginTop: 50 }} color={colors.textPrimary} />
                         )
                     }
                 />
@@ -265,12 +267,12 @@ export default function VendorUploadScreen() {
         <View style={styles.container}>
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => setView('list')} style={styles.backIcon}>
-                    <Ionicons name="arrow-back" size={24} color="#000" />
+                    <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>List New Part</Text>
                 <TouchableOpacity onPress={handleSubmit} disabled={loading} style={{ marginLeft: 'auto' }}>
                     {loading ? (
-                        <ActivityIndicator color="#000" />
+                        <ActivityIndicator color={colors.textPrimary} />
                     ) : (
                         <Text style={styles.postButton}>Post</Text>
                     )}
@@ -281,7 +283,7 @@ export default function VendorUploadScreen() {
                 {/* Images */}
                 <ScrollView horizontal style={styles.imageScroll} showsHorizontalScrollIndicator={false}>
                     <TouchableOpacity style={styles.addImageButton} onPress={pickImage}>
-                        <Ionicons name="camera-outline" size={32} color="#000" />
+                        <Ionicons name="camera-outline" size={32} color={colors.textPrimary} />
                         <Text style={styles.addImageText}>Add Photo</Text>
                     </TouchableOpacity>
                     {images.map((img, index) => (
@@ -301,7 +303,7 @@ export default function VendorUploadScreen() {
                         placeholder="e.g. Toyota Corolla 2010 Brake Pads"
                         value={name}
                         onChangeText={setName}
-                        placeholderTextColor="#999"
+                        placeholderTextColor={colors.textTertiary}
                     />
 
                     <Text style={styles.label}>Price (₦)</Text>
@@ -311,7 +313,7 @@ export default function VendorUploadScreen() {
                         keyboardType="numeric"
                         value={price}
                         onChangeText={setPrice}
-                        placeholderTextColor="#999"
+                        placeholderTextColor={colors.textTertiary}
                     />
 
                     <Text style={styles.label}>Category</Text>
@@ -352,7 +354,7 @@ export default function VendorUploadScreen() {
                         keyboardType="numeric"
                         value={stock}
                         onChangeText={setStock}
-                        placeholderTextColor="#999"
+                        placeholderTextColor={colors.textTertiary}
                     />
 
                     <Text style={styles.label}>Compatible Vehicles (comma separated)</Text>
@@ -361,7 +363,7 @@ export default function VendorUploadScreen() {
                         placeholder="e.g. Toyota Camry 2012, Honda Accord 2015"
                         value={compatibility}
                         onChangeText={setCompatibility}
-                        placeholderTextColor="#999"
+                        placeholderTextColor={colors.textTertiary}
                     />
 
                     <Text style={styles.label}>Description</Text>
@@ -372,7 +374,7 @@ export default function VendorUploadScreen() {
                         numberOfLines={4}
                         value={description}
                         onChangeText={setDescription}
-                        placeholderTextColor="#999"
+                        placeholderTextColor={colors.textTertiary}
                     />
                 </View>
                 <View style={{ height: 40 }} />
@@ -381,22 +383,22 @@ export default function VendorUploadScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     addButton: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#000',
+        backgroundColor: colors.secondary,
         paddingHorizontal: Spacing.md,
         paddingVertical: Spacing.sm,
         borderRadius: BorderRadius.xl,
         gap: 6,
     },
     addButtonText: {
-        color: '#fff',
+        color: colors.textInverse,
         fontWeight: '600',
         fontSize: Typography.fontSize.sm,
     },
@@ -418,7 +420,7 @@ const styles = StyleSheet.create({
         width: '100%',
         aspectRatio: 1,
         borderRadius: BorderRadius.md,
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         marginBottom: Spacing.xs,
         overflow: 'hidden',
         position: 'relative',
@@ -438,13 +440,13 @@ const styles = StyleSheet.create({
     productName: {
         fontSize: Typography.fontSize.sm,
         fontWeight: '500',
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
         marginBottom: 2,
     },
     productPrice: {
         fontSize: Typography.fontSize.base,
         fontWeight: '700',
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
         marginBottom: 4,
     },
     statusRow: {
@@ -480,12 +482,12 @@ const styles = StyleSheet.create({
         marginTop: 20,
         fontSize: Typography.fontSize.lg,
         fontWeight: '600',
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
     },
     emptySubText: {
         marginTop: 8,
         fontSize: Typography.fontSize.sm,
-        color: Colors.textSecondary,
+        color: colors.textSecondary,
         textAlign: 'center',
     },
     backIcon: {
@@ -497,6 +499,7 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         padding: 20,
+        backgroundColor: colors.background,
     },
     header: {
         flexDirection: 'row',
@@ -506,18 +509,18 @@ const styles = StyleSheet.create({
         paddingHorizontal: Spacing.lg,
         paddingBottom: Spacing.md,
         borderBottomWidth: 1,
-        borderBottomColor: Colors.border,
-        backgroundColor: Colors.background,
+        borderBottomColor: colors.border,
+        backgroundColor: colors.surface,
     },
     headerTitle: {
         fontSize: Typography.fontSize.lg,
         fontWeight: 'bold',
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
     },
     postButton: {
         fontSize: Typography.fontSize.base,
         fontWeight: '600',
-        color: '#000',
+        color: colors.textPrimary,
     },
     content: {
         flex: 1,
@@ -530,15 +533,15 @@ const styles = StyleSheet.create({
         height: 100,
         borderRadius: BorderRadius.md,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
         borderStyle: 'dashed',
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 15,
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
     },
     addImageText: {
-        color: Colors.textSecondary,
+        color: colors.textSecondary,
         fontSize: Typography.fontSize.xs,
         marginTop: 5,
         fontWeight: '500',
@@ -556,7 +559,7 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
         position: 'relative',
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
     },
     removeImageButton: {
         position: 'absolute',
@@ -572,18 +575,18 @@ const styles = StyleSheet.create({
     label: {
         fontSize: Typography.fontSize.sm,
         fontWeight: '600',
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
         marginBottom: 8,
         marginTop: 15,
     },
     input: {
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         borderRadius: BorderRadius.md,
         padding: 12,
         fontSize: Typography.fontSize.base,
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
     },
     textArea: {
         height: 120,
@@ -598,21 +601,21 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         paddingVertical: 8,
         borderRadius: BorderRadius.xl,
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         marginRight: 10,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
     },
     categoryChipActive: {
-        backgroundColor: '#000',
-        borderColor: '#000',
+        backgroundColor: colors.secondary,
+        borderColor: colors.secondary,
     },
     categoryText: {
         fontSize: Typography.fontSize.sm,
-        color: Colors.textSecondary,
+        color: colors.textSecondary,
     },
     categoryTextActive: {
-        color: '#fff',
+        color: colors.textInverse,
         fontWeight: '600',
     },
     row: {
@@ -623,37 +626,38 @@ const styles = StyleSheet.create({
         flex: 1,
         padding: 15,
         borderRadius: BorderRadius.lg,
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         alignItems: 'center',
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
     },
     optionButtonActive: {
-        backgroundColor: '#000',
-        borderColor: '#000',
+        backgroundColor: colors.secondary,
+        borderColor: colors.secondary,
     },
     optionText: {
         fontSize: Typography.fontSize.base,
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
         fontWeight: '500',
     },
     optionTextActive: {
-        color: '#fff',
+        color: colors.textInverse,
         fontWeight: 'bold',
     },
     errorText: {
         fontSize: Typography.fontSize.lg,
-        color: Colors.textSecondary,
+        color: colors.textSecondary,
         marginTop: 20,
         marginBottom: 20,
     },
     backButton: {
         padding: 15,
-        backgroundColor: '#000',
+        backgroundColor: colors.secondary,
         borderRadius: BorderRadius.md,
     },
     backButtonText: {
-        color: '#fff',
+        color: colors.textInverse,
         fontWeight: 'bold',
     },
 });
+

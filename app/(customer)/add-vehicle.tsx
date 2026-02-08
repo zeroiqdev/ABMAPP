@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -19,10 +19,13 @@ import { Vehicle } from '@/types';
 import { Ionicons } from '@expo/vector-icons';
 import { CAR_BRANDS } from '@/constants/carBrands';
 import { BrandLogo } from '@/components/BrandLogo';
+import { useColors, Colors } from '@/constants/design';
 
 export default function AddVehicleScreen() {
   const { user } = useAuthStore();
   const router = useRouter();
+  const colors = useColors();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   const [loading, setLoading] = useState(false);
 
   // Form State
@@ -56,17 +59,20 @@ export default function AddVehicleScreen() {
 
     setLoading(true);
     try {
-      const vehicleData: Omit<Vehicle, 'id'> = {
+      const vehicleData: any = {
         userId: user.id,
         vin: formData.vin ? formData.vin.toUpperCase() : 'N/A',
         licensePlate: formData.licensePlate.toUpperCase(),
         make: formData.make,
         model: formData.model,
         year: parseInt(formData.year),
-        color: formData.color || undefined,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
+
+      if (formData.color) {
+        vehicleData.color = formData.color;
+      }
 
       await addDoc(collection(db, 'vehicles'), vehicleData);
       Alert.alert('Success', 'Vehicle added successfully', [
@@ -107,6 +113,7 @@ export default function AddVehicleScreen() {
             <TextInput
               style={styles.input}
               placeholder="Search or Enter Custom Brand..."
+              placeholderTextColor={colors.textTertiary}
               value={searchBrandQuery}
               onChangeText={setSearchBrandQuery}
               autoFocus
@@ -119,14 +126,14 @@ export default function AddVehicleScreen() {
             ListHeaderComponent={() => (
               searchBrandQuery.length > 0 ? (
                 <TouchableOpacity
-                  style={[styles.brandItem, { borderBottomWidth: 2, borderBottomColor: '#f0f0f0' }]}
+                  style={[styles.brandItem, { borderBottomWidth: 2, borderBottomColor: colors.border }]}
                   onPress={() => {
                     setFormData({ ...formData, make: searchBrandQuery });
                     setIsBrandSelectionMode(false);
                     setSearchBrandQuery('');
                   }}
                 >
-                  <Ionicons name="create-outline" size={24} color="#000" style={{ marginRight: 12 }} />
+                  <Ionicons name="create-outline" size={24} color={colors.textPrimary} style={{ marginRight: 12 }} />
                   <Text style={[styles.brandName, { fontWeight: '600' }]}>Use "{searchBrandQuery}"</Text>
                 </TouchableOpacity>
               ) : null
@@ -157,13 +164,13 @@ export default function AddVehicleScreen() {
               <Text style={formData.make ? styles.value : styles.placeholder}>
                 {formData.make || 'Select Make *'}
               </Text>
-              <Ionicons name="chevron-down" size={20} color="#666" />
+              <Ionicons name="chevron-down" size={20} color={colors.textSecondary} />
             </TouchableOpacity>
 
             <TextInput
               style={styles.input}
               placeholder="Model (e.g. Camry) *"
-              placeholderTextColor="#999"
+              placeholderTextColor={colors.textTertiary}
               value={formData.model}
               onChangeText={(text) => setFormData({ ...formData, model: text })}
               autoCapitalize="words"
@@ -172,7 +179,7 @@ export default function AddVehicleScreen() {
             <TextInput
               style={styles.input}
               placeholder="Year *"
-              placeholderTextColor="#999"
+              placeholderTextColor={colors.textTertiary}
               value={formData.year}
               onChangeText={(text) => setFormData({ ...formData, year: text })}
               keyboardType="numeric"
@@ -181,7 +188,7 @@ export default function AddVehicleScreen() {
             <TextInput
               style={styles.input}
               placeholder="License Plate *"
-              placeholderTextColor="#999"
+              placeholderTextColor={colors.textTertiary}
               value={formData.licensePlate}
               onChangeText={(text) => setFormData({ ...formData, licensePlate: text })}
               autoCapitalize="characters"
@@ -190,7 +197,7 @@ export default function AddVehicleScreen() {
             <TextInput
               style={styles.input}
               placeholder="VIN (Optional)"
-              placeholderTextColor="#999"
+              placeholderTextColor={colors.textTertiary}
               value={formData.vin}
               onChangeText={(text) => setFormData({ ...formData, vin: text })}
               autoCapitalize="characters"
@@ -199,7 +206,7 @@ export default function AddVehicleScreen() {
             <TextInput
               style={styles.input}
               placeholder="Color (Optional)"
-              placeholderTextColor="#999"
+              placeholderTextColor={colors.textTertiary}
               value={formData.color}
               onChangeText={(text) => setFormData({ ...formData, color: text })}
               autoCapitalize="words"
@@ -221,10 +228,10 @@ export default function AddVehicleScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -233,53 +240,56 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingTop: 60,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: colors.border,
+    backgroundColor: colors.surface,
   },
   backButton: {
     fontSize: 16,
-    color: '#000',
+    color: colors.textPrimary,
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
+    color: colors.textPrimary,
   },
   content: {
     flex: 1,
+    backgroundColor: colors.background,
   },
   form: {
     padding: 20,
   },
   input: {
-    backgroundColor: '#f9f9f9',
+    backgroundColor: colors.surface,
     padding: 15,
     borderRadius: 12,
     marginBottom: 20,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: '#eee',
-    color: '#000',
+    borderColor: colors.border,
+    color: colors.textPrimary,
   },
   selector: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 15,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: colors.surface,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#eee',
+    borderColor: colors.border,
     marginBottom: 20,
   },
   value: {
     fontSize: 16,
-    color: '#000',
+    color: colors.textPrimary,
   },
   placeholder: {
     fontSize: 16,
-    color: '#999',
+    color: colors.textTertiary,
   },
   submitButton: {
-    backgroundColor: '#000',
+    backgroundColor: colors.textPrimary,
     padding: 15,
     borderRadius: 8,
     alignItems: 'center',
@@ -289,7 +299,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   submitButtonText: {
-    color: '#fff',
+    color: colors.textInverse,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -298,11 +308,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: colors.border,
   },
   brandName: {
     fontSize: 16,
-    color: '#000',
+    color: colors.textPrimary,
   },
 });
 

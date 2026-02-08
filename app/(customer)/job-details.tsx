@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -15,12 +15,14 @@ import { ChatMessage, Job, Vehicle } from '@/types';
 import { format } from 'date-fns';
 import JobChat from '@/components/JobChat';
 import { useAuthStore } from '@/store/authStore';
-import { Colors } from '@/constants/design';
+import { Colors, useColors } from '@/constants/design';
 
 export default function JobDetailsScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuthStore();
+  const colors = useColors();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   const [job, setJob] = useState<Job | null>(null);
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
   const [loading, setLoading] = useState(true);
@@ -69,7 +71,7 @@ export default function JobDetailsScreen() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#000" />
+        <ActivityIndicator size="large" color={colors.textPrimary} />
       </View>
     );
   }
@@ -79,7 +81,7 @@ export default function JobDetailsScreen() {
       <View style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={24} color="#000" />
+            <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Job Details</Text>
           <View style={{ width: 24 }} />
@@ -95,11 +97,11 @@ export default function JobDetailsScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#000" />
+          <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Job Details</Text>
         <TouchableOpacity style={styles.chatButton} onPress={() => setChatVisible(true)}>
-          <Ionicons name="chatbubble-outline" size={24} color="#000" />
+          <Ionicons name="chatbubble-outline" size={24} color={colors.textPrimary} />
           {unreadCount > 0 && (
             <View style={styles.badge}>
               <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
@@ -115,7 +117,7 @@ export default function JobDetailsScreen() {
         {vehicle && (
           <View style={styles.section}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
-              <Text style={{ fontSize: 18, fontWeight: 'bold' }}>Vehicle Information</Text>
+              <Text style={{ fontSize: 18, fontWeight: 'bold', color: colors.textPrimary }}>Vehicle Information</Text>
               <View
                 style={[
                   styles.statusBadge,
@@ -128,11 +130,11 @@ export default function JobDetailsScreen() {
               </View>
             </View>
             <View style={styles.infoCard}>
-              <InfoRow label="Make" value={vehicle.make} />
-              <InfoRow label="Model" value={vehicle.model} />
-              <InfoRow label="Year" value={vehicle.year.toString()} />
-              <InfoRow label="License Plate" value={vehicle.licensePlate} />
-              <InfoRow label="VIN" value={vehicle.vin} />
+              <InfoRow label="Make" value={vehicle.make} colors={colors} />
+              <InfoRow label="Model" value={vehicle.model} colors={colors} />
+              <InfoRow label="Year" value={vehicle.year.toString()} colors={colors} />
+              <InfoRow label="License Plate" value={vehicle.licensePlate} colors={colors} />
+              <InfoRow label="VIN" value={vehicle.vin} colors={colors} />
             </View>
           </View>
         )}
@@ -144,24 +146,35 @@ export default function JobDetailsScreen() {
             <InfoRow
               label="Type"
               value={job.type.charAt(0).toUpperCase() + job.type.slice(1).replace(/_/g, ' ')}
+              colors={colors}
             />
             {job.scheduledDate && (
               <InfoRow
                 label="Scheduled Date"
                 value={format(job.scheduledDate, 'MMM dd, yyyy HH:mm')}
+                colors={colors}
               />
             )}
-            {job.technicianName && (
-              <InfoRow label="Assigned Technician" value={job.technicianName} />
-            )}
+            {/* Show multiple technicians if available */}
+            {job.technicianNames && job.technicianNames.length > 0 ? (
+              <InfoRow
+                label="Assigned Technician(s)"
+                value={job.technicianNames.join(', ')}
+                colors={colors}
+              />
+            ) : job.technicianName ? (
+              <InfoRow label="Assigned Technician" value={job.technicianName} colors={colors} />
+            ) : null}
             <InfoRow
               label="Created"
               value={format(job.createdAt, 'MMM dd, yyyy')}
+              colors={colors}
             />
             {job.completedAt && (
               <InfoRow
                 label="Completed"
                 value={format(job.completedAt, 'MMM dd, yyyy')}
+                colors={colors}
               />
             )}
           </View>
@@ -185,23 +198,6 @@ export default function JobDetailsScreen() {
           </View>
         )}
 
-        {/* Parts Used */}
-        {job.partsUsed && job.partsUsed.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Parts Used</Text>
-            <View style={styles.infoCard}>
-              {job.partsUsed.map((part, index) => (
-                <View key={index} style={styles.partRow}>
-                  <Text style={styles.partName}>{part.partName}</Text>
-                  <Text style={styles.partDetails}>
-                    Qty: {part.quantity} × ₦{part.unitPrice.toLocaleString()}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
         {/* Images */}
         {job.images && job.images.length > 0 && (
           <View style={styles.section}>
@@ -217,6 +213,9 @@ export default function JobDetailsScreen() {
             </ScrollView>
           </View>
         )}
+
+        {/* Bottom padding for scroll */}
+        <View style={{ height: 40 }} />
       </ScrollView>
 
       {user && (
@@ -239,24 +238,25 @@ const statusSteps = [
   { key: 'completed', label: 'Completed' },
 ];
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function InfoRow({ label, value, colors }: { label: string; value: string; colors: any }) {
   return (
-    <View style={styles.infoRow}>
-      <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={styles.infoValue}>{value}</Text>
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+      <Text style={{ fontSize: 14, color: colors.textSecondary, fontWeight: '500' }}>{label}</Text>
+      <Text style={{ fontSize: 14, color: colors.textPrimary, fontWeight: '600', flexShrink: 1, textAlign: 'right', maxWidth: '60%' }}>{value}</Text>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -264,13 +264,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     paddingTop: 60,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: colors.border,
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
+    color: colors.textPrimary,
   },
   chatButton: {
     padding: 4,
@@ -311,13 +312,14 @@ const styles = StyleSheet.create({
   },
   timelineSection: {
     padding: 20,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     marginBottom: 10,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 15,
+    color: colors.textPrimary,
   },
   timelineItem: {
     flexDirection: 'row',
@@ -328,7 +330,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#ddd',
+    backgroundColor: colors.border,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 15,
@@ -345,7 +347,7 @@ const styles = StyleSheet.create({
     top: 24,
     width: 2,
     height: 30,
-    backgroundColor: '#ddd',
+    backgroundColor: colors.border,
   },
   timelineLineCompleted: {
     backgroundColor: '#34C759',
@@ -356,47 +358,51 @@ const styles = StyleSheet.create({
   },
   timelineLabel: {
     fontSize: 16,
-    color: '#666',
+    color: colors.textSecondary,
   },
   timelineLabelCompleted: {
-    color: '#000',
+    color: colors.textPrimary,
     fontWeight: '600',
   },
   section: {
     padding: 20,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     marginBottom: 10,
   },
   infoCard: {
-    backgroundColor: '#f9f9f9',
+    backgroundColor: colors.background,
     borderRadius: 12,
     padding: 15,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: colors.border,
   },
   infoLabel: {
     fontSize: 14,
-    color: '#666',
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   infoValue: {
     fontSize: 14,
-    color: '#000',
+    color: colors.textPrimary,
     fontWeight: '600',
   },
   descriptionCard: {
-    backgroundColor: '#f9f9f9',
+    backgroundColor: colors.background,
     borderRadius: 12,
     padding: 15,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   descriptionText: {
     fontSize: 14,
-    color: '#333',
+    color: colors.textPrimary,
     lineHeight: 20,
   },
   partRow: {
@@ -404,16 +410,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: colors.border,
   },
   partName: {
     fontSize: 14,
-    color: '#000',
+    color: colors.textPrimary,
     fontWeight: '600',
   },
   partDetails: {
     fontSize: 14,
-    color: '#666',
+    color: colors.textSecondary,
   },
   image: {
     width: 200,
@@ -428,15 +434,15 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    color: '#999',
+    color: colors.textTertiary,
   },
   tabContainer: {
     flexDirection: 'row',
     paddingHorizontal: 20,
     paddingBottom: 10,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: colors.border,
   },
   tab: {
     flex: 1,
@@ -446,16 +452,15 @@ const styles = StyleSheet.create({
     borderBottomColor: 'transparent',
   },
   activeTab: {
-    borderBottomColor: Colors.primary,
+    borderBottomColor: colors.primary,
   },
   tabText: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#666',
+    color: colors.textSecondary,
   },
   activeTabText: {
-    color: Colors.primary,
+    color: colors.primary,
     fontWeight: '600',
   },
 });
-

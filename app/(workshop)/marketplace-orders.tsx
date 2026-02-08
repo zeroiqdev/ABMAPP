@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
 import { Order } from '@/types';
-import { Colors, Typography, Spacing, BorderRadius } from '@/constants/design';
+import { Colors, Typography, Spacing, BorderRadius, useColors } from '@/constants/design';
 import { format } from 'date-fns';
 
 const TABS = ['All Orders', 'Pending Action', 'Ready for Payout', 'Paid'];
@@ -23,6 +23,7 @@ const TABS = ['All Orders', 'Pending Action', 'Ready for Payout', 'Paid'];
 export default function MarketplaceOrdersScreen() {
     const router = useRouter();
     const { user } = useAuthStore();
+    const colors = useColors();
     const [orders, setOrders] = useState<Order[]>([]);
     const [refreshing, setRefreshing] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -71,19 +72,19 @@ export default function MarketplaceOrdersScreen() {
     const getStatusColor = (status: string) => {
         switch (status) {
             case 'pending':
-                return Colors.warning;
+                return colors.warning;
             case 'confirmed':
-                return Colors.info;
+                return colors.info;
             case 'shipped':
-                return Colors.secondary;
+                return colors.primary; // Changed to primary (brand blue/white) or use colors.info
             case 'shipment_verified':
                 return '#9C27B0';
             case 'delivered':
-                return Colors.success;
+                return colors.success;
             case 'cancelled':
-                return Colors.error;
+                return colors.error;
             default:
-                return Colors.textSecondary;
+                return colors.textSecondary;
         }
     };
 
@@ -97,28 +98,28 @@ export default function MarketplaceOrdersScreen() {
 
         return (
             <TouchableOpacity
-                style={styles.orderCard}
+                style={[styles.orderCard, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}
                 activeOpacity={0.8}
                 onPress={() =>
                     router.push(`/(workshop)/marketplace-order-details?id=${item.id}`)
                 }
             >
-                <View style={styles.iconBox}>
+                <View style={[styles.iconBox, { backgroundColor: colors.background }]}>
                     {firstItem?.image ? (
                         <Image source={{ uri: firstItem.image }} style={styles.orderImage} />
                     ) : (
-                        <Ionicons name="cube-outline" size={24} color="#666" />
+                        <Ionicons name="cube-outline" size={24} color={colors.textTertiary} />
                     )}
                 </View>
 
                 <View style={styles.orderDetails}>
-                    <Text style={styles.orderName} numberOfLines={1}>
+                    <Text style={[styles.orderName, { color: colors.textPrimary }]} numberOfLines={1}>
                         {displayName}
                     </Text>
-                    <Text style={styles.orderPrice}>₦{item.total.toLocaleString()}</Text>
+                    <Text style={[styles.orderPrice, { color: colors.textPrimary }]}>₦{item.total.toLocaleString()}</Text>
                     <View style={styles.orderMeta}>
-                        <Text style={styles.orderId}>#{item.id.slice(0, 8)}</Text>
-                        <Text style={styles.orderDate}>
+                        <Text style={[styles.orderId, { color: colors.textSecondary }]}>#{item.id.slice(0, 8)}</Text>
+                        <Text style={[styles.orderDate, { color: colors.textSecondary }]}>
                             • {item.createdAt ? format(item.createdAt, 'MMM d, yyyy') : ''}
                         </Text>
                     </View>
@@ -147,7 +148,7 @@ export default function MarketplaceOrdersScreen() {
                     )}
                 </View>
 
-                <Ionicons name="chevron-forward" size={20} color={Colors.textTertiary} />
+                <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
             </TouchableOpacity>
         );
     };
@@ -160,19 +161,19 @@ export default function MarketplaceOrdersScreen() {
         );
 
     return (
-        <View style={styles.container}>
-            <View style={styles.header}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
+            <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
                 <TouchableOpacity
                     onPress={() => router.back()}
                     style={styles.backButton}
                 >
-                    <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
+                    <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>Marketplace Orders</Text>
+                <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Marketplace Orders</Text>
                 <View style={{ width: 24 }} />
             </View>
 
-            <View style={styles.tabsContainer}>
+            <View style={[styles.tabsContainer, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
                 <FlatList
                     data={TABS}
                     horizontal
@@ -182,13 +183,15 @@ export default function MarketplaceOrdersScreen() {
                             style={[
                                 styles.tabItem,
                                 activeTab === item && styles.tabItemActive,
+                                activeTab === item && { borderBottomColor: colors.textPrimary },
                             ]}
                             onPress={() => setActiveTab(item)}
                         >
                             <Text
                                 style={[
                                     styles.tabText,
-                                    activeTab === item && styles.tabTextActive,
+                                    { color: colors.textSecondary },
+                                    activeTab === item && { color: colors.textPrimary, fontWeight: Typography.fontWeight.semibold },
                                 ]}
                             >
                                 {item}
@@ -206,16 +209,16 @@ export default function MarketplaceOrdersScreen() {
                 keyExtractor={(item) => item.id}
                 contentContainerStyle={styles.listContent}
                 refreshControl={
-                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textPrimary} />
                 }
                 ListEmptyComponent={
                     <View style={styles.emptyState}>
                         <Ionicons
                             name="receipt-outline"
                             size={64}
-                            color={Colors.textTertiary}
+                            color={colors.textTertiary}
                         />
-                        <Text style={styles.emptyText}>No orders found</Text>
+                        <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No orders found</Text>
                     </View>
                 }
             />
@@ -224,7 +227,7 @@ export default function MarketplaceOrdersScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#fff' },
+    container: { flex: 1 },
     centerContainer: {
         flex: 1,
         justifyContent: 'center',
@@ -237,9 +240,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         padding: Spacing.lg,
         paddingTop: Platform.OS === 'ios' ? 60 : Spacing['5xl'],
-        backgroundColor: Colors.surface,
         borderBottomWidth: 1,
-        borderBottomColor: Colors.border,
     },
     backButton: {
         padding: 5,
@@ -247,7 +248,6 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: Typography.fontSize.xl,
         fontWeight: Typography.fontWeight.bold,
-        color: Colors.textPrimary,
     },
     listContent: { padding: 20 },
     orderCard: {
@@ -256,8 +256,6 @@ const styles = StyleSheet.create({
         marginBottom: 0,
         paddingVertical: 15,
         borderBottomWidth: 1,
-        borderBottomColor: '#f5f5f5',
-        backgroundColor: '#fff',
     },
     iconBox: {
         width: 60,
@@ -266,7 +264,6 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 12,
-        backgroundColor: '#f5f5f5',
         overflow: 'hidden',
     },
     orderImage: { width: '100%', height: '100%', resizeMode: 'cover' },
@@ -274,18 +271,16 @@ const styles = StyleSheet.create({
     orderName: {
         fontSize: 16,
         fontWeight: '600',
-        color: '#000',
         marginBottom: 4,
     },
     orderPrice: {
         fontSize: 16,
         fontWeight: 'bold',
-        color: '#000',
         marginBottom: 6,
     },
     orderMeta: { flexDirection: 'row', alignItems: 'center' },
-    orderId: { fontSize: 12, color: '#666' },
-    orderDate: { fontSize: 12, color: '#666' },
+    orderId: { fontSize: 12 },
+    orderDate: { fontSize: 12 },
     statusContainer: { alignItems: 'flex-end', marginRight: 8 },
     statusBadge: {
         paddingHorizontal: 8,
@@ -302,9 +297,7 @@ const styles = StyleSheet.create({
     },
     paidText: { color: '#fff', fontSize: 9, fontWeight: 'bold' },
     tabsContainer: {
-        backgroundColor: '#fff',
         borderBottomWidth: 1,
-        borderBottomColor: '#f0f0f0',
     },
     tabsContent: { paddingHorizontal: 15 },
     tabItem: {
@@ -314,9 +307,9 @@ const styles = StyleSheet.create({
         borderBottomWidth: 2,
         borderBottomColor: 'transparent',
     },
-    tabItemActive: { borderBottomColor: '#000' },
-    tabText: { fontSize: 14, color: '#999', fontWeight: '500' },
-    tabTextActive: { color: '#000', fontWeight: '600' },
+    tabItemActive: {},
+    tabText: { fontSize: 14, fontWeight: '500' },
+    tabTextActive: { fontWeight: '600' },
     emptyState: {
         flex: 1,
         justifyContent: 'center',
@@ -327,7 +320,6 @@ const styles = StyleSheet.create({
     emptyText: {
         fontSize: Typography.fontSize.base,
         fontWeight: Typography.fontWeight.semibold,
-        color: Colors.textTertiary,
         marginTop: Spacing.base,
     },
 });

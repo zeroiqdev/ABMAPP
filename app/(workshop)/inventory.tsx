@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
 import { InventoryItem } from '@/types';
+import { Colors, useColors } from '@/constants/design';
 
 export default function InventoryScreen() {
   const { user } = useAuthStore();
@@ -56,27 +57,29 @@ export default function InventoryScreen() {
     setTimeout(() => setRefreshing(false), 1000);
   };
 
+  const colors = useColors();
+
   const renderItem = ({ item }: { item: InventoryItem }) => {
     return (
-      <View style={styles.itemCard}>
-        <View style={styles.iconBox}>
-          <Ionicons name="cube-outline" size={24} color="#fff" />
+      <View style={[styles.itemCard, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+        <View style={[styles.iconBox, { backgroundColor: colors.textPrimary }]}>
+          <Ionicons name="cube-outline" size={24} color={colors.textInverse} />
         </View>
 
         <View style={styles.itemInfo}>
-          <Text style={styles.itemName}>{item.name}</Text>
-          <Text style={styles.itemSubtitle}>
+          <Text style={[styles.itemName, { color: colors.textPrimary }]}>{item.name}</Text>
+          <Text style={[styles.itemSubtitle, { color: colors.textSecondary }]}>
             {item.sku ? `${item.sku} • ` : ''}{item.quantity} in Stock
           </Text>
         </View>
 
         <View style={styles.itemRight}>
-          <Text style={styles.itemPrice}>₦{(item.sellingPrice || item.unitPrice || 0).toLocaleString()}</Text>
+          <Text style={[styles.itemPrice, { color: colors.textPrimary }]}>₦{(item.sellingPrice || item.unitPrice || 0).toLocaleString()}</Text>
           <TouchableOpacity
-            style={styles.editButton}
+            style={[styles.editButton, { backgroundColor: colors.textPrimary }]}
             onPress={() => router.push(`/(workshop)/create-inventory-item?id=${item.id}`)}
           >
-            <Text style={styles.editText}>Edit</Text>
+            <Text style={[styles.editText, { color: colors.textInverse }]}>Edit</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -84,12 +87,12 @@ export default function InventoryScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Inventory</Text>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+        <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Inventory</Text>
         <TouchableOpacity onPress={() => router.push('/(workshop)/create-inventory-item')}>
-          <View style={styles.addButton}>
-            <Ionicons name="add" size={20} color="#fff" />
+          <View style={[styles.addButton, { backgroundColor: colors.textPrimary }]}>
+            <Ionicons name="add" size={20} color={colors.textInverse} />
           </View>
         </TouchableOpacity>
       </View>
@@ -100,12 +103,12 @@ export default function InventoryScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textPrimary} />
         }
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Ionicons name="cube-outline" size={64} color="#ccc" />
-            <Text style={styles.emptyText}>No inventory items found</Text>
+            <Ionicons name="cube-outline" size={64} color={colors.textTertiary} />
+            <Text style={[styles.emptyText, { color: colors.textTertiary }]}>No inventory items found</Text>
           </View>
         }
       />
@@ -116,7 +119,7 @@ export default function InventoryScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff', // Changed to white as per Monday style usually
+    backgroundColor: '#fff',
   },
   header: {
     flexDirection: 'row',
@@ -133,6 +136,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     flex: 1,
     textAlign: 'left',
+    color: '#000',
   },
   addButton: {
     width: 32,
@@ -143,26 +147,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   listContent: {
-    padding: 20,
+    padding: 0,
   },
   itemCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 0,
     backgroundColor: '#fff',
-    // Removed shadow/card style for a cleaner list look as per Monday template list
     borderBottomWidth: 1,
     borderBottomColor: '#f5f5f5',
-    paddingBottom: 15,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
   },
   iconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     backgroundColor: '#000',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 15,
+    marginRight: 16,
   },
   itemInfo: {
     flex: 1,

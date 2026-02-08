@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
 import { db } from '@/config/firebase';
 import { collection, onSnapshot, query, orderBy, deleteDoc, doc } from 'firebase/firestore';
-import { Colors } from '@/constants/design';
+import { Colors, useColors } from '@/constants/design';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
@@ -13,6 +13,8 @@ import { firebaseService } from '@/services/firebaseService';
 export default function SuperAdminDashboard() {
     const router = useRouter();
     const { logout } = useAuthStore();
+    const colors = useColors();
+    const styles = useMemo(() => getStyles(colors), [colors]);
     const [workshops, setWorkshops] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [adminEmails, setAdminEmails] = useState<Record<string, string>>({});
@@ -102,7 +104,7 @@ export default function SuperAdminDashboard() {
 
                     <View style={[styles.cardRow, { marginBottom: 8 }]}>
                         <Text style={[styles.cardLabel, { fontSize: 12 }]}>ID:</Text>
-                        <Text style={[styles.cardValue, { fontSize: 12, color: '#888' }]} selectable>{item.id}</Text>
+                        <Text style={[styles.cardValue, { fontSize: 12, color: colors.textSecondary }]} selectable>{item.id}</Text>
                     </View>
 
                     <View style={styles.cardRow}>
@@ -131,8 +133,8 @@ export default function SuperAdminDashboard() {
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: -10, padding: 10 }}>
-                    <Ionicons name="arrow-back" size={24} color="#000" />
+                <TouchableOpacity onPress={() => router.push('/(workshop)/settings')} style={{ marginLeft: -10, padding: 10 }}>
+                    <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Manage Workshops</Text>
                 <View style={{ width: 44 }} />
@@ -161,30 +163,32 @@ export default function SuperAdminDashboard() {
     );
 }
 
-const styles = StyleSheet.create({
+
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f8f9fa',
+        backgroundColor: colors.background,
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
         padding: 20,
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        borderBottomColor: colors.border,
     },
     headerTitle: {
         fontSize: 20,
         fontWeight: 'bold',
+        color: colors.textPrimary,
     },
     actionContainer: {
         padding: 20,
         paddingBottom: 0,
     },
     addButton: {
-        backgroundColor: '#000',
+        backgroundColor: colors.secondary,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
@@ -193,7 +197,7 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     addButtonText: {
-        color: '#fff',
+        color: colors.textInverse,
         fontWeight: '600',
         fontSize: 16,
     },
@@ -202,7 +206,7 @@ const styles = StyleSheet.create({
         gap: 15,
     },
     card: {
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
         padding: 15,
         borderRadius: 12,
         shadowColor: '#000',
@@ -211,7 +215,7 @@ const styles = StyleSheet.create({
         shadowRadius: 3,
         elevation: 2,
         borderWidth: 1,
-        borderColor: '#f0f0f0',
+        borderColor: colors.border,
     },
     cardHeader: {
         flexDirection: 'row',
@@ -222,7 +226,7 @@ const styles = StyleSheet.create({
     workshopName: {
         fontSize: 18,
         fontWeight: '700',
-        color: '#333',
+        color: colors.textPrimary,
     },
     statusBadge: {
         paddingHorizontal: 8,
@@ -240,17 +244,17 @@ const styles = StyleSheet.create({
     },
     cardLabel: {
         fontSize: 14,
-        color: '#666',
+        color: colors.textSecondary,
     },
     cardValue: {
         fontSize: 14,
-        color: '#000',
+        color: colors.textPrimary,
         fontWeight: '500',
     },
     emptyText: {
         textAlign: 'center',
         marginTop: 50,
-        color: '#666',
+        color: colors.textSecondary,
     },
     deleteAction: {
         backgroundColor: '#dd2c00',
@@ -258,7 +262,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         width: 100,
         borderRadius: 12,
-        marginVertical: 1, // Visual adjustment to align with card border?
+        marginVertical: 1,
         height: '100%',
     },
     deleteActionText: {
@@ -267,3 +271,4 @@ const styles = StyleSheet.create({
         marginTop: 4,
     },
 });
+

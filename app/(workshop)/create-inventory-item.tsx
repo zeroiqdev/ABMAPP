@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
 import { InventoryItem } from '@/types';
+import { Colors, useColors } from '@/constants/design';
 
 export default function CreateInventoryItemScreen() {
     const router = useRouter();
@@ -49,6 +50,8 @@ export default function CreateInventoryItemScreen() {
             resetForm();
         }
     }, [id]);
+
+    const colors = useColors();
 
     const handleNewQuantityChange = (delta: number) => {
         setNewUnitIds((prev) => {
@@ -242,28 +245,28 @@ export default function CreateInventoryItemScreen() {
 
     if (initialLoading) {
         return (
-            <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#5B68F6" />
+            <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+                <ActivityIndicator size="large" color={colors.primary} />
             </View>
         );
     }
 
     return (
         <KeyboardAvoidingView
-            style={styles.container}
+            style={[styles.container, { backgroundColor: colors.background }]}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-            <View style={styles.header}>
+            <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
                 <TouchableOpacity onPress={() => router.push('/(workshop)/inventory')}>
-                    <Ionicons name="arrow-back" size={24} color="#000" />
+                    <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>{id ? 'Edit Item' : 'New Item'}</Text>
+                <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>{id ? 'Edit Item' : 'New Item'}</Text>
                 <TouchableOpacity onPress={handleSave} disabled={loading}>
                     {loading ? (
-                        <ActivityIndicator size="small" color="#000" />
+                        <ActivityIndicator size="small" color={colors.textPrimary} />
                     ) : (
-                        <View style={styles.saveButtonHeader}>
-                            <Ionicons name="checkmark" size={24} color="#fff" />
+                        <View style={[styles.saveButtonHeader, { backgroundColor: colors.textPrimary }]}>
+                            <Ionicons name="checkmark" size={24} color={colors.textInverse} />
                         </View>
                     )}
                 </TouchableOpacity>
@@ -272,11 +275,11 @@ export default function CreateInventoryItemScreen() {
             <ScrollView style={styles.content}>
                 {/* Vendor Section */}
                 <View style={styles.section}>
-                    <Text style={styles.label}>Vendor Name *</Text>
+                    <Text style={[styles.label, { color: colors.textSecondary }]}>Vendor Name *</Text>
                     <TextInput
-                        style={styles.input}
+                        style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
                         placeholder="Enter vendor name"
-                        placeholderTextColor="#999"
+                        placeholderTextColor={colors.textTertiary}
                         value={vendorName}
                         onChangeText={setVendorName}
                     />
@@ -284,23 +287,23 @@ export default function CreateInventoryItemScreen() {
 
                 {/* Item Details */}
                 <View style={styles.section}>
-                    <Text style={styles.label}>Item Name *</Text>
+                    <Text style={[styles.label, { color: colors.textSecondary }]}>Item Name *</Text>
                     <TextInput
-                        style={styles.input}
+                        style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
                         placeholder="Enter the item name"
-                        placeholderTextColor="#999"
+                        placeholderTextColor={colors.textTertiary}
                         value={itemName}
                         onChangeText={setItemName}
                     />
                 </View>
 
                 <View style={styles.section}>
-                    <Text style={styles.label}>SKU</Text>
+                    <Text style={[styles.label, { color: colors.textSecondary }]}>SKU</Text>
                     <View style={styles.skuContainer}>
                         <TextInput
-                            style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                            style={[styles.input, { flex: 1, marginBottom: 0, backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
                             placeholder="Enter SKU"
-                            placeholderTextColor="#999"
+                            placeholderTextColor={colors.textTertiary}
                             value={sku}
                             onChangeText={setSku}
                         />
@@ -309,61 +312,69 @@ export default function CreateInventoryItemScreen() {
 
                 {/* Units & Serial Numbers */}
                 <View style={styles.section}>
-                    <Text style={styles.label}>Stock Management</Text>
+                    <Text style={[styles.label, { color: colors.textSecondary }]}>Stock Management</Text>
 
                     {/* Summary Card */}
-                    <View style={styles.stockSummary}>
+                    <View style={[styles.stockSummary, { backgroundColor: colors.surface }]}>
                         <View style={styles.summaryItem}>
-                            <Text style={styles.summaryLabel}>Current Stock</Text>
-                            <Text style={styles.summaryValue}>{existingUnitIds.length}</Text>
+                            <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Current Stock</Text>
+                            <Text style={[styles.summaryValue, { color: colors.textPrimary }]}>{existingUnitIds.length}</Text>
                         </View>
-                        <View style={styles.summaryDivider} />
+                        <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
                         <View style={styles.summaryItem}>
-                            <Text style={styles.summaryLabel}>Adding</Text>
-                            <Text style={styles.summaryValue}>+{newUnitIds.length}</Text>
+                            <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Adding</Text>
+                            <Text style={[styles.summaryValue, { color: colors.textPrimary }]}>+{newUnitIds.length}</Text>
                         </View>
-                        <View style={styles.summaryDivider} />
+                        <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
                         <View style={styles.summaryItem}>
-                            <Text style={styles.summaryLabel}>Total</Text>
-                            <Text style={styles.summaryValue}>{totalQuantity}</Text>
+                            <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Total</Text>
+                            <Text style={[styles.summaryValue, { color: colors.textPrimary }]}>{totalQuantity}</Text>
                         </View>
                     </View>
 
                     <View style={styles.quantityContainer}>
-                        <Text style={styles.subLabel}>Add New Units</Text>
+                        <Text style={[styles.subLabel, { color: colors.textPrimary }]}>Add New Units</Text>
                         <View style={styles.quantityControls}>
                             <TouchableOpacity
-                                style={[styles.quantityButton, newUnitIds.length === 0 && styles.quantityButtonDisabled]}
+                                style={[
+                                    styles.quantityButton,
+                                    { backgroundColor: colors.surface, borderColor: colors.textPrimary },
+                                    newUnitIds.length === 0 && [styles.quantityButtonDisabled, { backgroundColor: colors.background, borderColor: colors.border }]
+                                ]}
                                 onPress={() => handleNewQuantityChange(-1)}
                                 disabled={newUnitIds.length === 0}
                             >
-                                <Ionicons name="remove" size={20} color={newUnitIds.length === 0 ? "#ccc" : "#000"} />
+                                <Ionicons name="remove" size={20} color={newUnitIds.length === 0 ? colors.textTertiary : colors.textPrimary} />
                             </TouchableOpacity>
 
                             <View style={styles.quantityDisplay}>
-                                <Text style={styles.quantityText}>{newUnitIds.length}</Text>
+                                <Text style={[styles.quantityText, { color: colors.textPrimary }]}>{newUnitIds.length}</Text>
                             </View>
 
                             <TouchableOpacity
-                                style={styles.quantityButton}
+                                style={[styles.quantityButton, { backgroundColor: colors.surface, borderColor: colors.textPrimary }]}
                                 onPress={() => handleNewQuantityChange(1)}
                             >
-                                <Ionicons name="add" size={20} color="#000" />
+                                <Ionicons name="add" size={20} color={colors.textPrimary} />
                             </TouchableOpacity>
                         </View>
                     </View>
 
                     {newUnitIds.length > 0 && (
-                        <View style={styles.unitIdsContainer}>
-                            <Text style={styles.helperText}>Enter Unique ID (Serial Number) for each new unit</Text>
+                        <View style={[styles.unitIdsContainer, { backgroundColor: colors.background }]}>
+                            <Text style={[styles.helperText, { color: colors.textSecondary }]}>Enter Unique ID (Serial Number) for each new unit</Text>
                             {newUnitIds.map((uid, index) => {
                                 const isEmpty = !uid.trim();
                                 return (
                                     <View key={index} style={styles.unitIdRow}>
                                         <TextInput
-                                            style={[styles.unitInput, !isEmpty && styles.unitInputFilled]}
+                                            style={[
+                                                styles.unitInput,
+                                                { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary },
+                                                !isEmpty && [styles.unitInputFilled, { borderColor: Colors.success, backgroundColor: colors.surface }]
+                                            ]}
                                             placeholder={`New Unit ${index + 1} ID`}
-                                            placeholderTextColor="#999"
+                                            placeholderTextColor={colors.textTertiary}
                                             value={uid}
                                             onChangeText={(text) => updateNewUnitId(index, text)}
                                             autoCapitalize="none"
@@ -375,9 +386,9 @@ export default function CreateInventoryItemScreen() {
                     )}
 
                     {existingUnitIds.length > 0 && (
-                        <View style={styles.existingUnitsContainer}>
-                            <Text style={styles.existingUnitsTitle}>Existing Units ({existingUnitIds.length})</Text>
-                            <Text style={styles.existingUnitsList}>
+                        <View style={[styles.existingUnitsContainer, { backgroundColor: colors.background }]}>
+                            <Text style={[styles.existingUnitsTitle, { color: colors.textSecondary }]}>Existing Units ({existingUnitIds.length})</Text>
+                            <Text style={[styles.existingUnitsList, { color: colors.textTertiary }]}>
                                 {existingUnitIds.join(', ')}
                             </Text>
                         </View>
@@ -387,22 +398,22 @@ export default function CreateInventoryItemScreen() {
                 {/* Pricing */}
                 <View style={styles.row}>
                     <View style={[styles.section, { flex: 1, marginRight: 10 }]}>
-                        <Text style={styles.label}>Cost Price (₦)</Text>
+                        <Text style={[styles.label, { color: colors.textSecondary }]}>Cost Price (₦)</Text>
                         <TextInput
-                            style={styles.input}
+                            style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
                             placeholder="Amount"
-                            placeholderTextColor="#999"
+                            placeholderTextColor={colors.textTertiary}
                             value={costPrice}
                             onChangeText={setCostPrice}
                             keyboardType="numeric"
                         />
                     </View>
                     <View style={[styles.section, { flex: 1, marginLeft: 10 }]}>
-                        <Text style={styles.label}>Selling Price (₦)</Text>
+                        <Text style={[styles.label, { color: colors.textSecondary }]}>Selling Price (₦)</Text>
                         <TextInput
-                            style={styles.input}
+                            style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
                             placeholder="Amount"
-                            placeholderTextColor="#999"
+                            placeholderTextColor={colors.textTertiary}
                             value={sellingPrice}
                             onChangeText={setSellingPrice}
                             keyboardType="numeric"
@@ -410,8 +421,8 @@ export default function CreateInventoryItemScreen() {
                     </View>
                 </View>
 
-                <TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={loading}>
-                    <Text style={styles.saveButtonText}>Save Item</Text>
+                <TouchableOpacity style={[styles.saveButton, { backgroundColor: colors.textPrimary }]} onPress={handleSave} disabled={loading}>
+                    <Text style={[styles.saveButtonText, { color: colors.textInverse }]}>Save Item</Text>
                 </TouchableOpacity>
 
                 <View style={{ height: 40 }} />

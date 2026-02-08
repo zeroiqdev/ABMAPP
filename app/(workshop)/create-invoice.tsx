@@ -13,12 +13,12 @@ import {
     ActivityIndicator,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
 import { User, Invoice, InvoiceItem } from '@/types';
-import { Colors } from '@/constants/design';
+import { Colors, useColors } from '@/constants/design';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { format } from 'date-fns';
 import CustomAlertModal from '@/components/CustomAlertModal';
@@ -27,6 +27,8 @@ import { getUserFriendlyErrorMessage } from '@/utils/errorUtils';
 export default function CreateInvoiceScreen() {
     const router = useRouter();
     const { user } = useAuthStore();
+    const colors = useColors();
+    const styles = useMemo(() => getStyles(colors), [colors]);
     const [loading, setLoading] = useState(false);
 
     interface ManualCustomer {
@@ -182,8 +184,8 @@ export default function CreateInvoiceScreen() {
             keyboardVerticalOffset={100}
         >
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()}>
-                    <Ionicons name="arrow-back" size={24} color="#000" />
+                <TouchableOpacity onPress={() => router.push('/(workshop)/finance')}>
+                    <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Create New Invoice</Text>
                 <View style={{ width: 24 }} />
@@ -328,7 +330,7 @@ export default function CreateInvoiceScreen() {
                             <Text style={styles.dateText}>
                                 {dueDate ? format(dueDate, 'MMM dd, yyyy') : 'Select Date'}
                             </Text>
-                            <Ionicons name="calendar-outline" size={20} color={Colors.textPrimary} />
+                            <Ionicons name="calendar-outline" size={20} color={colors.textPrimary} />
                         </TouchableOpacity>
                     </View>
 
@@ -390,10 +392,10 @@ export default function CreateInvoiceScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f5f5f5',
+        backgroundColor: colors.background,
     },
     header: {
         flexDirection: 'row',
@@ -401,13 +403,14 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         padding: 20,
         paddingTop: 60,
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        borderBottomColor: colors.border,
     },
     headerTitle: {
         fontSize: 20,
         fontWeight: 'bold',
+        color: colors.textPrimary,
     },
     content: {
         flex: 1,
@@ -415,7 +418,7 @@ const styles = StyleSheet.create({
     },
     section: {
         marginBottom: 25,
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
         borderRadius: 12,
         padding: 15,
         shadowColor: '#000',
@@ -428,53 +431,55 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '600',
         marginBottom: 15,
-        color: '#333',
+        color: colors.textPrimary,
     },
     input: {
-        backgroundColor: '#f9f9f9',
+        backgroundColor: colors.background,
         borderRadius: 8,
         borderWidth: 1,
-        borderColor: '#eee',
+        borderColor: colors.border,
         padding: 12,
         fontSize: 16,
         marginBottom: 10,
+        color: colors.textPrimary,
     },
     customerList: {
         marginTop: 5,
         borderTopWidth: 1,
-        borderTopColor: '#eee',
+        borderTopColor: colors.border,
     },
     customerItem: {
         paddingVertical: 12,
         borderBottomWidth: 1,
-        borderBottomColor: '#f0f0f0',
+        borderBottomColor: colors.border,
     },
     customerItemName: {
         fontWeight: '500',
         fontSize: 16,
+        color: colors.textPrimary,
     },
     customerItemPhone: {
-        color: '#666',
+        color: colors.textSecondary,
         fontSize: 14,
     },
     selectedCustomerCard: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        backgroundColor: '#f0f9ff',
+        backgroundColor: colors.primary + '15',
         padding: 12,
         borderRadius: 8,
         borderWidth: 1,
-        borderColor: '#b3e0ff',
+        borderColor: colors.primary + '30',
     },
     customerName: {
         fontSize: 16,
         fontWeight: '600',
-        color: '#007AFF',
+        color: colors.primary,
     },
     customerPhone: {
         fontSize: 14,
-        color: '#555',
+        color: colors.textSecondary,
     },
     itemCard: {
         flexDirection: 'row',
@@ -482,7 +487,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingVertical: 10,
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        borderBottomColor: colors.border,
         marginBottom: 5,
     },
     itemInfo: {
@@ -491,10 +496,11 @@ const styles = StyleSheet.create({
     itemDescription: {
         fontSize: 16,
         fontWeight: '500',
+        color: colors.textPrimary,
     },
     itemDetails: {
         fontSize: 14,
-        color: '#666',
+        color: colors.textSecondary,
         marginTop: 2,
     },
     itemRight: {
@@ -504,12 +510,13 @@ const styles = StyleSheet.create({
     itemTotal: {
         fontWeight: '600',
         fontSize: 16,
+        color: colors.textPrimary,
     },
     addItemForm: {
         marginTop: 15,
         paddingTop: 15,
         borderTopWidth: 1,
-        borderTopColor: '#eee',
+        borderTopColor: colors.border,
     },
     row: {
         flexDirection: 'row',
@@ -523,7 +530,7 @@ const styles = StyleSheet.create({
     },
     addButton: {
         flexDirection: 'row',
-        backgroundColor: '#000',
+        backgroundColor: colors.textPrimary,
         padding: 12,
         borderRadius: 8,
         alignItems: 'center',
@@ -532,7 +539,7 @@ const styles = StyleSheet.create({
         marginTop: 5,
     },
     addButtonText: {
-        color: '#fff',
+        color: colors.background,
         fontWeight: '600',
         fontSize: 16,
     },
@@ -543,11 +550,12 @@ const styles = StyleSheet.create({
     },
     summaryLabel: {
         fontSize: 16,
-        color: '#666',
+        color: colors.textSecondary,
     },
     summaryValue: {
         fontSize: 16,
         fontWeight: '500',
+        color: colors.textPrimary,
     },
     settingRow: {
         flexDirection: 'row',
@@ -557,40 +565,42 @@ const styles = StyleSheet.create({
     },
     settingLabel: {
         fontSize: 16,
-        color: '#333',
+        color: colors.textPrimary,
     },
     settingInput: {
-        backgroundColor: '#f9f9f9',
+        backgroundColor: colors.background,
         borderRadius: 8,
         borderWidth: 1,
-        borderColor: '#eee',
+        borderColor: colors.border,
         padding: 8,
         width: 100,
         textAlign: 'right',
+        color: colors.textPrimary,
     },
     totalRow: {
         marginTop: 10,
         paddingTop: 10,
         borderTopWidth: 1,
-        borderTopColor: '#eee',
+        borderTopColor: colors.border,
     },
     totalLabel: {
         fontSize: 18,
         fontWeight: 'bold',
+        color: colors.textPrimary,
     },
     totalValue: {
         fontSize: 20,
         fontWeight: 'bold',
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
     },
     footer: {
         padding: 20,
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
         borderTopWidth: 1,
-        borderTopColor: '#eee',
+        borderTopColor: colors.border,
     },
     createButton: {
-        backgroundColor: Colors.secondary,
+        backgroundColor: colors.textPrimary,
         padding: 16,
         borderRadius: 12,
         alignItems: 'center',
@@ -599,37 +609,37 @@ const styles = StyleSheet.create({
         opacity: 0.7,
     },
     createButtonText: {
-        color: '#fff',
+        color: colors.background,
         fontSize: 18,
         fontWeight: 'bold',
     },
     dateSelector: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#f9f9f9',
+        backgroundColor: colors.background,
         padding: 8,
         borderRadius: 8,
         borderWidth: 1,
-        borderColor: '#eee',
+        borderColor: colors.border,
         gap: 8,
     },
     dateText: {
         fontSize: 14,
-        color: '#333',
+        color: colors.textPrimary,
     },
     iosDatePickerToolbar: {
         flexDirection: 'row',
         justifyContent: 'flex-end',
         padding: 10,
-        backgroundColor: '#f0f0f0',
+        backgroundColor: colors.surface,
         borderTopWidth: 1,
-        borderColor: '#ddd',
+        borderColor: colors.border,
     },
     iosDatePickerButton: {
         padding: 5,
     },
     iosDatePickerButtonText: {
-        color: Colors.primary,
+        color: colors.primary,
         fontSize: 16,
         fontWeight: '600',
     },

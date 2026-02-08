@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
     View,
     Text,
@@ -15,11 +15,13 @@ import { firebaseService } from '@/services/firebaseService';
 import { Job, Vehicle } from '@/types';
 import { formatDistanceToNow } from 'date-fns';
 import { BrandLogo } from '@/components/BrandLogo';
-import { Colors, Spacing, Typography, BorderRadius } from '@/constants/design';
+import { Colors, Spacing, Typography, BorderRadius, useColors } from '@/constants/design';
 
 export default function MaintenanceScreen() {
     const { user } = useAuthStore();
     const router = useRouter();
+    const colors = useColors();
+    const styles = useMemo(() => getStyles(colors), [colors]);
     const [jobs, setJobs] = useState<Job[]>([]);
     const [filteredJobs, setFilteredJobs] = useState<Job[]>([]);
     const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
@@ -85,13 +87,13 @@ export default function MaintenanceScreen() {
                 </View>
 
                 <View style={styles.searchContainer}>
-                    <Ionicons name="search" size={20} color="#999" style={styles.searchIcon} />
+                    <Ionicons name="search" size={20} color={colors.textTertiary} style={styles.searchIcon} />
                     <TextInput
                         style={styles.searchInput}
                         placeholder="Search jobs..."
                         value={searchQuery}
                         onChangeText={setSearchQuery}
-                        placeholderTextColor="#999"
+                        placeholderTextColor={colors.textTertiary}
                     />
                 </View>
 
@@ -116,7 +118,7 @@ export default function MaintenanceScreen() {
                             <Text style={styles.emptyText}>Loading...</Text>
                         ) : (
                             <>
-                                <Ionicons name="construct-outline" size={64} color="#ccc" />
+                                <Ionicons name="construct-outline" size={64} color={colors.textTertiary} />
                                 <Text style={styles.emptyText}>No maintenance jobs found</Text>
                             </>
                         )}
@@ -128,18 +130,34 @@ export default function MaintenanceScreen() {
 }
 
 function FilterPill({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+    const colors = useColors();
     return (
         <TouchableOpacity
-            style={[styles.filterPill, active && styles.filterPillActive]}
+            style={[
+                {
+                    paddingHorizontal: 20,
+                    paddingVertical: 10,
+                    borderRadius: 20,
+                    backgroundColor: colors.background,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                },
+                active && { backgroundColor: colors.textPrimary, borderColor: colors.textPrimary }
+            ]}
             onPress={onPress}
         >
-            <Text style={[styles.filterPillText, active && styles.filterPillTextActive]}>{label}</Text>
+            <Text style={[
+                { fontSize: 14, color: colors.textSecondary, fontWeight: '500' },
+                active && { color: colors.textInverse }
+            ]}>{label}</Text>
         </TouchableOpacity>
     );
 }
 
 function JobCard({ job }: { job: Job }) {
     const router = useRouter();
+    const colors = useColors();
+    const styles = useMemo(() => getStyles(colors), [colors]);
     const [vehicle, setVehicle] = useState<Vehicle | null>(null);
 
     useEffect(() => {
@@ -177,47 +195,51 @@ function JobCard({ job }: { job: Job }) {
             style={styles.itemCard}
             onPress={handlePress}
         >
-            <View style={[styles.iconBox, { backgroundColor: vehicle ? 'transparent' : getStatusColor(job.status) }]}>
-                {vehicle ? (
-                    <BrandLogo brand={vehicle.make} size={30} />
-                ) : (
-                    <Ionicons name="car-sport-outline" size={24} color="#fff" />
-                )}
-            </View>
+            <View style={styles.itemLeft}>
+                <View style={[styles.iconBox, { backgroundColor: vehicle ? 'transparent' : getStatusColor(job.status) }]}>
+                    {vehicle ? (
+                        <BrandLogo brand={vehicle.make} size={30} />
+                    ) : (
+                        <Ionicons name="car-sport-outline" size={24} color={colors.textInverse} />
+                    )}
+                </View>
 
-            <View style={styles.itemInfo}>
-                <Text style={styles.itemName}>
-                    {vehicle ? `${vehicle.make} ${vehicle.model}` : 'Unknown Vehicle'}
-                </Text>
-                <Text style={styles.itemSubtitle}>
-                    {vehicle?.licensePlate || 'No Reg'} • {formatDistanceToNow(job.createdAt, { addSuffix: true })}
-                </Text>
+                <View style={styles.itemInfo}>
+                    <Text style={styles.itemName}>
+                        {vehicle ? `${vehicle.make} ${vehicle.model}` : 'Unknown Vehicle'}
+                    </Text>
+                    <Text style={styles.itemSubtitle}>
+                        {vehicle?.licensePlate || 'No Reg'} • {formatDistanceToNow(job.createdAt, { addSuffix: true })}
+                    </Text>
+                </View>
             </View>
 
             <View style={styles.itemRight}>
-                <View style={[styles.statusBadge, { backgroundColor: getStatusColor(job.status) + '15' }]}>
-                    <Text style={[styles.statusText, { color: getStatusColor(job.status) }]}>
-                        {job.status.charAt(0).toUpperCase() + job.status.slice(1)}
-                    </Text>
+                <View style={{ alignItems: 'flex-end', marginRight: 10 }}>
+                    <View style={[styles.statusBadge, { backgroundColor: getStatusColor(job.status) + '15' }]}>
+                        <Text style={[styles.statusText, { color: getStatusColor(job.status) }]}>
+                            {job.status.charAt(0).toUpperCase() + job.status.slice(1)}
+                        </Text>
+                    </View>
                 </View>
-
+                <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
             </View>
         </TouchableOpacity>
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#fff',
+        backgroundColor: colors.background,
     },
     header: {
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
         paddingTop: 60,
         paddingBottom: 20,
         paddingHorizontal: 20,
         borderBottomWidth: 1,
-        borderBottomColor: '#f0f0f0',
+        borderBottomColor: colors.border,
     },
     headerTop: {
         flexDirection: 'row',
@@ -227,16 +249,18 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 24,
         fontWeight: 'bold',
-        color: '#000',
+        color: colors.textPrimary,
     },
     searchContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#F5F6FA',
+        backgroundColor: colors.background,
         borderRadius: 12,
         paddingHorizontal: 15,
         height: 50,
         marginBottom: 20,
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     searchIcon: {
         marginRight: 10,
@@ -244,7 +268,7 @@ const styles = StyleSheet.create({
     searchInput: {
         flex: 1,
         fontSize: 16,
-        color: '#000',
+        color: colors.textPrimary,
     },
     filterContainer: {
         flexDirection: 'row',
@@ -254,41 +278,48 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
         paddingVertical: 10,
         borderRadius: 20,
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
         borderWidth: 1,
-        borderColor: '#eee',
+        borderColor: colors.border,
     },
     filterPillActive: {
-        backgroundColor: '#1c1c1e',
-        borderColor: '#1c1c1e',
+        backgroundColor: colors.primary,
+        borderColor: colors.primary,
     },
     filterPillText: {
         fontSize: 14,
-        color: '#666',
+        color: colors.textSecondary,
         fontWeight: '500',
     },
     filterPillTextActive: {
-        color: '#fff',
+        color: colors.textInverse,
     },
     listContent: {
-        padding: 20,
+        padding: 0,
     },
     itemCard: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 20,
-        backgroundColor: '#fff',
+        justifyContent: 'space-between',
+        marginBottom: 0,
+        backgroundColor: colors.surface,
         borderBottomWidth: 1,
-        borderBottomColor: '#f5f5f5',
-        paddingBottom: 15,
+        borderBottomColor: colors.border,
+        paddingVertical: 14,
+        paddingHorizontal: 16,
+    },
+    itemLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
     },
     iconBox: {
-        width: 48,
-        height: 48,
-        borderRadius: 12,
+        width: 50,
+        height: 50,
+        borderRadius: 25,
         justifyContent: 'center',
         alignItems: 'center',
-        marginRight: 15,
+        marginRight: 16,
     },
     itemInfo: {
         flex: 1,
@@ -296,16 +327,16 @@ const styles = StyleSheet.create({
     itemName: {
         fontSize: 16,
         fontWeight: '600',
-        color: '#333',
+        color: colors.textPrimary,
         marginBottom: 4,
     },
     itemSubtitle: {
         fontSize: 13,
-        color: '#888',
+        color: colors.textSecondary,
     },
     itemRight: {
-        alignItems: 'flex-end',
-        gap: 4,
+        flexDirection: 'row',
+        alignItems: 'center',
     },
     statusText: {
         fontSize: 12,
@@ -323,7 +354,7 @@ const styles = StyleSheet.create({
         marginTop: 50,
     },
     emptyText: {
-        color: '#999',
+        color: colors.textTertiary,
         fontSize: 16,
         marginTop: 10,
     },

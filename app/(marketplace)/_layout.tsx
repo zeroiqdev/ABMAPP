@@ -18,10 +18,12 @@ import {
   HomeIcon as HomeIconOutline
 } from 'react-native-heroicons/outline';
 import { useAuthStore } from '@/store/authStore';
+import { useColors } from '@/constants/design';
 
 export default function MarketplaceLayout() {
   const insets = useSafeAreaInsets();
-  const { user } = useAuthStore();
+  const colors = useColors();
+  const { user, isGuest } = useAuthStore();
   const router = useRouter();
   const segments = useSegments();
 
@@ -53,14 +55,14 @@ export default function MarketplaceLayout() {
         headerShown: false,
         tabBarStyle: {
           borderTopWidth: 1,
-          borderTopColor: '#f0f0f0',
-          backgroundColor: '#fff',
+          borderTopColor: colors.border,
+          backgroundColor: colors.surface,
           height: 60 + (Platform.OS === 'ios' ? insets.bottom : Math.max(insets.bottom, 10)),
           paddingBottom: Platform.OS === 'ios' ? insets.bottom : Math.max(insets.bottom, 10),
           paddingTop: 10,
         },
-        tabBarActiveTintColor: '#000',
-        tabBarInactiveTintColor: '#999',
+        tabBarActiveTintColor: colors.secondary,
+        tabBarInactiveTintColor: colors.textSecondary,
       }}
     >
       <Tabs.Screen
@@ -79,6 +81,7 @@ export default function MarketplaceLayout() {
       <Tabs.Screen
         name="upload"
         options={{
+          href: Boolean(isGuest) ? null : undefined,
           title: 'Sell',
           tabBarIcon: ({ focused, color, size }) => (
             focused ? <PlusCircleIconSolid size={size} color={color} /> : <PlusCircleIconOutline size={size} color={color} />
@@ -112,6 +115,7 @@ export default function MarketplaceLayout() {
 
       <Tabs.Screen name="vendor-registration" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="pending-approval" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="member-auth" options={{ href: null, tabBarStyle: { display: 'none' } }} />
     </Tabs>
   );
 }

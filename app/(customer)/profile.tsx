@@ -12,13 +12,20 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
+import { useThemeStore, ThemeMode } from '@/store/themeStore';
 import { firebaseService } from '@/services/firebaseService';
-
+import { Spacing, Typography, useColors } from '@/constants/design';
 
 export default function ProfileScreen() {
   const { user, logout } = useAuthStore();
   const router = useRouter();
+  const colors = useColors();
+  const styles = getStyles(colors);
+  const themeSelectorStyles = getThemeSelectorStyles(colors);
+
   const [editing, setEditing] = useState(false);
+  // ... rest of state
+
   const [name, setName] = useState(user?.name || '');
   const [phone, setPhone] = useState(user?.phone || '');
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -76,7 +83,7 @@ export default function ProfileScreen() {
         <View style={styles.section}>
           <View style={styles.avatarContainer}>
             <View style={styles.avatar}>
-              <Ionicons name="person" size={48} color="#666" />
+              <Ionicons name="person" size={48} color={colors.textSecondary} />
             </View>
             <Text style={styles.userName}>{user?.name}</Text>
             <Text style={styles.userEmail}>{user?.email}</Text>
@@ -130,7 +137,7 @@ export default function ProfileScreen() {
               onPress={() => router.push('/(customer)/settings')}
             >
               <View style={styles.settingInfo}>
-                <Ionicons name="settings-outline" size={24} color="#666" />
+                <Ionicons name="settings-outline" size={24} color={colors.textSecondary} />
                 <View style={styles.settingText}>
                   <Text style={styles.settingLabel}>General Settings</Text>
                   <Text style={styles.settingDesc}>
@@ -138,7 +145,7 @@ export default function ProfileScreen() {
                   </Text>
                 </View>
               </View>
-              <Ionicons name="chevron-forward" size={20} color="#999" />
+              <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
             </TouchableOpacity>
 
             {user?.connectedWorkshopIds && user.connectedWorkshopIds.length > 1 && (
@@ -162,7 +169,7 @@ export default function ProfileScreen() {
                 }}
               >
                 <View style={styles.settingInfo}>
-                  <Ionicons name="business-outline" size={24} color="#666" />
+                  <Ionicons name="business-outline" size={24} color={colors.textSecondary} />
                   <View style={styles.settingText}>
                     <Text style={styles.settingLabel}>Switch Workshop</Text>
                     <Text style={styles.settingDesc}>
@@ -170,13 +177,13 @@ export default function ProfileScreen() {
                     </Text>
                   </View>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color="#999" />
+                <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
               </TouchableOpacity>
             )}
 
             <View style={styles.settingRow}>
               <View style={styles.settingInfo}>
-                <Ionicons name="notifications-outline" size={24} color="#666" />
+                <Ionicons name="notifications-outline" size={24} color={colors.textSecondary} />
                 <View style={styles.settingText}>
                   <Text style={styles.settingLabel}>Push Notifications</Text>
                   <Text style={styles.settingDesc}>
@@ -187,12 +194,12 @@ export default function ProfileScreen() {
               <Switch
                 value={notificationsEnabled}
                 onValueChange={setNotificationsEnabled}
-                trackColor={{ false: '#ddd', true: '#000' }}
+                trackColor={{ false: colors.border, true: colors.textPrimary }}
               />
             </View>
             <View style={styles.settingRow}>
               <View style={styles.settingInfo}>
-                <Ionicons name="mail-outline" size={24} color="#666" />
+                <Ionicons name="mail-outline" size={24} color={colors.textSecondary} />
                 <View style={styles.settingText}>
                   <Text style={styles.settingLabel}>Email Notifications</Text>
                   <Text style={styles.settingDesc}>
@@ -207,6 +214,18 @@ export default function ProfileScreen() {
               />
             </View>
           </View>
+
+          {/* Appearance */}
+          <View style={[styles.settingRow, { borderBottomWidth: 0 }]}>
+            <View style={styles.settingInfo}>
+              <Ionicons name="contrast-outline" size={24} color={colors.textSecondary} />
+              <View style={styles.settingText}>
+                <Text style={styles.settingLabel}>Appearance</Text>
+                <Text style={styles.settingDesc}>Choose your preferred theme</Text>
+              </View>
+            </View>
+          </View>
+          <ThemeSelector />
         </View>
 
         {/* Account Actions */}
@@ -217,9 +236,9 @@ export default function ProfileScreen() {
               style={styles.actionRow}
               onPress={handleChangePassword}
             >
-              <Ionicons name="lock-closed-outline" size={24} color="#666" />
+              <Ionicons name="lock-closed-outline" size={24} color={colors.textSecondary} />
               <Text style={styles.actionText}>Change Password</Text>
-              <Ionicons name="chevron-forward" size={20} color="#999" />
+              <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
             </TouchableOpacity>
           </View>
         </View>
@@ -227,7 +246,7 @@ export default function ProfileScreen() {
         {/* Logout */}
         <View style={styles.section}>
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-            <Ionicons name="log-out-outline" size={24} color="#fff" />
+            <Ionicons name="log-out-outline" size={24} color={colors.background} />
             <Text style={styles.logoutText}>Logout</Text>
           </TouchableOpacity>
 
@@ -239,10 +258,89 @@ export default function ProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+// Theme selector component
+function ThemeSelector() {
+  const { themeMode, setThemeMode } = useThemeStore();
+  const colors = useColors();
+  const themeSelectorStyles = getThemeSelectorStyles(colors);
+
+  const themeOptions: { value: ThemeMode; label: string; icon: string }[] = [
+    { value: 'light', label: 'Light', icon: 'sunny' },
+    { value: 'dark', label: 'Dark', icon: 'moon' },
+    { value: 'system', label: 'System', icon: 'phone-portrait' },
+  ];
+
+  return (
+    <View style={themeSelectorStyles.container}>
+      {themeOptions.map((option) => (
+        <TouchableOpacity
+          key={option.value}
+          style={[
+            themeSelectorStyles.option,
+            themeMode === option.value && themeSelectorStyles.optionActive,
+          ]}
+          onPress={() => setThemeMode(option.value)}
+        >
+          <Ionicons
+            name={option.icon as any}
+            size={18}
+            color={themeMode === option.value ? colors.primary : colors.textSecondary}
+          />
+          <Text
+            style={[
+              themeSelectorStyles.optionText,
+              themeMode === option.value && themeSelectorStyles.optionTextActive,
+            ]}
+          >
+            {option.label}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+
+const getThemeSelectorStyles = (colors: any) => StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingBottom: 15,
+  },
+  option: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: colors.background, // Was #f0f0f0, use background or surface? Surface usually. Or background if on surface.
+    // The parent is section (surface/white). So this should be background/grey.
+    // In dark mode: Section is Surface (Dark Grey). Option should be Background (Black) or lighter grey?
+    // Let's use colors.background for the option background.
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  optionActive: {
+    backgroundColor: colors.primary + '20',
+    borderColor: colors.primary,
+  },
+  optionText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
+  optionTextActive: {
+    color: colors.primary,
+    fontWeight: '600',
+  },
+});
+
+const getStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -250,31 +348,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     paddingTop: 60,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: colors.border,
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
+    color: colors.textPrimary,
   },
   saveButton: {
     fontSize: 16,
-    color: '#007AFF',
+    color: colors.primary,
     fontWeight: '600',
   },
   content: {
     flex: 1,
+    backgroundColor: colors.background,
   },
   section: {
     padding: 20,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     marginBottom: 10,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 15,
+    color: colors.textPrimary,
   },
   avatarContainer: {
     alignItems: 'center',
@@ -284,7 +385,7 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: colors.background,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 15,
@@ -292,15 +393,15 @@ const styles = StyleSheet.create({
   userName: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#333',
+    color: colors.textPrimary,
     marginBottom: 5,
   },
   userEmail: {
     fontSize: 14,
-    color: '#666',
+    color: colors.textSecondary,
   },
   infoCard: {
-    backgroundColor: '#f9f9f9',
+    backgroundColor: colors.background, // Was #f9f9f9. On surface, use background.
     borderRadius: 12,
     padding: 15,
   },
@@ -309,25 +410,26 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 12,
-    color: '#666',
+    color: colors.textSecondary,
     marginBottom: 5,
     fontWeight: '500',
   },
   input: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface, // Input on background
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: colors.border,
+    color: colors.textPrimary,
   },
   value: {
     fontSize: 16,
-    color: '#333',
+    color: colors.textPrimary,
     fontWeight: '500',
   },
   settingsCard: {
-    backgroundColor: '#f9f9f9',
+    backgroundColor: colors.background,
     borderRadius: 12,
     padding: 15,
   },
@@ -337,7 +439,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 15,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: colors.border,
   },
   settingInfo: {
     flexDirection: 'row',
@@ -351,15 +453,15 @@ const styles = StyleSheet.create({
   settingLabel: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   settingDesc: {
     fontSize: 12,
-    color: '#666',
+    color: colors.textSecondary,
   },
   actionsCard: {
-    backgroundColor: '#f9f9f9',
+    backgroundColor: colors.background,
     borderRadius: 12,
     padding: 15,
   },
@@ -368,25 +470,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 15,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: colors.border,
     gap: 15,
   },
   actionText: {
     flex: 1,
     fontSize: 16,
-    color: '#333',
+    color: colors.textPrimary,
   },
   logoutButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#000',
+    backgroundColor: colors.secondary, // Uses secondary (black in light, white in dark?) Wait.
+    // Colors.secondary is #000 (Black).
+    // DarkColors.secondary is #FFFFFF (White).
+    // Logout button text is White in hardcode.
+    // If background is white in dark mode, text should be black?
+    // Let's check original: backgroundColor: '#000', logoutText: { color: '#fff' }.
+    // In Dark Mode, we want it to stand out?
+    // Usually logout is red or just a button.
+    // If we use colors.secondary, in dark mode it is White. Text should be Black.
     borderRadius: 12,
     padding: 16,
     gap: 10,
   },
   logoutText: {
-    color: '#fff',
+    color: colors.background, // Text on secondary should be background color (inverted)
     fontSize: 16,
     fontWeight: '600',
   },

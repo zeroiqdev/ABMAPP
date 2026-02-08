@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -16,18 +16,17 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
-import { Invoice, InvoiceItem, Job, User, PaymentStatus, InventoryItem } from '@/types';
+import { Invoice, InvoiceItem, Job, User, PaymentStatus, InventoryItem, Quote } from '@/types';
 import { format } from 'date-fns';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Colors, Typography, Spacing, BorderRadius, Shadows, StatusColors } from '@/constants/design';
+import { Colors, Typography, Spacing, BorderRadius, Shadows, StatusColors, useColors } from '@/constants/design';
 import { Platform } from 'react-native';
 
 export default function FinanceScreen() {
   const { user } = useAuthStore();
   const router = useRouter();
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [filteredInvoices, setFilteredInvoices] = useState<Invoice[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'pending' | 'paid' | 'partially_paid'>('all');
@@ -56,11 +55,23 @@ export default function FinanceScreen() {
   const [recordedPaymentAmount, setRecordedPaymentAmount] = useState<number>(0);
   const [editingVatRate, setEditingVatRate] = useState('');
   const [editingDiscount, setEditingDiscount] = useState('');
+  const colors = useColors();
+  const styles = useMemo(() => getStyles(colors), [colors]);
+
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+
 
   const [invoiceType, setInvoiceType] = useState<'job' | 'direct'>('job');
+  const [mainSection, setMainSection] = useState<'quotes' | 'invoices'>('quotes');
+  const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [filteredQuotes, setFilteredQuotes] = useState<Quote[]>([]);
+  const [quoteSearchQuery, setQuoteSearchQuery] = useState('');
+  const [quoteFilter, setQuoteFilter] = useState<'all' | 'draft' | 'pending' | 'converted'>('all');
+  const [showCreateOptionsModal, setShowCreateOptionsModal] = useState(false);
 
   useEffect(() => {
     loadInvoices();
+    loadQuotes();
     if (user?.workshopId) {
       loadInventory();
     }
@@ -69,6 +80,16 @@ export default function FinanceScreen() {
       firebaseService.checkAndSendInvoiceReminders(user.id);
     }
   }, [user]);
+
+  const loadQuotes = async () => {
+    if (!user?.workshopId) return;
+    try {
+      const quotesData = await firebaseService.getQuotes(user.workshopId);
+      setQuotes(quotesData);
+    } catch (error) {
+      console.error('Error loading quotes:', error);
+    }
+  };
 
   const loadInventory = async () => {
     if (!user?.workshopId) return;
@@ -83,6 +104,10 @@ export default function FinanceScreen() {
   useEffect(() => {
     filterInvoices();
   }, [invoices, filter, searchQuery, dateFilter, customerNamesMap, invoiceType]);
+
+  useEffect(() => {
+    filterQuotes();
+  }, [quotes, quoteFilter, quoteSearchQuery]);
 
   const loadInvoices = async () => {
     if (!user?.workshopId) return;
@@ -170,6 +195,31 @@ export default function FinanceScreen() {
     setFilteredInvoices(result);
   };
 
+  const filterQuotes = () => {
+    let result = quotes;
+
+    // Status Filter
+    if (quoteFilter === 'draft') {
+      result = result.filter(q => q.status === 'draft');
+    } else if (quoteFilter === 'pending') {
+      result = result.filter(q => q.status === 'pending_approval');
+    } else if (quoteFilter === 'converted') {
+      result = result.filter(q => q.status === 'converted');
+    }
+
+    // Search Filter
+    if (quoteSearchQuery) {
+      const query = quoteSearchQuery.toLowerCase();
+      result = result.filter(q =>
+        (q.customerName && q.customerName.toLowerCase().includes(query)) ||
+        q.id.toLowerCase().includes(query) ||
+        format(q.createdAt, 'MMM dd, yyyy').toLowerCase().includes(query)
+      );
+    }
+
+    setFilteredQuotes(result);
+  };
+
   const onRefresh = async () => {
     await loadInvoices();
     if (user?.workshopId) {
@@ -222,10 +272,8 @@ export default function FinanceScreen() {
 
   const canEditInvoice = () => {
     if (!selectedInvoice) return false;
-    // Cannot edit if paid (even partially) OR if approved (unless it's just to record payment)
-    // Actually, canEditInvoice controls item editing. Payment is separate.
-    // Locking edits after approval:
-    return (selectedInvoice.amountPaid || 0) === 0 && (selectedInvoice.status === 'draft' || !selectedInvoice.status);
+    // Allow editing if no payment has been made yet, regardless of status
+    return (selectedInvoice.amountPaid || 0) === 0;
   };
 
   const handleApproveInvoice = async () => {
@@ -659,6 +707,78 @@ export default function FinanceScreen() {
     }
   };
 
+  const getQuoteStatusColor = (status: string) => {
+    switch (status) {
+      case 'draft': return colors.textTertiary;
+      case 'pending_approval': return colors.warning;
+      case 'converted': return colors.success;
+      case 'cancelled': return colors.error;
+      default: return colors.textTertiary;
+    }
+  };
+
+  const getQuoteStatusLabel = (status: string) => {
+    switch (status) {
+      case 'draft': return 'Draft';
+      case 'pending_approval': return 'Awaiting Approval';
+      case 'converted': return 'Converted';
+      case 'cancelled': return 'Cancelled';
+      default: return status;
+    }
+  };
+
+  // Helper to get quote total, calculating from items if needed
+  const getQuoteTotal = (quote: Quote): number => {
+    if (typeof quote.total === 'number' && !isNaN(quote.total)) {
+      return quote.total;
+    }
+    // Calculate from items if total is missing/NaN
+    if (quote.items && quote.items.length > 0) {
+      return quote.items.reduce((sum, item) => sum + (item.total || item.quantity * item.unitPrice || 0), 0);
+    }
+    return 0;
+  };
+
+  // Helper to get invoice total safely
+  const getInvoiceTotal = (invoice: Invoice): number => {
+    if (typeof invoice.total === 'number' && !isNaN(invoice.total)) {
+      return invoice.total;
+    }
+    // Calculate from items if total is missing/NaN
+    if (invoice.items && invoice.items.length > 0) {
+      return invoice.items.reduce((sum, item) => sum + (item.total || item.quantity * item.unitPrice || 0), 0);
+    }
+    return 0;
+  };
+
+  const renderQuote = ({ item }: { item: Quote }) => (
+    <TouchableOpacity
+      style={[styles.itemCard, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}
+      onPress={() => router.push(`/(workshop)/quote-details?id=${item.id}`)}
+    >
+      <View style={styles.itemLeft}>
+        <View style={[styles.iconBox, { backgroundColor: getQuoteStatusColor(item.status) + '20' }]}>
+          <Ionicons name="document-text-outline" size={24} color={getQuoteStatusColor(item.status)} />
+        </View>
+        <View style={styles.itemInfo}>
+          <Text style={[styles.itemName, { color: colors.textPrimary }]} numberOfLines={1}>{item.customerName}</Text>
+          <Text style={[styles.itemSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
+            {format(item.createdAt, 'MMM dd, yyyy')}
+          </Text>
+        </View>
+      </View>
+      <View style={styles.itemRight}>
+        <View style={{ alignItems: 'flex-end', marginRight: 10 }}>
+          <Text style={[styles.amountText, { color: colors.textPrimary }]}>₦{getQuoteTotal(item).toLocaleString()}</Text>
+          <Text style={[styles.statusText, { color: getQuoteStatusColor(item.status) }]}>
+            {getQuoteStatusLabel(item.status)}
+          </Text>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+      </View>
+    </TouchableOpacity>
+  );
+
   const renderInvoice = ({ item }: { item: Invoice }) => {
     const amountPaid = item.amountPaid || 0;
     const remaining = item.total - amountPaid;
@@ -666,130 +786,258 @@ export default function FinanceScreen() {
 
     return (
       <TouchableOpacity
-        style={styles.itemCard}
+        style={[styles.itemCard, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}
         onPress={() => handleInvoicePress(item)}
       >
-        <View style={[styles.iconBox, { backgroundColor: getPaymentStatusColor(item.paymentStatus) + '20' }]}>
-          <Ionicons name={getInvoiceIcon(item.paymentStatus)} size={24} color={getPaymentStatusColor(item.paymentStatus)} />
-        </View>
-        <View style={styles.itemInfo}>
-          <Text style={styles.itemName} numberOfLines={1}>
-            Invoice #{item.id.slice(0, 8)}
-          </Text>
-          <Text style={styles.itemSubtitle} numberOfLines={1}>
-            {customerName} • {format(item.createdAt, 'MMM dd, yyyy')}
-          </Text>
-        </View>
-        <View style={styles.itemRight}>
-          <Text style={styles.amountText}>₦{item.total.toLocaleString()}</Text>
-          <View
-            style={[
-              styles.statusBadge,
-              { backgroundColor: getPaymentStatusColor(item.paymentStatus) + '20' },
-            ]}
-          >
-            <Text
-              style={[
-                styles.statusText,
-                { color: getPaymentStatusColor(item.paymentStatus) },
-              ]}
-            >
-              {item.paymentStatus === 'partially_paid'
-                ? 'Partial'
-                : item.paymentStatus.charAt(0).toUpperCase() + item.paymentStatus.slice(1)}
+        <View style={styles.itemLeft}>
+          <View style={[styles.iconBox, { backgroundColor: getPaymentStatusColor(item.paymentStatus) + '20' }]}>
+            <Ionicons name={getInvoiceIcon(item.paymentStatus)} size={24} color={getPaymentStatusColor(item.paymentStatus)} />
+          </View>
+          <View style={styles.itemInfo}>
+            <Text style={[styles.itemName, { color: colors.textPrimary }]} numberOfLines={1}>
+              Invoice #{item.id.slice(0, 8)}
+            </Text>
+            <Text style={[styles.itemSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
+              {customerName} • {format(item.createdAt, 'MMM dd, yyyy')}
             </Text>
           </View>
+        </View>
+        <View style={styles.itemRight}>
+          <View style={{ alignItems: 'flex-end', marginRight: 10 }}>
+            <Text style={[styles.amountText, { color: colors.textPrimary }]}>₦{getInvoiceTotal(item).toLocaleString()}</Text>
+            <View
+              style={[
+                styles.statusBadge,
+                { backgroundColor: getPaymentStatusColor(item.paymentStatus) + '20' },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.statusText,
+                  { color: getPaymentStatusColor(item.paymentStatus) },
+                ]}
+              >
+                {item.paymentStatus === 'partially_paid'
+                  ? 'Partial'
+                  : item.paymentStatus.charAt(0).toUpperCase() + item.paymentStatus.slice(1)}
+              </Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
         </View>
       </TouchableOpacity>
     );
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Finance</Text>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => router.push('/(workshop)/create-invoice')}
-        >
-          <Ionicons name="add" size={24} color={Colors.textInverse} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Invoice Type Tabs */}
-      <View style={styles.typeContainer}>
-        <TouchableOpacity
-          style={[styles.typeTab, invoiceType === 'job' && styles.typeTabActive]}
-          onPress={() => setInvoiceType('job')}
-        >
-          <Text style={[styles.typeText, invoiceType === 'job' && styles.typeTextActive]}>Job Invoices</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.typeTab, invoiceType === 'direct' && styles.typeTabActive]}
-          onPress={() => setInvoiceType('direct')}
-        >
-          <Text style={[styles.typeText, invoiceType === 'direct' && styles.typeTextActive]}>Direct Invoices</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <Ionicons name="search-outline" size={20} color={Colors.textTertiary} style={styles.searchIcon} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search by customer name or invoice ID..."
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-        <TouchableOpacity
-          onPress={() => setShowDateFilterModal(true)}
-          style={styles.dateFilterButton}
-        >
-          <Ionicons name="calendar-outline" size={20} color={Colors.textPrimary} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Filter Pills */}
-      <View style={styles.filterContainer}>
-        {(['all', 'pending', 'paid', 'partially_paid'] as const).map((filterOption) => (
-          <TouchableOpacity
-            key={filterOption}
-            style={[
-              styles.filterPill,
-              filter === filterOption && styles.filterPillActive,
-            ]}
-            onPress={() => setFilter(filterOption)}
-          >
-            <Text
-              style={[
-                styles.filterText,
-                filter === filterOption && styles.filterTextActive,
-              ]}
-            >
-              {filterOption === 'partially_paid'
-                ? 'Partially Paid'
-                : filterOption.charAt(0).toUpperCase() + filterOption.slice(1)}
-            </Text>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <TouchableOpacity onPress={() => router.back()} style={{ marginRight: 16 }}>
+            <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
-        ))}
+          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Finance</Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => setShowCreateOptionsModal(true)}
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 16,
+            backgroundColor: colors.textPrimary,
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
+        >
+          <Ionicons name="add" size={24} color={colors.background} />
+        </TouchableOpacity>
       </View>
 
-      {/* Invoices List */}
-      <FlatList
-        data={filteredInvoices}
-        renderItem={renderInvoice}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Ionicons name="receipt-outline" size={64} color={Colors.textTertiary} />
-            <Text style={styles.emptyText}>No invoices found</Text>
+      <View style={[styles.typeContainer, { backgroundColor: 'transparent', borderBottomWidth: 0, paddingHorizontal: 0 }]}>
+        <TouchableOpacity
+          style={[
+            styles.typeTab,
+            mainSection === 'quotes' && styles.typeTabActive,
+            { backgroundColor: mainSection === 'quotes' ? colors.textPrimary : colors.surface, borderWidth: 1, borderColor: colors.border }
+          ]}
+          onPress={() => setMainSection('quotes')}
+        >
+          <Text
+            style={[
+              styles.typeText,
+              mainSection === 'quotes' && styles.typeTextActive,
+              { color: mainSection === 'quotes' ? colors.textInverse : colors.textSecondary }
+            ]}
+          >
+            Quotes
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.typeTab,
+            mainSection === 'invoices' && styles.typeTabActive,
+            { backgroundColor: mainSection === 'invoices' ? colors.textPrimary : colors.surface, borderWidth: 1, borderColor: colors.border }
+          ]}
+          onPress={() => setMainSection('invoices')}
+        >
+          <Text
+            style={[
+              styles.typeText,
+              mainSection === 'invoices' && styles.typeTextActive,
+              { color: mainSection === 'invoices' ? colors.textInverse : colors.textSecondary }
+            ]}
+          >
+            Invoices
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Quotes Section */}
+      {mainSection === 'quotes' ? (
+        <View style={{ flex: 1 }}>
+          <View style={[styles.searchContainer, { backgroundColor: colors.surface }]}>
+            <Ionicons name="search" size={20} color={colors.textSecondary} style={styles.searchIcon} />
+            <TextInput
+              style={[styles.searchInput, { color: colors.textPrimary }]}
+              placeholder="Search quotes..."
+              value={quoteSearchQuery}
+              onChangeText={setQuoteSearchQuery}
+              placeholderTextColor={colors.textTertiary}
+            />
           </View>
-        }
-      />
+          <View style={[styles.filterContainer, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+            {(['all', 'draft', 'pending', 'converted'] as const).map((f) => (
+              <TouchableOpacity
+                key={f}
+                style={[
+                  styles.filterPill,
+                  { backgroundColor: colors.background },
+                  quoteFilter === f && { backgroundColor: colors.textPrimary }
+                ]}
+                onPress={() => setQuoteFilter(f as any)}
+              >
+                <Text style={[
+                  styles.filterText,
+                  { color: colors.textSecondary },
+                  quoteFilter === f && { color: colors.textInverse }
+                ]}>
+                  {f === 'pending' ? 'Pending' : f.charAt(0).toUpperCase() + f.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <FlatList
+            data={filteredQuotes}
+            renderItem={renderQuote}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={() => {
+                loadInvoices();
+                loadQuotes();
+              }} />
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <Ionicons name="document-text-outline" size={64} color={colors.textTertiary} />
+                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No quotes found</Text>
+              </View>
+            }
+          />
+        </View>
+      ) : (
+        <View style={{ flex: 1 }}>
+          <View style={[styles.subTabContainer, { backgroundColor: 'transparent', paddingHorizontal: 16, marginBottom: 10 }]}>
+            <TouchableOpacity
+              style={[
+                styles.subTab,
+                { backgroundColor: invoiceType === 'job' ? colors.textPrimary : colors.surface, borderWidth: 1, borderColor: colors.border },
+              ]}
+              onPress={() => setInvoiceType('job')}
+            >
+              <Text style={[
+                styles.subTabText,
+                { color: invoiceType === 'job' ? colors.textInverse : colors.textSecondary },
+              ]}>Job Invoices</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.subTab,
+                { backgroundColor: invoiceType === 'direct' ? colors.textPrimary : colors.surface, borderWidth: 1, borderColor: colors.border },
+              ]}
+              onPress={() => setInvoiceType('direct')}
+            >
+              <Text style={[
+                styles.subTabText,
+                { color: invoiceType === 'direct' ? colors.textInverse : colors.textSecondary },
+              ]}>Direct Invoices</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={[styles.searchContainer, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+            <Ionicons name="search" size={20} color={colors.textSecondary} />
+            <TextInput
+              style={[styles.searchInput, { color: colors.textPrimary }]}
+              placeholder="Search invoices..."
+              placeholderTextColor={colors.textSecondary}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')}>
+                <Ionicons name="close-circle" size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={styles.dateFilterButton}
+              onPress={() => setShowDateFilterModal(true)}
+            >
+              <Ionicons name="calendar-outline" size={20} color={colors.textPrimary} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={[styles.filterContainer, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+            {(['all', 'pending', 'partially_paid', 'paid'] as const).map((f) => (
+              <TouchableOpacity
+                key={f}
+                style={[
+                  styles.filterPill,
+                  { backgroundColor: colors.background },
+                  filter === f && { backgroundColor: colors.textPrimary }
+                ]}
+                onPress={() => setFilter(f)}
+              >
+                <Text style={[
+                  styles.filterText,
+                  { color: colors.textSecondary },
+                  filter === f && { color: colors.textInverse }
+                ]}>
+                  {f.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <FlatList
+            data={filteredInvoices}
+            renderItem={renderInvoice}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <Ionicons name="receipt-outline" size={64} color={Colors.textTertiary} />
+                <Text style={styles.emptyText}>No invoices found</Text>
+              </View>
+            }
+          />
+
+        </View>
+      )
+      }
 
       {/* Invoice Details Modal */}
       <Modal
@@ -801,42 +1049,52 @@ export default function FinanceScreen() {
           setActiveDatePicker(null);
         }}
       >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Invoice Details</Text>
+        <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+          <View style={[styles.modalHeader, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Invoice Details</Text>
             <TouchableOpacity onPress={() => {
               setShowInvoiceModal(false);
               setActiveDatePicker(null);
             }}>
-              <Ionicons name="close" size={24} color={Colors.textPrimary} />
+              <Ionicons name="close" size={24} color={colors.textPrimary} />
             </TouchableOpacity>
           </View>
 
           {selectedInvoice && (
-            <ScrollView style={styles.modalContent}>
-              <View style={styles.invoiceDetailsCard}>
+            <ScrollView style={[styles.modalContent, { backgroundColor: colors.background }]}>
+              <View style={[styles.invoiceDetailsCard, { backgroundColor: colors.surface }]}>
                 <View style={styles.detailRow}>
                   <View style={styles.detailItem}>
-                    <Text style={styles.detailLabel}>Invoice #</Text>
-                    <Text style={styles.detailValue}>{selectedInvoice.id}</Text>
+                    <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Invoice #</Text>
+                    <Text style={[styles.detailValue, { color: colors.textPrimary }]}>{selectedInvoice.id}</Text>
                   </View>
                   <View style={styles.detailItem}>
-                    <Text style={styles.detailLabel}>Customer</Text>
-                    <Text style={styles.detailValue}>{customerName || 'Loading...'}</Text>
+                    <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Customer</Text>
+                    <Text style={[styles.detailValue, { color: colors.textPrimary }]}>{customerName || 'Loading...'}</Text>
                   </View>
                 </View>
                 <View style={[styles.detailRow, { marginTop: 15 }]}>
                   <View style={styles.detailItem}>
-                    <Text style={styles.detailLabel}>Status</Text>
-                    <View style={[styles.statusBadge, { alignSelf: 'flex-start', marginLeft: 0, marginTop: 4 }]}>
-                      <Text style={styles.statusText}>
-                        {(selectedInvoice.status || 'draft').toUpperCase()}
+                    <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Status</Text>
+                    <View style={[
+                      styles.statusBadge,
+                      {
+                        alignSelf: 'flex-start',
+                        marginLeft: 0,
+                        marginTop: 4,
+                        backgroundColor: getPaymentStatusColor(selectedInvoice.paymentStatus) + '15',
+                        borderWidth: 1,
+                        borderColor: getPaymentStatusColor(selectedInvoice.paymentStatus) + '30'
+                      }
+                    ]}>
+                      <Text style={[styles.statusText, { color: getPaymentStatusColor(selectedInvoice.paymentStatus) }]}>
+                        {selectedInvoice.paymentStatus.replace('_', ' ').toUpperCase()}
                       </Text>
                     </View>
                   </View>
                   <View style={styles.detailItem}>
-                    <Text style={styles.detailLabel}>Due Date</Text>
-                    <Text style={styles.detailValue}>
+                    <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Due Date</Text>
+                    <Text style={[styles.detailValue, { color: colors.textPrimary }]}>
                       {selectedInvoice.dueDate ? format(selectedInvoice.dueDate, 'MMM dd, yyyy') : 'N/A'}
                     </Text>
                   </View>
@@ -845,7 +1103,7 @@ export default function FinanceScreen() {
 
               <View style={styles.itemsSection}>
                 <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Items</Text>
+                  <Text style={[styles.sectionTitle, { color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 14 }]}>Line Items</Text>
                   {canEditInvoice() && !showAddItem && (
                     <TouchableOpacity
                       onPress={() => {
@@ -854,35 +1112,36 @@ export default function FinanceScreen() {
                       }}
                       style={styles.addItemButton}
                     >
-                      <Ionicons name="add-circle-outline" size={24} color={Colors.textInverse} />
+                      <Ionicons name="add-circle" size={32} color="#000" />
                     </TouchableOpacity>
                   )}
                 </View>
 
                 {editingItems.map((item, index) => (
-                  <View key={index} style={styles.itemRow}>
+                  <View key={index} style={[styles.itemRow, { backgroundColor: 'transparent', borderBottomWidth: 1, borderBottomColor: colors.border, paddingVertical: 12, marginBottom: 0 }]}>
                     {canEditInvoice() && editingItemIndex === index ? (
                       <View style={styles.itemEditForm}>
                         <TextInput
-                          style={styles.itemEditInput}
+                          style={[styles.itemEditInput, { color: colors.textPrimary, backgroundColor: colors.background, borderColor: colors.border }]}
                           value={item.description}
                           onChangeText={(text) => handleEditItem(index, 'description', text)}
                           placeholder="Description"
+                          placeholderTextColor={colors.textTertiary}
                         />
                         <View style={styles.itemEditRow}>
                           <View style={styles.itemEditField}>
-                            <Text style={styles.itemEditLabel}>Qty</Text>
+                            <Text style={[styles.itemEditLabel, { color: colors.textSecondary }]}>Qty</Text>
                             <TextInput
-                              style={styles.itemEditInputSmall}
+                              style={[styles.itemEditInputSmall, { color: colors.textPrimary, backgroundColor: colors.background, borderColor: colors.border }]}
                               value={item.quantity.toString()}
                               onChangeText={(text) => handleEditItem(index, 'quantity', text)}
                               keyboardType="numeric"
                             />
                           </View>
                           <View style={styles.itemEditField}>
-                            <Text style={styles.itemEditLabel}>Unit Price</Text>
+                            <Text style={[styles.itemEditLabel, { color: colors.textSecondary }]}>Unit Price</Text>
                             <TextInput
-                              style={styles.itemEditInputSmall}
+                              style={[styles.itemEditInputSmall, { color: colors.textPrimary, backgroundColor: colors.background, borderColor: colors.border }]}
                               value={item.unitPrice.toString()}
                               onChangeText={(text) => handleEditItem(index, 'unitPrice', text)}
                               keyboardType="numeric"
@@ -916,15 +1175,19 @@ export default function FinanceScreen() {
                         onPress={() => canEditInvoice() && setEditingItemIndex(index)}
                         disabled={!canEditInvoice()}
                       >
-                        <View style={styles.itemInfo}>
-                          <Text style={styles.itemDescription}>{item.description}</Text>
-                          <Text style={styles.itemDetails}>
-                            {item.quantity} × ₦{item.unitPrice.toLocaleString()} = ₦
-                            {item.total.toLocaleString()}
+                        <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.itemDescription, { color: colors.textPrimary, fontSize: 15, fontWeight: '500' }]}>{item.description}</Text>
+                            <Text style={[styles.itemDetails, { color: colors.textSecondary, fontSize: 13, marginTop: 2 }]}>
+                              {item.quantity} × ₦{item.unitPrice.toLocaleString()}
+                            </Text>
+                          </View>
+                          <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary }}>
+                            ₦{item.total.toLocaleString()}
                           </Text>
                         </View>
                         {canEditInvoice() && (
-                          <Ionicons name="pencil-outline" size={18} color={Colors.textPrimary} />
+                          <Ionicons name="pencil-outline" size={18} color={colors.textSecondary} style={{ marginLeft: 10 }} />
                         )}
                       </TouchableOpacity>
                     )}
@@ -936,24 +1199,38 @@ export default function FinanceScreen() {
                     {/* Mode Tabs */}
                     <View style={styles.addItemTabs}>
                       <TouchableOpacity
-                        style={[styles.addItemTab, addItemMode === 'manual' && styles.addItemTabActive]}
+                        style={[
+                          styles.addItemTab,
+                          addItemMode === 'manual' && { backgroundColor: colors.primary },
+                          addItemMode !== 'manual' && { backgroundColor: colors.surface }
+                        ]}
                         onPress={() => setAddItemMode('manual')}
                       >
-                        <Text style={[styles.addItemTabText, addItemMode === 'manual' && styles.addItemTabTextActive]}>
+                        <Text style={[
+                          styles.addItemTabText,
+                          { color: addItemMode === 'manual' ? colors.textInverse : colors.textPrimary }
+                        ]}>
                           Manual Entry
                         </Text>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        style={[styles.addItemTab, addItemMode === 'inventory' && styles.addItemTabActive]}
+                        style={[
+                          styles.addItemTab,
+                          addItemMode === 'inventory' && { backgroundColor: colors.primary },
+                          addItemMode !== 'inventory' && { backgroundColor: colors.surface }
+                        ]}
                         onPress={() => setAddItemMode('inventory')}
                       >
                         <Ionicons
                           name="cube-outline"
                           size={16}
-                          color={addItemMode === 'inventory' ? '#fff' : '#000'}
+                          color={addItemMode === 'inventory' ? colors.textInverse : colors.textPrimary}
                           style={{ marginRight: 4 }}
                         />
-                        <Text style={[styles.addItemTabText, addItemMode === 'inventory' && styles.addItemTabTextActive]}>
+                        <Text style={[
+                          styles.addItemTabText,
+                          { color: addItemMode === 'inventory' ? colors.textInverse : colors.textPrimary }
+                        ]}>
                           From Inventory
                         </Text>
                       </TouchableOpacity>
@@ -962,25 +1239,26 @@ export default function FinanceScreen() {
                     {addItemMode === 'manual' ? (
                       <>
                         <TextInput
-                          style={styles.itemEditInput}
+                          style={[styles.itemEditInput, { color: colors.textPrimary, backgroundColor: colors.background, borderColor: colors.border }]}
                           value={newItem.description}
                           onChangeText={(text) => setNewItem({ ...newItem, description: text })}
                           placeholder="Description"
+                          placeholderTextColor={colors.textTertiary}
                         />
                         <View style={styles.itemEditRow}>
                           <View style={styles.itemEditField}>
-                            <Text style={styles.itemEditLabel}>Qty</Text>
+                            <Text style={[styles.itemEditLabel, { color: colors.textSecondary }]}>Qty</Text>
                             <TextInput
-                              style={styles.itemEditInputSmall}
+                              style={[styles.itemEditInputSmall, { color: colors.textPrimary, backgroundColor: colors.background, borderColor: colors.border }]}
                               value={newItem.quantity}
                               onChangeText={(text) => setNewItem({ ...newItem, quantity: text })}
                               keyboardType="numeric"
                             />
                           </View>
                           <View style={styles.itemEditField}>
-                            <Text style={styles.itemEditLabel}>Unit Price</Text>
+                            <Text style={[styles.itemEditLabel, { color: colors.textSecondary }]}>Unit Price</Text>
                             <TextInput
-                              style={styles.itemEditInputSmall}
+                              style={[styles.itemEditInputSmall, { color: colors.textPrimary, backgroundColor: colors.background, borderColor: colors.border }]}
                               value={newItem.unitPrice}
                               onChangeText={(text) => setNewItem({ ...newItem, unitPrice: text })}
                               keyboardType="numeric"
@@ -1000,8 +1278,8 @@ export default function FinanceScreen() {
                       <View style={styles.inventorySelectionContainer}>
                         {inventoryItems.length === 0 ? (
                           <View style={styles.emptyState}>
-                            <Ionicons name="cube-outline" size={48} color={Colors.textTertiary} />
-                            <Text style={styles.emptyText}>No inventory items found</Text>
+                            <Ionicons name="cube-outline" size={48} color={colors.textTertiary} />
+                            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No inventory items found</Text>
                           </View>
                         ) : (
                           <ScrollView
@@ -1095,16 +1373,16 @@ export default function FinanceScreen() {
                   <>
                     {(parseFloat(editingVatRate) > 0) && (
                       <View style={styles.summaryRow}>
-                        <Text style={styles.summaryLabel}>VAT ({editingVatRate}%):</Text>
-                        <Text style={styles.summaryValue}>
+                        <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>VAT ({editingVatRate}%):</Text>
+                        <Text style={[styles.summaryValue, { color: colors.textPrimary }]}>
                           ₦{(editingItems.reduce((sum, item) => sum + item.total, 0) * (parseFloat(editingVatRate) / 100)).toLocaleString()}
                         </Text>
                       </View>
                     )}
                     {(parseFloat(editingDiscount) > 0) && (
                       <View style={styles.summaryRow}>
-                        <Text style={styles.summaryLabel}>Discount:</Text>
-                        <Text style={[styles.summaryValue, { color: '#FF3B30' }]}>
+                        <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Discount:</Text>
+                        <Text style={[styles.summaryValue, { color: Colors.error }]}>
                           -₦{parseFloat(editingDiscount).toLocaleString()}
                         </Text>
                       </View>
@@ -1112,9 +1390,9 @@ export default function FinanceScreen() {
                   </>
                 )}
 
-                <View style={[styles.summaryRow, { marginTop: 10, borderTopWidth: 1, borderTopColor: '#eee', paddingTop: 10 }]}>
-                  <Text style={[styles.summaryLabel, { fontWeight: 'bold', fontSize: 18 }]}>Total:</Text>
-                  <Text style={[styles.summaryValue, { fontWeight: 'bold', fontSize: 18 }]}>
+                <View style={[styles.summaryRow, { marginTop: 10, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10 }]}>
+                  <Text style={[styles.summaryLabel, { fontWeight: 'bold', fontSize: 18, color: colors.textPrimary }]}>Total:</Text>
+                  <Text style={[styles.summaryValue, { fontWeight: 'bold', fontSize: 18, color: colors.textPrimary }]}>
                     ₦{(
                       editingItems.reduce((sum, item) => sum + item.total, 0) +
                       (editingItems.reduce((sum, item) => sum + item.total, 0) * (parseFloat(editingVatRate) || 0) / 100) -
@@ -1129,9 +1407,9 @@ export default function FinanceScreen() {
               {
                 (selectedInvoice.status === 'draft' || !selectedInvoice.status) && (
                   <View style={styles.dueDateSection}>
-                    <Text style={styles.sectionTitle}>Due Date (Required)</Text>
+                    <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Due Date (Required)</Text>
                     <TouchableOpacity
-                      style={[styles.dateInput, !editingDueDate && styles.dateInputError]}
+                      style={[styles.dateInput, { backgroundColor: colors.background, borderColor: colors.textPrimary, borderWidth: 1 }, !editingDueDate && styles.dateInputError]}
                       onPress={() => {
                         setActiveDatePicker('due');
                         if (Platform.OS === 'android') {
@@ -1139,20 +1417,20 @@ export default function FinanceScreen() {
                         }
                       }}
                     >
-                      <Text style={styles.dateInputText}>
+                      <Text style={[styles.dateInputText, { color: colors.textPrimary }]}>
                         {editingDueDate ? format(editingDueDate, 'MMM dd, yyyy') : 'Select Due Date'}
                       </Text>
-                      <Ionicons name="calendar-outline" size={20} color={Colors.textPrimary} />
+                      <Ionicons name="calendar-outline" size={20} color={colors.textPrimary} />
                     </TouchableOpacity>
                     {activeDatePicker === 'due' && (Platform.OS === 'ios' || showDatePicker) && (
                       <View>
                         {Platform.OS === 'ios' && (
-                          <View style={styles.datePickerToolbar}>
+                          <View style={[styles.datePickerToolbar, { backgroundColor: colors.surface, borderBottomColor: colors.border, borderBottomWidth: 1 }]}>
                             <TouchableOpacity
                               onPress={() => setActiveDatePicker(null)}
                               style={styles.datePickerDoneButton}
                             >
-                              <Text style={styles.datePickerDoneText}>Done</Text>
+                              <Text style={[styles.datePickerDoneText, { color: colors.primary }]}>Done</Text>
                             </TouchableOpacity>
                           </View>
                         )}
@@ -1161,18 +1439,9 @@ export default function FinanceScreen() {
                           mode="date"
                           display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                           minimumDate={new Date()}
-                          themeVariant="light"
-                          onChange={(event, selectedDate) => {
-                            if (Platform.OS === 'android') {
-                              setShowDatePicker(false);
-                              setActiveDatePicker(null);
-                            }
-                            if (selectedDate) {
-                              setEditingDueDate(selectedDate);
-                              // Do not close on iOS, wait for Done button
-                            }
-                          }}
-                          style={Platform.OS === 'ios' ? { backgroundColor: 'white' } : undefined}
+                          // Use system theme variant or force dark based on background color check if needed
+                          // For now keeping simple as we don't have straight access to isDark here without hook change
+                          style={Platform.OS === 'ios' ? { backgroundColor: colors.surface } : undefined}
                         />
                       </View>
                     )}
@@ -1184,16 +1453,16 @@ export default function FinanceScreen() {
                 selectedInvoice.paymentHistory &&
                 selectedInvoice.paymentHistory.length > 0 && (
                   <View style={styles.paymentHistorySection}>
-                    <Text style={styles.sectionTitle}>Payment History</Text>
+                    <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Payment History</Text>
                     {selectedInvoice.paymentHistory.map(
                       (payment, index: number) => {
                         const paymentDate = payment.date instanceof Date ? payment.date : new Date(payment.date);
                         return (
-                          <View key={index} style={styles.paymentHistoryItem}>
-                            <Text style={styles.paymentAmount}>
+                          <View key={index} style={[styles.paymentHistoryItem, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+                            <Text style={[styles.paymentAmount, { color: colors.textPrimary }]}>
                               ₦{payment.amount.toLocaleString()}
                             </Text>
-                            <Text style={styles.paymentDate}>
+                            <Text style={[styles.paymentDate, { color: colors.textSecondary }]}>
                               {format(paymentDate, 'MMM dd, yyyy')} - {payment.method}
                             </Text>
                           </View>
@@ -1223,11 +1492,10 @@ export default function FinanceScreen() {
               {
                 (selectedInvoice.status === 'draft' || !selectedInvoice.status) && (
                   <TouchableOpacity
-                    style={styles.approveButton}
+                    style={[styles.approveButton, { backgroundColor: '#fff' }]}
                     onPress={handleApproveInvoice}
                   >
-                    <Ionicons name="checkmark-circle-outline" size={24} color={Colors.textInverse} style={{ marginRight: 8 }} />
-                    <Text style={styles.approveButtonText}>
+                    <Text style={[styles.approveButtonText, { color: '#000' }]}>
                       {selectedInvoice.items.some(i => i.description.toLowerCase().includes('tow'))
                         ? 'Approve'
                         : 'Approve & Send'}
@@ -1519,12 +1787,68 @@ export default function FinanceScreen() {
         </View>
       </Modal >
 
+      {/* Create Options Modal */}
+      <Modal
+        visible={showCreateOptionsModal}
+        transparent={true}
+        animationType="fade"
+        statusBarTranslucent={true}
+        onRequestClose={() => setShowCreateOptionsModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.successModalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowCreateOptionsModal(false)}
+        >
+          <View style={[styles.successModalContent, { backgroundColor: colors.surface, paddingVertical: 16, alignItems: 'stretch' }]}>
+            <Text style={[styles.successTitle, { color: colors.textPrimary, marginBottom: 20, textAlign: 'left', paddingHorizontal: 16 }]}>Create New</Text>
+
+            {/* Create Direct Invoice - Functional Button */}
+            <TouchableOpacity
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                paddingVertical: 14,
+                paddingHorizontal: 16,
+              }}
+              onPress={() => {
+                setShowCreateOptionsModal(false);
+                router.push('/(workshop)/create-invoice');
+              }}
+            >
+              <Ionicons name="receipt-outline" size={24} color={colors.textPrimary} style={{ marginRight: 12 }} />
+              <View>
+                <Text style={{ fontSize: 16, color: colors.textPrimary, fontWeight: '600' }}>Create Direct Invoice</Text>
+                <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
+                  For customers without a job request
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Cancel */}
+            <TouchableOpacity
+              style={{
+                marginTop: 16,
+                paddingVertical: 12,
+                alignItems: 'center',
+                borderTopWidth: 1,
+                borderTopColor: colors.border,
+              }}
+              onPress={() => setShowCreateOptionsModal(false)}
+            >
+              <Text style={{ fontSize: 16, color: colors.textSecondary }}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
     </View >
   );
 }
 
 function InventoryItemRow({ item, onAdd }: { item: InventoryItem; onAdd: (qty: number) => void }) {
+  const colors = useColors();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   const [quantity, setQuantity] = useState('1');
 
   const handleAdd = () => {
@@ -1576,7 +1900,7 @@ function InventoryItemRow({ item, onAdd }: { item: InventoryItem; onAdd: (qty: n
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
@@ -1614,9 +1938,9 @@ const styles = StyleSheet.create({
   },
   typeTab: {
     flex: 1,
-    paddingVertical: Spacing.sm,
+    paddingVertical: 8,
     alignItems: 'center',
-    borderRadius: BorderRadius.md,
+    borderRadius: BorderRadius.full,
   },
   typeTabActive: {
     backgroundColor: Colors.secondary,
@@ -1669,8 +1993,8 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   filterPillActive: {
-    backgroundColor: Colors.secondary,
-    borderColor: Colors.secondary,
+    backgroundColor: '#FFFFFF',
+    borderColor: '#FFFFFF',
   },
   filterText: {
     fontSize: Typography.fontSize.sm,
@@ -1678,10 +2002,10 @@ const styles = StyleSheet.create({
     fontWeight: Typography.fontWeight.medium,
   },
   filterTextActive: {
-    color: Colors.textInverse,
+    color: '#000000',
   },
   listContent: {
-    padding: Spacing.base,
+    padding: 0,
   },
   invoiceCard: {
     backgroundColor: Colors.surface,
@@ -1706,19 +2030,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 0,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#f5f5f5',
-    paddingVertical: 16,
+    borderBottomColor: colors.border,
+    paddingVertical: 14,
     paddingHorizontal: 15,
   },
+  itemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
   iconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 16,
   },
   itemInfo: {
     flex: 1,
@@ -1734,8 +2063,8 @@ const styles = StyleSheet.create({
     color: '#888',
   },
   itemRight: {
-    alignItems: 'flex-end',
-    gap: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   amountText: {
     fontSize: 16,
@@ -1772,25 +2101,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: Spacing.lg,
     paddingTop: Platform.OS === 'android' ? 20 : Spacing.lg,
-    backgroundColor: Colors.surface,
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: colors.border,
   },
   modalTitle: {
     fontSize: Typography.fontSize.xl,
     fontWeight: Typography.fontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   modalContent: {
     flex: 1,
     padding: Spacing.lg,
   },
   invoiceDetailsCard: {
-    backgroundColor: Colors.surface,
+    backgroundColor: colors.surface,
     padding: Spacing.base,
     borderRadius: BorderRadius.lg,
     marginBottom: Spacing.lg,
-    ...Shadows.sm,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   detailRow: {
     flexDirection: 'row',
@@ -1802,13 +2135,13 @@ const styles = StyleSheet.create({
   },
   detailLabel: {
     fontSize: Typography.fontSize.xs,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     marginBottom: 4,
   },
   detailValue: {
     fontSize: Typography.fontSize.base,
     fontWeight: Typography.fontWeight.semibold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   itemsSection: {
     marginBottom: Spacing.lg,
@@ -1817,12 +2150,12 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.lg,
     fontWeight: Typography.fontWeight.bold,
     marginBottom: Spacing.base,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   itemRow: {
     marginBottom: Spacing.base,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: colors.border,
     paddingBottom: Spacing.base,
   },
   itemInfoContainer: {
@@ -1830,21 +2163,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-
   itemEditForm: {
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
     padding: Spacing.base,
     borderRadius: BorderRadius.lg,
   },
   itemEditInput: {
-    backgroundColor: Colors.surface,
+    backgroundColor: colors.surface,
     borderRadius: BorderRadius.md,
     padding: Spacing.md,
     fontSize: Typography.fontSize.base,
     marginBottom: Spacing.sm,
     borderWidth: 1,
-    borderColor: Colors.border,
-    color: Colors.textPrimary,
+    borderColor: colors.border,
+    color: colors.textPrimary,
   },
   itemEditRow: {
     flexDirection: 'row',
@@ -1856,17 +2188,17 @@ const styles = StyleSheet.create({
   },
   itemEditLabel: {
     fontSize: Typography.fontSize.xs,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     marginBottom: 4,
   },
   itemEditInputSmall: {
-    backgroundColor: Colors.surface,
+    backgroundColor: colors.surface,
     borderRadius: BorderRadius.md,
     padding: Spacing.md,
     fontSize: Typography.fontSize.sm,
     borderWidth: 1,
-    borderColor: Colors.border,
-    color: Colors.textPrimary,
+    borderColor: colors.border,
+    color: colors.textPrimary,
   },
   itemEditActions: {
     flexDirection: 'row',
@@ -1876,41 +2208,41 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: Spacing.sm,
     borderRadius: BorderRadius.md,
-    backgroundColor: Colors.secondary,
+    backgroundColor: colors.secondary,
     alignItems: 'center',
   },
   deleteButton: {
-    backgroundColor: Colors.surface,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: Colors.error,
+    borderColor: colors.error,
   },
   itemEditButtonText: {
-    color: Colors.textInverse,
+    color: colors.textInverse,
     fontWeight: Typography.fontWeight.semibold,
   },
   addItemForm: {
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
     padding: Spacing.base,
     borderRadius: BorderRadius.lg,
     marginTop: Spacing.sm,
     borderWidth: 2,
-    borderColor: Colors.secondary,
+    borderColor: colors.secondary,
     borderStyle: 'dashed',
   },
   addItemButton: {
     padding: 8,
-    backgroundColor: Colors.secondary,
+    backgroundColor: colors.secondary,
     borderRadius: BorderRadius.md,
   },
   addItemTabs: {
     flexDirection: 'row',
     marginBottom: Spacing.base,
-    backgroundColor: Colors.border,
+    backgroundColor: colors.border,
     borderRadius: BorderRadius.md,
     padding: 2,
   },
   approveButton: {
-    backgroundColor: Colors.success,
+    backgroundColor: colors.success,
     padding: Spacing.base,
     borderRadius: BorderRadius.lg,
     flexDirection: 'row',
@@ -1920,7 +2252,7 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
   },
   approveButtonText: {
-    color: Colors.textInverse,
+    color: colors.textInverse,
     fontSize: Typography.fontSize.base,
     fontWeight: Typography.fontWeight.bold,
   },
@@ -1934,15 +2266,15 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.sm,
   },
   addItemTabActive: {
-    backgroundColor: Colors.secondary,
+    backgroundColor: colors.secondary,
   },
   addItemTabText: {
     fontSize: Typography.fontSize.sm,
     fontWeight: Typography.fontWeight.semibold,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   addItemTabTextActive: {
-    color: Colors.textInverse,
+    color: colors.textInverse,
   },
   inventorySelectionContainer: {
     maxHeight: 400,
@@ -1951,7 +2283,7 @@ const styles = StyleSheet.create({
     maxHeight: 300,
   },
   doneButton: {
-    backgroundColor: Colors.secondary,
+    backgroundColor: colors.secondary,
     padding: Spacing.base,
     borderRadius: BorderRadius.md,
     alignItems: 'center',
@@ -1959,7 +2291,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   doneButtonText: {
-    color: Colors.textInverse,
+    color: colors.textInverse,
     fontSize: Typography.fontSize.base,
     fontWeight: Typography.fontWeight.semibold,
   },
@@ -1967,11 +2299,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: Colors.surface,
+    backgroundColor: colors.surface,
     padding: Spacing.base,
     borderRadius: BorderRadius.md,
     marginBottom: Spacing.md,
-    ...Shadows.sm,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   inventoryItemInfo: {
     flex: 1,
@@ -1980,17 +2316,17 @@ const styles = StyleSheet.create({
   inventoryItemName: {
     fontSize: Typography.fontSize.base,
     fontWeight: Typography.fontWeight.semibold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   inventoryItemDetails: {
     fontSize: Typography.fontSize.sm,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     marginBottom: 2,
   },
   inventoryItemCategory: {
     fontSize: Typography.fontSize.xs,
-    color: Colors.textTertiary,
+    color: colors.textTertiary,
   },
   inventoryItemActions: {
     flexDirection: 'row',
@@ -1999,17 +2335,17 @@ const styles = StyleSheet.create({
   },
   quantityInput: {
     width: 60,
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
     borderRadius: BorderRadius.sm,
     padding: 8,
     fontSize: Typography.fontSize.sm,
     textAlign: 'center',
     borderWidth: 1,
-    borderColor: Colors.border,
-    color: Colors.textPrimary,
+    borderColor: colors.border,
+    color: colors.textPrimary,
   },
   addInventoryButton: {
-    backgroundColor: Colors.secondary,
+    backgroundColor: colors.secondary,
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -2023,7 +2359,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.base,
   },
   saveInvoiceButton: {
-    backgroundColor: Colors.secondary,
+    backgroundColor: colors.secondary,
     padding: Spacing.base,
     borderRadius: BorderRadius.md,
     alignItems: 'center',
@@ -2031,14 +2367,14 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   saveInvoiceButtonText: {
-    color: Colors.textInverse,
+    color: colors.textInverse,
     fontSize: Typography.fontSize.base,
     fontWeight: Typography.fontWeight.semibold,
   },
   lockedMessage: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff3cd', // Status color warning light? Maybe use design constants if available
+    backgroundColor: colors.warning + '20',
     padding: Spacing.base,
     borderRadius: BorderRadius.md,
     marginTop: Spacing.lg,
@@ -2047,21 +2383,21 @@ const styles = StyleSheet.create({
   },
   lockedText: {
     flex: 1,
-    color: '#856404',
+    color: colors.warning, // Use warning text color
     fontSize: Typography.fontSize.sm,
   },
   itemDescription: {
     fontSize: Typography.fontSize.base,
     fontWeight: Typography.fontWeight.medium,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   itemDetails: {
     fontSize: Typography.fontSize.sm,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   summarySection: {
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
     padding: Spacing.base,
     borderRadius: BorderRadius.lg,
     marginBottom: Spacing.lg,
@@ -2073,16 +2409,16 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     fontSize: Typography.fontSize.sm,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   summaryValue: {
     fontSize: Typography.fontSize.base,
     fontWeight: Typography.fontWeight.semibold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   balanceDue: {
     fontSize: Typography.fontSize.lg,
-    color: Colors.error,
+    color: colors.error,
   },
   paymentHistorySection: {
     marginBottom: Spacing.lg,
@@ -2092,16 +2428,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: colors.border,
   },
   paymentAmount: {
     fontSize: Typography.fontSize.base,
     fontWeight: Typography.fontWeight.semibold,
-    color: Colors.successLight, // or calculate based on payment status
+    color: colors.success,
   },
   paymentDate: {
     fontSize: Typography.fontSize.sm,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   paymentActions: {
     marginTop: Spacing.lg,
@@ -2109,28 +2445,30 @@ const styles = StyleSheet.create({
   },
   paymentSummaryText: {
     fontSize: Typography.fontSize.sm,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     marginBottom: Spacing.base,
     textAlign: 'center',
   },
   payButton: {
-    backgroundColor: Colors.secondary,
+    backgroundColor: colors.surface,
     padding: Spacing.base,
     borderRadius: BorderRadius.md,
     alignItems: 'center',
     marginBottom: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   fullPayButton: {
-    backgroundColor: Colors.secondary,
+    backgroundColor: colors.surface,
   },
   payButtonText: {
-    color: Colors.textInverse,
+    color: colors.textPrimary,
     fontSize: Typography.fontSize.base,
     fontWeight: Typography.fontWeight.semibold,
   },
   disabledButton: {
     opacity: 0.5,
-    backgroundColor: '#ccc',
+    backgroundColor: colors.textTertiary + '20', // rough disabled color
   },
   downloadButton: {
     flexDirection: 'row',
@@ -2139,23 +2477,23 @@ const styles = StyleSheet.create({
     padding: Spacing.base,
     borderRadius: BorderRadius.md,
     borderWidth: 1,
-    borderColor: Colors.textPrimary,
+    borderColor: colors.textPrimary,
     marginTop: 10,
   },
   downloadButtonText: {
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     fontSize: Typography.fontSize.base,
     fontWeight: Typography.fontWeight.semibold,
     marginLeft: 8,
   },
   paymentModalOverlay: {
     flex: 1,
-    backgroundColor: Colors.overlay,
+    backgroundColor: colors.overlay,
     justifyContent: 'center',
     alignItems: 'center',
   },
   paymentModalContent: {
-    backgroundColor: Colors.surface,
+    backgroundColor: colors.surface,
     borderRadius: BorderRadius.xl,
     padding: Spacing.lg,
     width: '90%',
@@ -2165,27 +2503,27 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.xl,
     fontWeight: Typography.fontWeight.bold,
     marginBottom: 8,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   paymentModalSubtitle: {
     fontSize: Typography.fontSize.sm,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     marginBottom: Spacing.lg,
   },
   inputLabel: {
     fontSize: Typography.fontSize.sm,
     fontWeight: Typography.fontWeight.semibold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: 8,
   },
   input: {
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     borderRadius: BorderRadius.md,
     padding: Spacing.md,
     fontSize: Typography.fontSize.base,
     marginBottom: Spacing.base,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   methodButtons: {
     flexDirection: 'row',
@@ -2197,12 +2535,12 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     borderRadius: BorderRadius.md,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     alignItems: 'center',
   },
   methodButtonActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   methodButtonText: {
     fontSize: Typography.fontSize.sm,
@@ -2349,6 +2687,45 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     fontWeight: Typography.fontWeight.semibold,
     fontSize: Typography.fontSize.base,
+  },
+  quotesTab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0f8ff',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: '#007AFF',
+    gap: 6,
+  },
+  quotesTabText: {
+    color: '#007AFF',
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.semibold,
+  },
+  subTabContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: Spacing.lg,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.sm,
+    gap: Spacing.sm,
+  },
+  subTab: {
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.full,
+    backgroundColor: '#F5F6FA',
+  },
+  subTabActive: {
+    backgroundColor: '#FFFFFF',
+  },
+  subTabText: {
+    fontSize: Typography.fontSize.xs,
+    color: Colors.textSecondary,
+  },
+  subTabTextActive: {
+    color: '#000000',
   },
 });
 

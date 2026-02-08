@@ -17,6 +17,7 @@ import { ClipboardDocumentListIcon } from 'react-native-heroicons/outline';
 import { firebaseService } from '@/services/firebaseService';
 import { MarketplaceProduct } from '@/types';
 import { useAuthStore } from '@/store/authStore';
+import { useColors } from '@/constants/design';
 
 const { width } = Dimensions.get('window');
 const COLUMN_WIDTH = (width - 40) / 2;
@@ -42,6 +43,7 @@ export default function MarketplaceScreen() {
   const [searchTerm, setSearchTerm] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const colors = useColors();
 
   const loadProducts = async () => {
     try {
@@ -72,21 +74,18 @@ export default function MarketplaceScreen() {
 
   const renderProduct = ({ item }: { item: MarketplaceProduct }) => (
     <TouchableOpacity
-      style={styles.productCard}
+      style={[styles.productCard, { backgroundColor: 'transparent' }]}
       onPress={() => router.push(`/(workshop)/product-details?id=${item.id}&from=marketplace`)}
       activeOpacity={0.9}
     >
-      <View style={styles.imageContainer}>
+      <View style={[styles.imageContainer, { backgroundColor: colors.background }]}>
         {item.images && item.images.length > 0 ? (
           <Image source={{ uri: item.images[0] }} style={styles.productImage} />
         ) : (
           <View style={[styles.productImage, styles.placeholderImage]}>
-            <Ionicons name="image-outline" size={30} color="#ccc" />
+            <Ionicons name="image-outline" size={30} color={colors.textTertiary} />
           </View>
         )}
-        <TouchableOpacity style={styles.favoriteButton}>
-          <Ionicons name="heart-outline" size={20} color="#000" />
-        </TouchableOpacity>
         {item.stock <= 0 && (
           <View style={styles.outOfStockOverlay}>
             <Text style={styles.outOfStockText}>SOLD OUT</Text>
@@ -100,43 +99,43 @@ export default function MarketplaceScreen() {
           <Text style={styles.ratingText}>{item.rating || 'New'} <Text style={styles.reviewCount}>({item.reviews || 0})</Text></Text>
         </View>
 
-        <Text style={styles.productName} numberOfLines={2}>
+        <Text style={[styles.productName, { color: colors.textSecondary }]} numberOfLines={2}>
           {item.name}
         </Text>
-        <Text style={styles.productPrice}>₦{item.price.toLocaleString()}</Text>
+        <Text style={[styles.productPrice, { color: colors.textPrimary }]}>₦{item.price.toLocaleString()}</Text>
       </View>
     </TouchableOpacity>
   );
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.header, { backgroundColor: colors.surface }]}>
         <View style={styles.headerTop}>
           <TouchableOpacity
-            style={styles.menuButton}
+            style={[styles.menuButton, { backgroundColor: colors.background }]}
             onPress={() => router.push('/(workshop)/orders')}
           >
-            <ClipboardDocumentListIcon size={24} color="#000" />
+            <ClipboardDocumentListIcon size={24} color={colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Marketplace</Text>
+          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Marketplace</Text>
           <TouchableOpacity
-            style={styles.cartButton}
+            style={[styles.cartButton, { backgroundColor: colors.background }]}
             onPress={() => router.push('/(workshop)/cart')}
           >
-            <Ionicons name="bag-handle-outline" size={24} color="#000" />
+            <Ionicons name="bag-outline" size={24} color={colors.textPrimary} />
             <View style={styles.cartBadge} />
           </TouchableOpacity>
         </View>
 
         {/* Search Bar */}
-        <View style={styles.searchContainer}>
-          <Ionicons name="search-outline" size={20} color="#666" />
+        <View style={[styles.searchContainer, { backgroundColor: colors.background }]}>
+          <Ionicons name="search-outline" size={20} color={colors.textSecondary} />
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, { color: colors.textPrimary }]}
             placeholder="Search parts, tools..."
             value={searchTerm}
             onChangeText={setSearchTerm}
-            placeholderTextColor="#999"
+            placeholderTextColor={colors.textTertiary}
           />
         </View>
       </View>
@@ -153,14 +152,16 @@ export default function MarketplaceScreen() {
               <TouchableOpacity
                 style={[
                   styles.categoryChip,
-                  selectedCategory === item && styles.categoryChipActive,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                  selectedCategory === item && { backgroundColor: colors.textPrimary, borderColor: colors.textPrimary },
                 ]}
                 onPress={() => setSelectedCategory(item)}
               >
                 <Text
                   style={[
                     styles.categoryText,
-                    selectedCategory === item && styles.categoryTextActive,
+                    { color: colors.textPrimary },
+                    selectedCategory === item && { color: colors.textInverse },
                   ]}
                 >
                   {item}
@@ -179,15 +180,15 @@ export default function MarketplaceScreen() {
           numColumns={2}
           contentContainerStyle={styles.productsList}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textPrimary} />
           }
           columnWrapperStyle={styles.columnWrapper}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
             !loading ? (
               <View style={styles.emptyState}>
-                <Ionicons name="search" size={64} color="#ccc" />
-                <Text style={styles.emptyText}>No products found</Text>
+                <Ionicons name="search" size={64} color={colors.textTertiary} />
+                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No products found</Text>
               </View>
             ) : null
           }
@@ -197,10 +198,10 @@ export default function MarketplaceScreen() {
       {/* Vendor Upload FAB */}
       {user?.role === 'vendor' && (
         <TouchableOpacity
-          style={styles.fab}
+          style={[styles.fab, { backgroundColor: colors.textPrimary }]}
           onPress={() => router.push('/(marketplace)/upload')}
         >
-          <Ionicons name="add" size={32} color="#fff" />
+          <Ionicons name="add" size={32} color={colors.textInverse} />
         </TouchableOpacity>
       )}
     </View>
@@ -210,13 +211,11 @@ export default function MarketplaceScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
   },
   header: {
     paddingTop: 60,
     paddingHorizontal: 20,
     paddingBottom: 15,
-    backgroundColor: '#fff',
   },
   headerTop: {
     flexDirection: 'row',
@@ -228,7 +227,6 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#f5f5f5',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -240,7 +238,6 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#f5f5f5',
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
@@ -259,7 +256,6 @@ const styles = StyleSheet.create({
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
     paddingHorizontal: 15,
     paddingVertical: 12,
     borderRadius: 25,
@@ -268,7 +264,6 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 16,
-    color: '#000',
   },
   contentContainer: {
     flex: 1,
@@ -284,22 +279,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 25,
-    backgroundColor: '#fff',
     borderWidth: 1,
-    borderColor: '#eee',
     marginRight: 8,
-  },
-  categoryChipActive: {
-    backgroundColor: '#000',
-    borderColor: '#000',
   },
   categoryText: {
     fontSize: 14,
-    color: '#000',
     fontWeight: '500',
-  },
-  categoryTextActive: {
-    color: '#fff',
   },
   productsList: {
     paddingHorizontal: 16,
@@ -310,18 +295,21 @@ const styles = StyleSheet.create({
   },
   productCard: {
     width: COLUMN_WIDTH,
-    marginBottom: 20,
-    backgroundColor: '#fff',
-    // No shadow for clean flat look from images
+    marginBottom: 16,
+    backgroundColor: 'transparent',
+    flexDirection: 'column',
+    overflow: 'visible',
   },
   imageContainer: {
     width: '100%',
-    height: COLUMN_WIDTH * 1.2,
+    height: COLUMN_WIDTH * 1.0,
     borderRadius: 20,
     backgroundColor: '#f5f5f5',
-    marginBottom: 10,
+    marginBottom: 0,
     overflow: 'hidden',
     position: 'relative',
+    borderWidth: 1,
+    borderColor: '#eee',
   },
   productImage: {
     width: '100%',
@@ -339,7 +327,6 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: '#fff',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -355,7 +342,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   productInfo: {
-    paddingHorizontal: 5,
+    paddingHorizontal: 0,
+    marginTop: 8,
+    flexDirection: 'column',
   },
   ratingRow: {
     flexDirection: 'row',
@@ -368,19 +357,16 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   reviewCount: {
-    color: '#999',
     fontWeight: 'normal',
   },
   productName: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#333',
     marginBottom: 6,
   },
   productPrice: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#000',
   },
   promoBanner: {
     backgroundColor: '#000',

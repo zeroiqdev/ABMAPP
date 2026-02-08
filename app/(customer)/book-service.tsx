@@ -14,6 +14,10 @@ import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
 import { notificationService } from '@/services/notificationService';
+import { Workshop } from '@/types';
+import { WorkshopSelectorModal } from '@/components/WorkshopSelectorModal';
+import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { db } from '@/config/firebase';
 import * as ImagePicker from 'expo-image-picker';
 import { validateImageWithAlert } from '@/utils/imageValidation';
 import { Ionicons } from '@expo/vector-icons';
@@ -35,9 +39,15 @@ export default function BookServiceScreen() {
   const [loading, setLoading] = useState(false);
   const [loadingVehicles, setLoadingVehicles] = useState(true);
 
+  // Workshop selection state
+  const [selectedWorkshopId, setSelectedWorkshopId] = useState<string>('');
+  const [availableWorkshops, setAvailableWorkshops] = useState<Workshop[]>([]);
+  const [showWorkshopSelector, setShowWorkshopSelector] = useState(false);
+
   React.useEffect(() => {
     loadVehicles();
-  }, []);
+    loadWorkshops();
+  }, [user]); // Add user dependency
 
   const loadVehicles = async () => {
     if (!user) return;
@@ -51,6 +61,44 @@ export default function BookServiceScreen() {
       console.error('Error loading vehicles:', error);
     } finally {
       setLoadingVehicles(false);
+    }
+  };
+
+  const loadWorkshops = async () => {
+    if (!user) return;
+    const ids = new Set([
+      ...(user.selectedWorkshopIds || []),
+      ...(user.addedByWorkshopIds || []),
+      ...(user.connectedWorkshopIds || []),
+      ...(user.workshopId ? [user.workshopId] : [])
+    ]);
+
+    const workshops: Workshop[] = [];
+    for (const id of Array.from(ids)) {
+      if (!id) continue;
+      const w = await firebaseService.getWorkshop(id);
+      if (w) workshops.push(w);
+    }
+    setAvailableWorkshops(workshops);
+    if (workshops.length > 0 && !selectedWorkshopId) {
+      setSelectedWorkshopId(workshops[0].id);
+    }
+  };
+
+  const handleAddNewWorkshops = async (newIds: string[]) => {
+    if (!user?.id) return;
+    try {
+      setLoading(true);
+      await updateDoc(doc(db, 'users', user.id), {
+        selectedWorkshopIds: arrayUnion(...newIds)
+      });
+      await loadWorkshops();
+      if (newIds.length > 0) setSelectedWorkshopId(newIds[newIds.length - 1]);
+    } catch (e) {
+      console.error(e);
+      Alert.alert('Error', 'Failed to add workshops');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -74,7 +122,7 @@ export default function BookServiceScreen() {
           // Validate image before upload
           const isValid = await validateImageWithAlert(asset.uri);
           if (!isValid) continue; // Skip invalid images
-          
+
           const url = await firebaseService.uploadFile(
             asset.uri,
             `jobs/${user?.id}/${Date.now()}-${asset.fileName || 'image.jpg'}`
@@ -130,9 +178,14 @@ export default function BookServiceScreen() {
       return;
     }
 
+    if (!selectedWorkshopId) {
+      Alert.alert('Error', 'Please select a workshop');
+      return;
+    }
+
     setLoading(true);
     try {
-      const workshopId = 'default-workshop';
+      const workshopId = selectedWorkshopId;
 
       const job: Omit<Job, 'id' | 'createdAt' | 'updatedAt'> = {
         userId: user.id,
@@ -245,6 +298,44 @@ export default function BookServiceScreen() {
         </View>
 
         <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Select Workshop</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 20 }}>
+            {availableWorkshops.map(workshop => (
+              <TouchableOpacity
+                key={workshop.id}
+                style={[
+                  styles.typeButton,
+                  selectedWorkshopId === workshop.id && styles.typeButtonActive,
+                  { minWidth: 120, paddingHorizontal: 16, flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center' }
+                ]}
+                onPress={() => setSelectedWorkshopId(workshop.id)}
+              >
+                <Text style={[
+                  styles.typeButtonText,
+                  selectedWorkshopId === workshop.id && styles.typeButtonTextActive
+                ]}>
+                  {workshop.name}
+                </Text>
+                {workshop.address && (
+                  <Text style={{ fontSize: 10, color: selectedWorkshopId === workshop.id ? Colors.textInverse : Colors.textSecondary, marginTop: 4 }}>
+                    {workshop.address}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity
+              style={[styles.typeButton, { borderColor: Colors.primary, borderStyle: 'dashed', minWidth: 100 }]}
+              onPress={() => setShowWorkshopSelector(true)}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, justifyContent: 'center' }}>
+                <Ionicons name="add" size={18} color={Colors.primary} />
+                <Text style={{ color: Colors.primary, fontWeight: '600' }}>Add</Text>
+              </View>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>Select Vehicle</Text>
           {vehicles.map((vehicle) => (
             <TouchableOpacity
@@ -350,6 +441,14 @@ export default function BookServiceScreen() {
           </Text>
         </TouchableOpacity>
       </ScrollView>
+
+      <WorkshopSelectorModal
+        visible={showWorkshopSelector}
+        onClose={() => setShowWorkshopSelector(false)}
+        onSelect={handleAddNewWorkshops}
+        excludeIds={availableWorkshops.map(w => w.id)}
+        title="Add Workshop"
+      />
     </View>
   );
 }
@@ -541,7 +640,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   emptyButton: {
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.textPrimary,
     paddingHorizontal: 30,
     paddingVertical: Spacing.md,
     borderRadius: BorderRadius.sm,

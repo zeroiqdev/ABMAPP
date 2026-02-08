@@ -23,8 +23,10 @@ import { User, Vehicle } from '@/types';
 import { format } from 'date-fns';
 import { CAR_BRANDS } from '@/constants/carBrands';
 import { BrandLogo } from '@/components/BrandLogo';
+import { Colors, useColors } from '@/constants/design';
 
 export default function CustomerDetailsScreen() {
+  const colors = useColors();
   const router = useRouter();
   const params = useLocalSearchParams<{ id: string; name?: string; email?: string; phone?: string; createdAt?: string; workshopId?: string; role?: string }>();
   const id = params.id;
@@ -153,84 +155,82 @@ export default function CustomerDetailsScreen() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#000" />
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   if (!customer) {
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
           <TouchableOpacity onPress={() => router.push('/(workshop)/customers')}>
-            <Ionicons name="arrow-back" size={24} color="#000" />
+            <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Customer Details</Text>
+          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Customer Details</Text>
           <View style={{ width: 24 }} />
         </View>
         <View style={styles.emptyState}>
-          <Text style={styles.emptyText}>Customer not found</Text>
+          <Text style={[styles.emptyText, { color: colors.textTertiary }]}>Customer not found</Text>
         </View>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={() => router.push('/(workshop)/customers')}>
-          <Ionicons name="arrow-back" size={24} color="#000" />
+          <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Customer Details</Text>
+        <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Customer Details</Text>
         <View style={{ width: 24 }} />
       </View>
 
       <ScrollView
         style={styles.content}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textPrimary} />
         }
       >
         {/* Customer Info Card */}
-        <View style={styles.customerCard}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
+        <View style={[styles.customerCard, { backgroundColor: colors.surface }]}>
+          <View style={[styles.avatar, { backgroundColor: colors.textPrimary }]}>
+            <Text style={[styles.avatarText, { color: colors.textInverse }]}>
               {customer.name.charAt(0).toUpperCase()}
             </Text>
           </View>
-          <Text style={styles.customerName}>{customer.name}</Text>
-
-
+          <Text style={[styles.customerName, { color: colors.textPrimary }]}>{customer.name}</Text>
 
           {customer.phone && (
             <View style={styles.infoRow}>
-              <Text style={styles.infoText}>Phone Number: {customer.phone}</Text>
+              <Text style={[styles.infoText, { color: colors.textSecondary }]}>Phone Number: {customer.phone}</Text>
             </View>
           )}
 
           {registrationCode && (
             <View style={styles.infoRow}>
-              <Text style={styles.infoText}>Registration Code: {registrationCode}</Text>
+              <Text style={[styles.infoText, { color: colors.textSecondary }]}>Registration Code: {registrationCode}</Text>
             </View>
           )}
         </View>
 
         {/* Vehicles Section */}
-        <View style={styles.section}>
+        <View style={[styles.section, { backgroundColor: colors.surface }]}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Vehicles ({vehicles.length})</Text>
+            <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Vehicles ({vehicles.length})</Text>
             <TouchableOpacity
               onPress={() => setShowVehicleModal(true)}
             >
-              <Ionicons name="add-circle-outline" size={24} color="#000" />
+              <Ionicons name="add-circle-outline" size={24} color={colors.textPrimary} />
             </TouchableOpacity>
           </View>
 
           {vehicles.length === 0 ? (
             <View style={styles.emptyState}>
-              <Ionicons name="car-outline" size={48} color="#ccc" />
-              <Text style={styles.emptyText}>No vehicles registered</Text>
+              <Ionicons name="car-outline" size={48} color={colors.textTertiary} />
+              <Text style={[styles.emptyText, { color: colors.textTertiary }]}>No vehicles registered</Text>
             </View>
           ) : (
             vehicles.map((vehicle) => {
@@ -238,28 +238,28 @@ export default function CustomerDetailsScreen() {
               return (
                 <TouchableOpacity
                   key={vehicle.id}
-                  style={styles.vehicleCard}
+                  style={[styles.vehicleCard, { backgroundColor: colors.background }]}
                   onPress={() => router.push(`/(workshop)/vehicle-service-history?vehicleId=${vehicle.id}&customerId=${customer.id}`)}
                 >
-                  <View style={styles.vehicleIcon}>
+                  <View style={[styles.vehicleIcon, { backgroundColor: colors.surface }]}>
                     {brand ? (
                       <BrandLogo brand={brand.name} size={28} />
                     ) : (
-                      <Ionicons name="car-sport" size={28} color="#000" />
+                      <Ionicons name="car-sport" size={28} color={colors.textPrimary} />
                     )}
                   </View>
                   <View style={styles.vehicleInfo}>
-                    <Text style={styles.vehicleName}>
+                    <Text style={[styles.vehicleName, { color: colors.textPrimary }]}>
                       {vehicle.make} {vehicle.model}
                     </Text>
-                    <Text style={styles.vehicleDetails}>
+                    <Text style={[styles.vehicleDetails, { color: colors.textSecondary }]}>
                       {vehicle.year} • {vehicle.licensePlate}
                     </Text>
                     {vehicle.vin && vehicle.vin !== 'N/A' && (
-                      <Text style={styles.vehicleVin}>VIN: {vehicle.vin}</Text>
+                      <Text style={[styles.vehicleVin, { color: colors.textTertiary }]}>VIN: {vehicle.vin}</Text>
                     )}
                   </View>
-                  <Ionicons name="chevron-forward" size={20} color="#999" />
+                  <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
                 </TouchableOpacity>
               );
             })
@@ -268,23 +268,24 @@ export default function CustomerDetailsScreen() {
       </ScrollView>
 
       <Modal visible={showVehicleModal} animationType="slide">
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
+        <View style={[styles.modalContainer, { backgroundColor: colors.surface }]}>
+          <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
             <TouchableOpacity onPress={isBrandSelectionMode ? () => setIsBrandSelectionMode(false) : () => {
               setShowVehicleModal(false);
               setNewVehicle({ make: '', model: '', year: '', licensePlate: '', vin: '' });
             }}>
-              <Text style={styles.closeText}>{isBrandSelectionMode ? 'Back' : 'Close'}</Text>
+              <Text style={[styles.closeText, { color: colors.textPrimary }]}>{isBrandSelectionMode ? 'Back' : 'Close'}</Text>
             </TouchableOpacity>
-            <Text style={styles.modalTitle}>{isBrandSelectionMode ? 'Select Make' : 'Add Vehicle'}</Text>
+            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>{isBrandSelectionMode ? 'Select Make' : 'Add Vehicle'}</Text>
             <View style={{ width: 40 }} />
           </View>
 
           {isBrandSelectionMode ? (
             <View style={{ flex: 1, padding: 20 }}>
               <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.textPrimary }]}
                 placeholder="Search or Enter Custom Brand..."
+                placeholderTextColor={colors.textTertiary}
                 value={searchBrandQuery}
                 onChangeText={setSearchBrandQuery}
                 autoFocus
@@ -295,21 +296,21 @@ export default function CustomerDetailsScreen() {
                 ListHeaderComponent={() => (
                   searchBrandQuery.length > 0 ? (
                     <TouchableOpacity
-                      style={[styles.brandItem, { borderBottomWidth: 2, borderBottomColor: '#f0f0f0' }]}
+                      style={[styles.brandItem, { borderBottomWidth: 2, borderBottomColor: colors.border }]}
                       onPress={() => {
                         setNewVehicle({ ...newVehicle, make: searchBrandQuery });
                         setIsBrandSelectionMode(false);
                         setSearchBrandQuery('');
                       }}
                     >
-                      <Ionicons name="create-outline" size={24} color="#000" style={{ marginRight: 12 }} />
-                      <Text style={[styles.brandName, { fontWeight: '600' }]}>Use "{searchBrandQuery}"</Text>
+                      <Ionicons name="create-outline" size={24} color={colors.textPrimary} style={{ marginRight: 12 }} />
+                      <Text style={[styles.brandName, { fontWeight: '600', color: colors.textPrimary }]}>Use "{searchBrandQuery}"</Text>
                     </TouchableOpacity>
                   ) : null
                 )}
                 renderItem={({ item }) => (
                   <TouchableOpacity
-                    style={styles.brandItem}
+                    style={[styles.brandItem, { borderBottomColor: colors.border }]}
                     onPress={() => {
                       setNewVehicle({ ...newVehicle, make: item.name });
                       setIsBrandSelectionMode(false);
@@ -317,7 +318,7 @@ export default function CustomerDetailsScreen() {
                     }}
                   >
                     <BrandLogo brand={item.name} size={28} style={{ marginRight: 12 }} />
-                    <Text style={styles.brandName}>{item.name}</Text>
+                    <Text style={[styles.brandName, { color: colors.textPrimary }]}>{item.name}</Text>
                   </TouchableOpacity>
                 )}
               />
@@ -326,21 +327,21 @@ export default function CustomerDetailsScreen() {
             <ScrollView style={styles.modalForm} contentContainerStyle={{ padding: 20 }}>
               <View style={{ marginBottom: 20 }}>
                 <TouchableOpacity
-                  style={styles.selector}
+                  style={[styles.selector, { backgroundColor: colors.background }]}
                   onPress={() => setIsBrandSelectionMode(true)}
                 >
-                  <Text style={newVehicle.make ? styles.value : styles.placeholder}>
+                  <Text style={newVehicle.make ? [styles.value, { color: colors.textPrimary }] : [styles.placeholder, { color: colors.textTertiary }]}>
                     {newVehicle.make || 'Select Make'}
                   </Text>
-                  <Ionicons name="chevron-down" size={20} color="#666" />
+                  <Ionicons name="chevron-down" size={20} color={colors.textSecondary} />
                 </TouchableOpacity>
               </View>
 
               <View style={{ marginBottom: 20 }}>
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.textPrimary }]}
                   placeholder="Model (e.g. Camry)"
-                  placeholderTextColor="#999"
+                  placeholderTextColor={colors.textTertiary}
                   value={newVehicle.model}
                   onChangeText={(t) => setNewVehicle({ ...newVehicle, model: t })}
                 />
@@ -348,9 +349,9 @@ export default function CustomerDetailsScreen() {
 
               <View style={{ marginBottom: 20 }}>
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.textPrimary }]}
                   placeholder="Year"
-                  placeholderTextColor="#999"
+                  placeholderTextColor={colors.textTertiary}
                   value={newVehicle.year}
                   onChangeText={(t) => setNewVehicle({ ...newVehicle, year: t })}
                   keyboardType="numeric"
@@ -359,9 +360,9 @@ export default function CustomerDetailsScreen() {
 
               <View style={{ marginBottom: 20 }}>
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.textPrimary }]}
                   placeholder="License Plate"
-                  placeholderTextColor="#999"
+                  placeholderTextColor={colors.textTertiary}
                   value={newVehicle.licensePlate}
                   onChangeText={(t) => setNewVehicle({ ...newVehicle, licensePlate: t })}
                 />
@@ -369,16 +370,16 @@ export default function CustomerDetailsScreen() {
 
               <View style={{ marginBottom: 20 }}>
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.textPrimary }]}
                   placeholder="VIN (Optional)"
-                  placeholderTextColor="#999"
+                  placeholderTextColor={colors.textTertiary}
                   value={newVehicle.vin}
                   onChangeText={(t) => setNewVehicle({ ...newVehicle, vin: t })}
                 />
               </View>
 
-              <TouchableOpacity style={styles.primaryButton} onPress={handleCreateVehicle}>
-                <Text style={styles.primaryButtonText}>Add Vehicle</Text>
+              <TouchableOpacity style={[styles.primaryButton, { backgroundColor: colors.textPrimary }]} onPress={handleCreateVehicle}>
+                <Text style={[styles.primaryButtonText, { color: colors.textInverse }]}>Add Vehicle</Text>
               </TouchableOpacity>
             </ScrollView>
           )}

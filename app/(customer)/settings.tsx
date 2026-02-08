@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
     View,
     Text,
@@ -11,11 +11,13 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
-import { Colors, Spacing, Typography } from '@/constants/design';
+import { Colors, Spacing, Typography, useColors } from '@/constants/design';
 
 export default function CustomerSettingsScreen() {
     const router = useRouter();
     const { deleteAccount } = useAuthStore();
+    const colors = useColors();
+    const styles = useMemo(() => getStyles(colors), [colors]);
     const [loading, setLoading] = useState(false);
 
     const handleDeleteAccount = () => {
@@ -54,7 +56,7 @@ export default function CustomerSettingsScreen() {
     if (loading) {
         return (
             <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={Colors.primary} />
+                <ActivityIndicator size="large" color={colors.primary} />
                 <Text style={styles.loadingText}>Deleting account...</Text>
             </View>
         );
@@ -64,13 +66,13 @@ export default function CustomerSettingsScreen() {
         <View style={styles.container}>
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
+                    <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Settings</Text>
                 <View style={{ width: 24 }} />
             </View>
 
-            <ScrollView style={styles.content}>
+            <ScrollView style={[styles.content, { backgroundColor: colors.background }]}>
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Account Actions</Text>
 
@@ -78,7 +80,7 @@ export default function CustomerSettingsScreen() {
                         style={styles.deleteButton}
                         onPress={handleDeleteAccount}
                     >
-                        <Ionicons name="trash-outline" size={20} color={Colors.error} />
+                        <Ionicons name="trash-outline" size={20} color={colors.error} />
                         <Text style={styles.deleteButtonText}>Delete Account</Text>
                     </TouchableOpacity>
 
@@ -91,21 +93,21 @@ export default function CustomerSettingsScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     loadingText: {
         marginTop: Spacing.md,
         fontSize: Typography.fontSize.base,
-        color: Colors.textSecondary,
+        color: colors.textSecondary,
     },
     header: {
         flexDirection: 'row',
@@ -113,9 +115,9 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         padding: Spacing.lg,
         paddingTop: Spacing['5xl'],
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.background,
         borderBottomWidth: 1,
-        borderBottomColor: Colors.border,
+        borderBottomColor: colors.border,
     },
     backButton: {
         padding: Spacing.xs,
@@ -123,7 +125,7 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: Typography.fontSize.xl,
         fontWeight: Typography.fontWeight.bold,
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
     },
     content: {
         flex: 1,
@@ -131,14 +133,14 @@ const styles = StyleSheet.create({
     },
     section: {
         marginBottom: Spacing.xl,
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.background,
         borderRadius: 12,
         padding: Spacing.md,
     },
     sectionTitle: {
         fontSize: Typography.fontSize.base,
         fontWeight: Typography.fontWeight.semibold,
-        color: Colors.textSecondary,
+        color: colors.textSecondary,
         marginBottom: Spacing.md,
     },
     deleteButton: {
@@ -146,19 +148,19 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         padding: Spacing.md,
-        backgroundColor: '#fee2e2', // Light red
+        backgroundColor: colors.background === '#000' || colors.background === '#121212' ? 'rgba(239, 68, 68, 0.2)' : '#fee2e2', // Dynamic faint red
         borderRadius: 8,
         gap: Spacing.sm,
     },
     deleteButtonText: {
-        color: Colors.error,
+        color: colors.error,
         fontSize: Typography.fontSize.base,
         fontWeight: Typography.fontWeight.bold,
     },
     disclaimerText: {
         marginTop: Spacing.md,
         fontSize: Typography.fontSize.xs,
-        color: Colors.textTertiary,
+        color: colors.textTertiary,
         textAlign: 'center',
     },
 });

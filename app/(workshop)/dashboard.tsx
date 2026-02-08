@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -22,7 +22,8 @@ import { User, Vehicle, Job, Invoice } from '@/types';
 import { BrandLogo } from '@/components/BrandLogo';
 import { MonthPickerModal } from '@/components/MonthPickerModal';
 import { format, subMonths, addMonths, startOfMonth, endOfMonth, isWithinInterval, startOfWeek, endOfWeek, differenceInMonths, sub } from 'date-fns';
-import { Colors, Typography, Spacing, BorderRadius, Shadows, StatusColors } from '@/constants/design';
+import { Colors, Typography, Spacing, BorderRadius, Shadows, StatusColors, useColors } from '@/constants/design';
+import { useThemeStore } from '@/store/themeStore';
 import { AppConfig } from '@/constants/config';
 
 
@@ -38,6 +39,9 @@ const CARD_WIDTH = width - (SIDE_PADDING * 2); // Changed from width * 0.85
 export default function WorkshopDashboard() {
   const { user } = useAuthStore();
   const router = useRouter();
+  const colors = useColors();
+  const styles = useMemo(() => getStyles(colors), [colors]);
+  const { themeMode } = useThemeStore();
   const [dateRange, setDateRange] = useState<{ start: Date; end: Date }>({
     start: startOfMonth(new Date()),
     end: endOfMonth(new Date())
@@ -53,6 +57,9 @@ export default function WorkshopDashboard() {
     techWeeklyAssigned: 0,
     techWeeklyCompleted: 0,
     techRating: 0,
+
+    totalOwed: 0,
+    pendingJobsCount: 0,
   });
   const [recentJobs, setRecentJobs] = useState<Job[]>([]);
   const [recentJobVehicles, setRecentJobVehicles] = useState<Record<string, any>>({});
@@ -109,7 +116,20 @@ export default function WorkshopDashboard() {
       };
 
       const totalRevenue = calculateRevenueForPeriod(currentPeriodStart, currentPeriodEnd);
+
       const lastMonthRevenue = calculateRevenueForPeriod(prevPeriodStart, prevPeriodEnd);
+
+      // --- New Metrics: Outstanding Payments & Pending Jobs ---
+      const totalOwed = safeInvoices.reduce((sum, inv) => {
+        const paid = inv.amountPaid || 0;
+        const total = inv.total || 0;
+        const balance = total - paid;
+        return sum + (balance > 0 ? balance : 0);
+      }, 0);
+
+      const pendingJobsCount = safeJobs.filter(j =>
+        j && j.status !== 'completed' && j.status !== 'cancelled'
+      ).length;
 
       // --- Technician Revenue Breakdown (Current Period) ---
       const jobMap = new Map(safeJobs.map(j => j && j.id ? [j.id, j] : null).filter(Boolean) as [string, Job][]);
@@ -201,6 +221,9 @@ export default function WorkshopDashboard() {
         techWeeklyAssigned: techAssigned, // reusing state name but it's now Period Assigned
         techWeeklyCompleted: techCompleted,
         techRating,
+
+        totalOwed,
+        pendingJobsCount,
       });
 
       // ... recent jobs logic same ...
@@ -250,17 +273,17 @@ export default function WorkshopDashboard() {
   };
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={themeMode === 'dark' ? "light-content" : "dark-content"} />
       <DashboardHeader
         user={user}
       />
 
       <ScrollView
-        style={styles.content}
+        style={[styles.content, { backgroundColor: colors.background }]}
         contentContainerStyle={styles.contentContainer}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.textPrimary} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textPrimary} />
         }
       >
         {getRoleDashboard({ user, stats, recentJobs, recentJobVehicles, onOpenMonthPicker: () => setMonthPickerVisible(true) })}
@@ -277,6 +300,8 @@ export default function WorkshopDashboard() {
 }
 
 function getRoleDashboard({ user, stats, recentJobs, recentJobVehicles, onOpenMonthPicker }: { user: any, stats: any, recentJobs: Job[], recentJobVehicles: Record<string, any>, onOpenMonthPicker: () => void }) {
+  const router = useRouter();
+
   switch (user?.role) {
     case 'admin':
     case 'super_admin':
@@ -284,7 +309,19 @@ function getRoleDashboard({ user, stats, recentJobs, recentJobVehicles, onOpenMo
     case 'technician':
       return <TechnicianDashboard stats={stats} recentJobs={recentJobs} recentJobVehicles={recentJobVehicles} onOpenMonthPicker={onOpenMonthPicker} />;
     default:
-      return <Text>Dashboard not available for this role</Text>;
+      // If user ends up here without dashboard access, redirect them to finance (most common for custom roles)
+      // The layout's initialRouteName should handle this, but as fallback redirect to finance
+      useEffect(() => {
+        router.replace('/(workshop)/finance');
+      }, []);
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 }}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={{ marginTop: 16, color: Colors.textSecondary, textAlign: 'center' }}>
+            Redirecting to your available modules...
+          </Text>
+        </View>
+      );
   }
 }
 
@@ -294,21 +331,23 @@ function DashboardHeader({
   user: any;
 }) {
   const router = useRouter();
+  const colors = useColors();
+  const styles = useMemo(() => getStyles(colors), [colors]);
 
   return (
-    <View style={styles.headerContainer}>
+    <View style={[styles.headerContainer, { backgroundColor: colors.background }]}>
       <SafeAreaView>
         <View style={styles.headerContent}>
           <View>
-            <Text style={styles.headerGreeting}>Welcome back,</Text>
-            <Text style={styles.headerName}>{user?.name}</Text>
+            <Text style={[styles.headerGreeting, { color: colors.textSecondary }]}>Welcome back,</Text>
+            <Text style={[styles.headerName, { color: colors.textPrimary }]}>{user?.name}</Text>
           </View>
           <View style={styles.headerActions}>
             <TouchableOpacity
-              style={styles.iconButton}
+              style={[styles.iconButton, { backgroundColor: colors.surface }]}
               onPress={() => router.push('/(workshop)/settings')}
             >
-              <Ionicons name="person-circle-outline" size={24} color={Colors.textPrimary} />
+              <Ionicons name="person-circle-outline" size={24} color={colors.textPrimary} />
             </TouchableOpacity>
           </View>
         </View>
@@ -319,6 +358,8 @@ function DashboardHeader({
 
 function TechnicianDashboard({ stats, recentJobs, recentJobVehicles, onOpenMonthPicker }: { stats: any, recentJobs: Job[], recentJobVehicles: Record<string, any>, onOpenMonthPicker: () => void }) {
   const router = useRouter();
+  const colors = useColors();
+  const styles = useMemo(() => getStyles(colors), [colors]);
 
   return (
     <View style={styles.contentContainer}>
@@ -346,12 +387,12 @@ function TechnicianDashboard({ stats, recentJobs, recentJobVehicles, onOpenMonth
 
       <View style={styles.recentSectionContainer}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Jobs In Progress</Text>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Jobs In Progress</Text>
         </View>
 
         {recentJobs.length === 0 ? (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>No active jobs assigned.</Text>
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No active jobs assigned.</Text>
           </View>
         ) : (
           recentJobs.map((job) => (
@@ -364,30 +405,32 @@ function TechnicianDashboard({ stats, recentJobs, recentJobVehicles, onOpenMonth
 }
 
 function WeeklyMetricsCard({ assigned, completed, onPressIcon }: { assigned: number, completed: number, onPressIcon?: () => void }) {
+  const colors = useColors();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   return (
-    <View style={styles.blackCard}>
+    <View style={[styles.blackCard, { backgroundColor: colors.secondary }]}>
       <View style={[styles.metricHeader, { alignItems: 'center' }]}>
-        <Text style={styles.metricTitle}>Weekly Overview</Text>
+        <Text style={[styles.metricTitle, { color: colors.textInverse }]}>Weekly Overview</Text>
         {onPressIcon && (
-          <TouchableOpacity onPress={onPressIcon} style={[styles.metricIconCircle, { backgroundColor: '#000' }]}>
-            <Ionicons name="calendar-outline" size={16} color="#fff" />
+          <TouchableOpacity onPress={onPressIcon} style={[styles.metricIconCircle, { backgroundColor: colors.surface }]}>
+            <Ionicons name="calendar-outline" size={16} color={colors.textPrimary} />
           </TouchableOpacity>
         )}
       </View>
 
       <View style={{ flexDirection: 'row', gap: 40, marginTop: 20 }}>
         <View>
-          <Text style={styles.metricValue}>{assigned}</Text>
-          <Text style={styles.growthLabel}>Assigned</Text>
+          <Text style={[styles.metricValue, { color: colors.textInverse }]}>{assigned}</Text>
+          <Text style={[styles.growthLabel, { color: colors.textInverse, opacity: 0.7 }]}>Assigned</Text>
         </View>
         <View>
-          <Text style={styles.metricValue}>{completed}</Text>
-          <Text style={styles.growthLabel}>Completed</Text>
+          <Text style={[styles.metricValue, { color: colors.textInverse }]}>{completed}</Text>
+          <Text style={[styles.growthLabel, { color: colors.textInverse, opacity: 0.7 }]}>Completed</Text>
         </View>
       </View>
 
       <View style={styles.metricFooter}>
-        <Text style={{ color: Colors.textSecondary, fontSize: Typography.fontSize.xs }}>Performance this week</Text>
+        <Text style={{ color: colors.textInverse, opacity: 0.7, fontSize: Typography.fontSize.xs }}>Performance this week</Text>
       </View>
     </View>
   );
@@ -407,6 +450,8 @@ function AdminDashboard({
   onOpenMonthPicker: () => void;
 }) {
   const router = useRouter();
+  const colors = useColors();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   const [activeIndex, setActiveIndex] = useState(0);
 
   const calculateGrowth = (current: number, previous: number) => {
@@ -455,6 +500,30 @@ function AdminDashboard({
             <TechnicianRevenueCard data={stats.technicianRevenue} />
           </View>
 
+          {/* Slide 3: Outstanding Payments */}
+          <View style={styles.slideContainer}>
+            <MetricCard
+              title="Outstanding Payments"
+              value={`₦${stats.totalOwed.toLocaleString()}`}
+              growth={0} // No growth tracking for now
+              chartData={[50, 40, 60, 55, 70, 45, 60]} // Mock trend
+              isCurrency={true}
+              hideGrowth={true}
+            />
+          </View>
+
+          {/* Slide 4: Pending Jobs */}
+          <View style={styles.slideContainer}>
+            <MetricCard
+              title="Pending Jobs"
+              value={stats.pendingJobsCount.toString()}
+              growth={0}
+              chartData={[30, 45, 35, 50, 40, 55, 45]}
+              isCurrency={false}
+              hideGrowth={true}
+            />
+          </View>
+
           {/* Slide 3: Jobs Completed */}
           <View style={styles.slideContainer}>
             <MetricCard
@@ -469,12 +538,12 @@ function AdminDashboard({
         </ScrollView>
 
         <View style={styles.pagination}>
-          {[0, 1, 2].map((_, index) => (
+          {[0, 1, 2, 3, 4].map((_, index) => (
             <View
               key={index}
               style={[
                 styles.paginationDot,
-                index === activeIndex ? styles.paginationDotActive : null,
+                index === activeIndex ? styles.paginationDotActive : { backgroundColor: colors.border },
               ]}
             />
           ))}
@@ -485,7 +554,7 @@ function AdminDashboard({
         <View style={{ paddingHorizontal: SIDE_PADDING, marginBottom: 20 }}>
           <TouchableOpacity
             style={{
-              backgroundColor: '#000',
+              backgroundColor: colors.secondary,
               padding: 20,
               borderRadius: 20,
               flexDirection: 'row',
@@ -495,10 +564,10 @@ function AdminDashboard({
             onPress={() => router.push('/(workshop)/marketplace-orders')}
           >
             <View>
-              <Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold' }}>
+              <Text style={{ color: colors.textInverse, fontSize: 18, fontWeight: 'bold' }}>
                 Marketplace Orders
               </Text>
-              <Text style={{ color: '#ccc', fontSize: 14, marginTop: 4 }}>
+              <Text style={{ color: colors.textInverse, opacity: 0.7, fontSize: 14, marginTop: 4 }}>
                 Manage & Process Payouts
               </Text>
             </View>
@@ -507,12 +576,12 @@ function AdminDashboard({
                 width: 40,
                 height: 40,
                 borderRadius: 20,
-                backgroundColor: '#333',
+                backgroundColor: colors.surface,
                 justifyContent: 'center',
                 alignItems: 'center',
               }}
             >
-              <Ionicons name="cube-outline" size={24} color="#fff" />
+              <Ionicons name="cube-outline" size={24} color={colors.textPrimary} />
             </View>
           </TouchableOpacity>
         </View>
@@ -520,18 +589,18 @@ function AdminDashboard({
 
       <View style={styles.recentSectionContainer}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent Jobs and Requests</Text>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Recent Jobs and Requests</Text>
           <TouchableOpacity
-            style={styles.arrowButton}
+            style={[styles.arrowButton, { backgroundColor: colors.surface }]}
             onPress={() => router.push('/(workshop)/jobs')}
           >
-            <Ionicons name="arrow-forward" size={20} color="#333" />
+            <Ionicons name="arrow-forward" size={20} color={colors.textPrimary} />
           </TouchableOpacity>
         </View>
 
         {recentJobs.length === 0 ? (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>No recent activity</Text>
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No recent activity</Text>
           </View>
         ) : (
           recentJobs.map((job) => (
@@ -550,6 +619,7 @@ function MetricCard({
   chartData,
   isCurrency = true,
   onPressIcon,
+  hideGrowth,
 }: {
   title: string;
   value: string;
@@ -557,40 +627,49 @@ function MetricCard({
   chartData: number[];
   isCurrency?: boolean;
   onPressIcon?: () => void;
+  hideGrowth?: boolean;
 }) {
+  const colors = useColors();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   const isPositive = growth >= 0;
 
   return (
-    <View style={styles.blackCard}>
+    <View style={[styles.blackCard, { backgroundColor: colors.secondary }]}>
       <View style={styles.metricHeader}>
-        <Text style={styles.metricTitle}>{title}</Text>
+        <Text style={[styles.metricTitle, { color: colors.textInverse, opacity: 0.7 }]}>{title}</Text>
         {onPressIcon ? (
-          <TouchableOpacity onPress={onPressIcon} style={styles.metricIconCircle}>
-            <Ionicons name="calendar-outline" size={16} color={Colors.textPrimary} />
+          <TouchableOpacity onPress={onPressIcon} style={[styles.metricIconCircle, { backgroundColor: colors.surface }]}>
+            <Ionicons name="calendar-outline" size={16} color={colors.textPrimary} />
           </TouchableOpacity>
         ) : (
-          <View style={styles.metricIconCircle}>
-            <Ionicons name="arrow-up" size={14} color={Colors.textPrimary} style={{ transform: [{ rotate: '45deg' }] }} />
+          <View style={[styles.metricIconCircle, { backgroundColor: colors.surface }]}>
+            <Ionicons name="stats-chart" size={14} color={colors.textPrimary} />
           </View>
         )}
       </View>
 
-      <Text style={styles.metricValue}>{value}</Text>
+      <Text style={[styles.metricValue, { color: colors.textInverse }]}>{value}</Text>
 
       <View style={styles.metricFooter}>
-        <View style={styles.growthContainer}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <Ionicons
-              name={isPositive ? "arrow-up" : "arrow-down"}
-              size={16}
-              color={isPositive ? Colors.success : Colors.error}
-            />
-            <Text style={[styles.growthText, { color: isPositive ? Colors.success : Colors.error }]}>
-              {Math.abs(growth).toFixed(1)}%
-            </Text>
+        {!hideGrowth ? (
+          <View style={styles.growthContainer}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Ionicons
+                name={isPositive ? "arrow-up" : "arrow-down"}
+                size={16}
+                color={isPositive ? Colors.success : Colors.error}
+              />
+              <Text style={[styles.growthText, { color: isPositive ? Colors.success : Colors.error }]}>
+                {Math.abs(growth).toFixed(1)}%
+              </Text>
+            </View>
+            <Text style={[styles.growthLabel, { color: colors.textInverse, opacity: 0.7 }]}>Than last month</Text>
           </View>
-          <Text style={styles.growthLabel}>Than last month</Text>
-        </View>
+        ) : (
+          <View style={styles.growthContainer}>
+            <Text style={[styles.growthLabel, { color: colors.textInverse, opacity: 0.7 }]}>Current Status</Text>
+          </View>
+        )}
 
         <View style={styles.miniChart}>
           {chartData.map((height, index) => (
@@ -600,7 +679,7 @@ function MetricCard({
                 styles.chartBar,
                 {
                   height: `${height}%`,
-                  backgroundColor: Colors.surface,
+                  backgroundColor: colors.surface,
                   opacity: 0.6 + (index / chartData.length) * 0.4
                 }
               ]}
@@ -615,6 +694,8 @@ function MetricCard({
 function TechnicianRevenueCard({ data }: { data: { name: string; amount: number }[] }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [pickerVisible, setPickerVisible] = useState(false);
+  const colors = useColors();
+  const styles = useMemo(() => getStyles(colors), [colors]);
 
   // Reset to 0 when data changes so we always show top tech initially
   useEffect(() => {
@@ -625,27 +706,27 @@ function TechnicianRevenueCard({ data }: { data: { name: string; amount: number 
 
   return (
     <>
-      <View style={styles.blackCard}>
+      <View style={[styles.blackCard, { backgroundColor: colors.secondary }]}>
         <View style={styles.metricHeader}>
-          <Text style={styles.metricTitle}>Technician Revenue</Text>
+          <Text style={[styles.metricTitle, { color: colors.textInverse, opacity: 0.7 }]}>Technician Revenue</Text>
           <TouchableOpacity
-            style={styles.metricIconCircle}
+            style={[styles.metricIconCircle, { backgroundColor: colors.surface }]}
             onPress={() => setPickerVisible(true)}
             disabled={!data || data.length === 0}
           >
-            <Ionicons name="people" size={16} color={Colors.textPrimary} />
+            <Ionicons name="people" size={16} color={colors.textPrimary} />
           </TouchableOpacity>
         </View>
 
         {currentTech ? (
           <>
-            <Text style={styles.metricValue}>₦{currentTech.amount.toLocaleString()}</Text>
+            <Text style={[styles.metricValue, { color: colors.textInverse }]}>₦{currentTech.amount.toLocaleString()}</Text>
             <View style={styles.metricFooter}>
               <View>
-                <Text style={{ color: Colors.textSecondary, fontSize: Typography.fontSize.sm, fontWeight: 'bold' }}>
+                <Text style={{ color: colors.textInverse, fontSize: Typography.fontSize.sm, fontWeight: 'bold' }}>
                   {currentTech.name}
                 </Text>
-                <Text style={{ color: Colors.textSecondary, fontSize: Typography.fontSize.xs, marginTop: 4 }}>
+                <Text style={{ color: colors.textInverse, opacity: 0.7, fontSize: Typography.fontSize.xs, marginTop: 4 }}>
                   Rank: #{currentIndex + 1}
                 </Text>
               </View>
@@ -653,7 +734,7 @@ function TechnicianRevenueCard({ data }: { data: { name: string; amount: number 
           </>
         ) : (
           <View style={{ flex: 1, justifyContent: 'center' }}>
-            <Text style={styles.emptyTextWhite}>No data available</Text>
+            <Text style={[styles.emptyTextWhite, { color: colors.textInverse, opacity: 0.7 }]}>No data available</Text>
           </View>
         )}
       </View>
@@ -665,8 +746,8 @@ function TechnicianRevenueCard({ data }: { data: { name: string; amount: number 
         onRequestClose={() => setPickerVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.monthPickerContainer}>
-            <Text style={[styles.monthPickerTitle, { marginBottom: 15 }]}>Select Technician</Text>
+          <View style={[styles.monthPickerContainer, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.monthPickerTitle, { marginBottom: 15, color: colors.textPrimary }]}>Select Technician</Text>
             <ScrollView style={{ maxHeight: 300, width: '100%' }}>
               {data.map((tech, index) => (
                 <TouchableOpacity
@@ -674,9 +755,9 @@ function TechnicianRevenueCard({ data }: { data: { name: string; amount: number 
                   style={[
                     styles.techRow,
                     {
-                      borderBottomColor: Colors.border,
+                      borderBottomColor: colors.border,
                       paddingVertical: 12,
-                      backgroundColor: index === currentIndex ? Colors.background : 'transparent',
+                      backgroundColor: index === currentIndex ? colors.background : 'transparent',
                       borderRadius: 8,
                       paddingHorizontal: 8
                     }
@@ -686,13 +767,13 @@ function TechnicianRevenueCard({ data }: { data: { name: string; amount: number 
                     setPickerVisible(false);
                   }}
                 >
-                  <Text style={[styles.techName, { color: Colors.textPrimary }]}>{tech.name}</Text>
-                  <Text style={[styles.techAmount, { color: Colors.textPrimary }]}>₦{tech.amount.toLocaleString()}</Text>
+                  <Text style={[styles.techName, { color: colors.textPrimary }]}>{tech.name}</Text>
+                  <Text style={[styles.techAmount, { color: colors.primary }]}>₦{tech.amount.toLocaleString()}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
             <TouchableOpacity style={styles.monthPickerCancelButton} onPress={() => setPickerVisible(false)}>
-              <Text style={styles.monthPickerCancelButtonText}>Close</Text>
+              <Text style={[styles.monthPickerCancelButtonText, { color: colors.textSecondary }]}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -703,6 +784,8 @@ function TechnicianRevenueCard({ data }: { data: { name: string; amount: number 
 
 function RecentJobItem({ job, vehicle }: { job: Job, vehicle?: any }) {
   const router = useRouter();
+  const colors = useColors();
+  const styles = useMemo(() => getStyles(colors), [colors]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -715,7 +798,7 @@ function RecentJobItem({ job, vehicle }: { job: Job, vehicle?: any }) {
   };
 
   const getStatusColor = (status: string) => {
-    return StatusColors[status] || Colors.textSecondary;
+    return StatusColors[status] || colors.textSecondary;
   };
 
   const getIssueLabel = () => {
@@ -728,16 +811,15 @@ function RecentJobItem({ job, vehicle }: { job: Job, vehicle?: any }) {
 
   return (
     <TouchableOpacity
-      style={styles.recentItem}
+      style={[styles.recentItem, { borderBottomColor: colors.border }]}
       onPress={() => router.push(`/(workshop)/job-details?id=${job.id}`)}
     >
-      {/* Icon/Logo Column */}
       {/* Icon/Logo Column */}
       <View style={[styles.iconBox, { backgroundColor: (vehicle || job.vehicleId) ? 'transparent' : getStatusColor(job.status), marginRight: 15 }]}>
         {vehicle ? (
           <BrandLogo brand={vehicle.make} size={30} />
         ) : job.vehicleId ? (
-          <ActivityIndicator color={Colors.textPrimary} size="small" />
+          <ActivityIndicator color={colors.textPrimary} size="small" />
         ) : (
           <Ionicons name={getStatusIcon(job.status)} size={24} color="#fff" />
         )}
@@ -745,7 +827,7 @@ function RecentJobItem({ job, vehicle }: { job: Job, vehicle?: any }) {
 
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-          <Text style={styles.recentTitle} numberOfLines={1}>{getIssueLabel()}</Text>
+          <Text style={[styles.recentTitle, { color: colors.textPrimary }]} numberOfLines={1}>{getIssueLabel()}</Text>
           <View style={[styles.statusBadge, { backgroundColor: getStatusColor(job.status) + '15', marginLeft: 8 }]}>
             <Text style={[styles.statusText, { color: getStatusColor(job.status) }]}>
               {job.status.charAt(0).toUpperCase() + job.status.slice(1)}
@@ -753,7 +835,7 @@ function RecentJobItem({ job, vehicle }: { job: Job, vehicle?: any }) {
           </View>
         </View>
 
-        <Text style={styles.tagText}>
+        <Text style={[styles.tagText, { color: colors.textSecondary }]}>
           {vehicle ? `${vehicle.make} ${vehicle.model}` : (job.type === 'service' ? 'Service' : 'Complaint')}
         </Text>
       </View>
@@ -763,13 +845,13 @@ function RecentJobItem({ job, vehicle }: { job: Job, vehicle?: any }) {
 
 
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.background,
   },
   headerContainer: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.sm,
     paddingTop: Platform.OS === 'android' ? 40 : Spacing.sm,
@@ -823,7 +905,7 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.background,
   },
   contentContainer: {
     paddingBottom: 40,
@@ -838,7 +920,7 @@ const styles = StyleSheet.create({
     marginRight: CARD_SPACING,
   },
   blackCard: {
-    backgroundColor: Colors.secondary,
+    backgroundColor: colors.secondary,
     borderRadius: BorderRadius['3xl'],
     padding: Spacing.xl,
     height: 200,
@@ -856,21 +938,21 @@ const styles = StyleSheet.create({
   },
   metricTitle: {
     fontSize: Typography.fontSize.base,
-    color: Colors.textTertiary,
+    color: colors.textTertiary,
     fontWeight: Typography.fontWeight.medium,
   },
   metricIconCircle: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: Colors.surface,
+    backgroundColor: colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
   },
   metricValue: {
     fontSize: Typography.fontSize['4xl'],
     fontWeight: Typography.fontWeight.bold,
-    color: Colors.textInverse,
+    color: colors.textInverse,
   },
   metricFooter: {
     flexDirection: 'row',

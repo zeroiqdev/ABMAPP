@@ -15,6 +15,7 @@ import { Job, Vehicle } from '@/types';
 import { format } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
 import { BrandLogo } from '@/components/BrandLogo';
+import { useColors } from '@/constants/design';
 
 export default function VehicleHistoryScreen() {
     const router = useRouter();
@@ -66,38 +67,13 @@ export default function VehicleHistoryScreen() {
         }
     };
 
-    const renderJob = ({ item }: { item: Job }) => (
-        <TouchableOpacity
-            style={styles.itemCard}
-            onPress={() => router.push(`/(customer)/job-details?id=${item.id}`)}
-        >
-            <View style={[styles.iconBox, { backgroundColor: '#000' }]}>
-                <Ionicons name="construct-outline" size={24} color="#fff" />
-            </View>
-
-            <View style={styles.itemInfo}>
-                <Text style={styles.itemName} numberOfLines={1}>
-                    {item.description}
-                </Text>
-                <Text style={styles.itemSubtitle}>
-                    {format(item.createdAt, 'MMM dd, yyyy')}
-                </Text>
-            </View>
-
-            <View style={styles.itemRight}>
-                <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '15' }]}>
-                    <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
-                        {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-                    </Text>
-                </View>
-            </View>
-        </TouchableOpacity>
-    );
+    const colors = useColors();
+    const styles = getStyles(colors);
 
     if (loading) {
         return (
             <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#000" />
+                <ActivityIndicator size="large" color={colors.primary} />
             </View>
         );
     }
@@ -106,7 +82,7 @@ export default function VehicleHistoryScreen() {
         <View style={styles.container}>
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => router.push('/(customer)/vehicles')}>
-                    <Ionicons name="arrow-back" size={24} color="#000" />
+                    <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Service History</Text>
                 <View style={{ width: 24 }} />
@@ -131,11 +107,37 @@ export default function VehicleHistoryScreen() {
 
             <FlatList
                 data={jobs}
-                renderItem={renderJob}
+                renderItem={({ item }) => (
+                    <TouchableOpacity
+                        style={styles.itemCard}
+                        onPress={() => router.push(`/(customer)/job-details?id=${item.id}`)}
+                    >
+                        <View style={[styles.iconBox, { backgroundColor: colors.textPrimary }]}>
+                            <Ionicons name="construct-outline" size={24} color={colors.textInverse} />
+                        </View>
+
+                        <View style={styles.itemInfo}>
+                            <Text style={styles.itemName} numberOfLines={1}>
+                                {item.description}
+                            </Text>
+                            <Text style={styles.itemSubtitle}>
+                                {format(item.createdAt, 'MMM dd, yyyy')}
+                            </Text>
+                        </View>
+
+                        <View style={styles.itemRight}>
+                            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '15' }]}>
+                                <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
+                                    {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+                                </Text>
+                            </View>
+                        </View>
+                    </TouchableOpacity>
+                )}
                 keyExtractor={(item) => item.id}
                 contentContainerStyle={styles.listContent}
                 refreshControl={
-                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textPrimary} />
                 }
                 ListHeaderComponent={
                     <View style={styles.listHeader}>
@@ -146,7 +148,7 @@ export default function VehicleHistoryScreen() {
                 }
                 ListEmptyComponent={
                     <View style={styles.emptyState}>
-                        <Ionicons name="briefcase-outline" size={64} color="#ccc" />
+                        <Ionicons name="briefcase-outline" size={64} color={colors.textTertiary} />
                         <Text style={styles.emptyText}>No service records yet</Text>
                     </View>
                 }
@@ -155,15 +157,16 @@ export default function VehicleHistoryScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f5f5f5',
+        backgroundColor: colors.background,
     },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
+        backgroundColor: colors.background,
     },
     header: {
         flexDirection: 'row',
@@ -171,18 +174,19 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         padding: 20,
         paddingTop: 60,
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        borderBottomColor: colors.border,
     },
     headerTitle: {
         fontSize: 20,
         fontWeight: 'bold',
+        color: colors.textPrimary,
     },
     vehicleInfoCard: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
         margin: 20,
         marginBottom: 10,
         padding: 20,
@@ -192,12 +196,14 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.1,
         shadowRadius: 4,
         elevation: 3,
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     vehicleIcon: {
         width: 60,
         height: 60,
         borderRadius: 30,
-        backgroundColor: '#e3f2fd',
+        backgroundColor: colors.background,
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 15,
@@ -208,12 +214,12 @@ const styles = StyleSheet.create({
     vehicleName: {
         fontSize: 18,
         fontWeight: 'bold',
-        color: '#000',
+        color: colors.textPrimary,
         marginBottom: 4,
     },
     vehicleDetails: {
         fontSize: 14,
-        color: '#666',
+        color: colors.textSecondary,
     },
     listHeader: {
         paddingHorizontal: 20,
@@ -221,7 +227,7 @@ const styles = StyleSheet.create({
     },
     listHeaderText: {
         fontSize: 14,
-        color: '#666',
+        color: colors.textSecondary,
         fontWeight: '500',
     },
     listContent: {
@@ -231,10 +237,12 @@ const styles = StyleSheet.create({
     itemCard: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
         padding: 15,
         borderBottomWidth: 1,
-        borderBottomColor: '#f5f5f5',
+        borderBottomColor: colors.border,
+        borderRadius: 12,
+        marginBottom: 10,
     },
     iconBox: {
         width: 48,
@@ -250,12 +258,12 @@ const styles = StyleSheet.create({
     itemName: {
         fontSize: 16,
         fontWeight: '600',
-        color: '#333',
+        color: colors.textPrimary,
         marginBottom: 4,
     },
     itemSubtitle: {
         fontSize: 13,
-        color: '#888',
+        color: colors.textSecondary,
     },
     itemRight: {
         alignItems: 'flex-end',
@@ -277,6 +285,6 @@ const styles = StyleSheet.create({
     emptyText: {
         marginTop: 16,
         fontSize: 16,
-        color: '#999',
+        color: colors.textSecondary,
     },
 });

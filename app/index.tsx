@@ -4,24 +4,12 @@ import {
   Image,
   StyleSheet,
   Dimensions,
-  Text,
-  TouchableOpacity,
-  TextInput,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
   ActivityIndicator,
-  Modal
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
-import { Colors } from '@/constants/design';
-import { collection, query, where, getDocs, doc, getDoc, limit } from 'firebase/firestore';
-import { db } from '@/config/firebase';
-import { signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '@/config/firebase';
-import { Ionicons } from '@expo/vector-icons';
-import CustomAlertModal from '@/components/CustomAlertModal';
 
 const LOGO_URL = 'https://res.cloudinary.com/dyg7neetr/image/upload/v1759821531/Screenshot_2025-10-07_at_8.08.13_AM-removebg-preview_g8za2u.png';
 const { width } = Dimensions.get('window');
@@ -31,20 +19,9 @@ const workshopRoles = ['admin', 'technician', 'storekeeper', 'accountant', 'serv
 
 export default function Index() {
   const router = useRouter();
-  const { user, isGuest, setGuest, setGuestEmail } = useAuthStore();
+  const { user, setGuest } = useAuthStore();
   const [isReady, setIsReady] = useState(false);
   const [authInitialized, setAuthInitialized] = useState(false);
-
-  // Auth State
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [step, setStep] = useState<'email' | 'password'>('email');
-  const [loading, setLoading] = useState(false);
-
-  // Custom Alert State
-  const [alertVisible, setAlertVisible] = useState(false);
-  const [alertTitle, setAlertTitle] = useState('');
-  const [alertMessage, setAlertMessage] = useState('');
 
   // Wait for Firebase auth to initialize before showing login UI
   useEffect(() => {
@@ -65,14 +42,18 @@ export default function Index() {
   }, []);
 
   useEffect(() => {
-    // Only route when auth is initialized, ready, and not loading
-    if (isReady && authInitialized && user && !loading) {
-      routeUser(user);
-    } else if (isReady && authInitialized && !user && !loading && isGuest && step === 'email') {
-      // Only route to guest home if we are in the landing state and not trying to log in
-      router.replace('/(marketplace)/home');
+    // Only route when auth is initialized and splash is done
+    if (isReady && authInitialized) {
+      if (user) {
+        // Authenticated user - route to their appropriate app
+        routeUser(user);
+      } else {
+        // No authenticated user - set as guest and go to marketplace
+        setGuest(true);
+        router.replace('/(marketplace)/home');
+      }
     }
-  }, [isReady, authInitialized, user, isGuest, step, loading]);
+  }, [isReady, authInitialized, user]);
 
   const routeUser = (userData: any) => {
     console.log('[Routing] User:', userData.email, 'Role:', userData.role); // Debug Log
@@ -105,130 +86,8 @@ export default function Index() {
     }
   };
 
-  // ... (useEffect and routeUser remain same)
 
-  const showAlert = (title: string, message: string) => {
-    setAlertTitle(title);
-    setAlertMessage(message);
-    setAlertVisible(true);
-  };
-
-  const handleEmailSubmit = async () => {
-    if (!email.trim() || !email.includes('@')) {
-      showAlert('Invalid Email', 'Please enter a valid email address.');
-      return;
-    }
-    // ... (rest of handleEmailSubmit logic, replacing specific Alerts with showAlert if desired, but user specifically asked for "incorrect credentials" which is login)
-    // For consistency, I'll stick to Alert.alert for non-login flows unless requested, BUT the user request was "when a user enters wrong login credentials".
-    // I will focus on handleLogin first.
-
-    setLoading(true);
-    try {
-      // Check for Invitations or registrations first (these have public read access)
-      const invitesRef = collection(db, 'staffInvitations');
-      const inviteQ = query(invitesRef, where('email', '==', email.toLowerCase().trim()));
-      const inviteSnap = await getDocs(inviteQ);
-
-      const registrationsRef = collection(db, 'customerRegistrations');
-      const regQ = query(registrationsRef, where('email', '==', email.toLowerCase().trim()));
-      const regSnap = await getDocs(regQ);
-
-      let hasPendingInvite = false;
-      let hasUsedInvite = false;
-      let hasPendingReg = false;
-      let hasUsedReg = false;
-
-      inviteSnap.docs.forEach(doc => {
-        const data = doc.data();
-        if (data.used === false) hasPendingInvite = true;
-        else hasUsedInvite = true;
-      });
-
-      regSnap.docs.forEach(doc => {
-        const data = doc.data();
-        if (data.used === false) hasPendingReg = true;
-        else hasUsedReg = true;
-      });
-
-      if (hasPendingInvite) {
-        Alert.alert('Welcome!', 'You have been invited. Please complete your registration using the code sent to your email.', [
-          { text: 'OK', onPress: () => router.push('/(auth)/staff-invite') }
-        ]);
-        setLoading(false);
-        return;
-      }
-
-      if (hasPendingReg) {
-        Alert.alert('Welcome!', 'You have been invited as a customer. Please complete your registration using the code sent to your email.', [
-          {
-            text: 'OK',
-            onPress: () => router.push({
-              pathname: '/(auth)/signup',
-              params: { email: email.toLowerCase().trim() }
-            })
-          }
-        ]);
-        setLoading(false);
-        return;
-      }
-
-      if (hasUsedInvite || hasUsedReg) {
-        // User has a record - show password field
-        setStep('password');
-        setLoading(false);
-        return;
-      }
-
-      // Default for no account/invite found
-      setGuestEmail(email.toLowerCase().trim());
-      setGuest(true);
-      router.replace('/(marketplace)/home');
-      setLoading(false);
-      return;
-
-    } catch (error) {
-      console.error('Error checking email:', error);
-      showAlert('Error', 'Failed to verify email. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-
-  const handleLogin = async () => {
-    setLoading(true);
-    try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      // Explicitly check for user document to catch "Zombie" users or permission errors
-      const userDocRef = doc(db, 'users', userCredential.user.uid);
-      const userDocSnap = await getDoc(userDocRef);
-
-      if (!userDocSnap.exists()) {
-        showAlert('Login Error', 'User profile not found in database. Please contact support.');
-        setLoading(false);
-        return;
-      }
-
-      // If we reach here, user exists.
-      const userData = userDocSnap.data();
-      console.log('[Login] Force Routing:', userData.role);
-      routeUser(userData);  // <--- FORCE ROUTE
-      setLoading(false);
-    } catch (error: any) {
-      // Map Firebase Errors to User Friendly Message
-      let msg = 'Invalid email or password.';
-      if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
-        msg = 'Incorrect email or password.';
-      } else if (error.code === 'auth/too-many-requests') {
-        msg = 'Too many failed attempts. Please try again later.';
-      }
-
-      showAlert('Login Failed', msg);
-      setLoading(false);
-    }
-  };
-
-  // ...
+  // ...(useEffect and routeUser remain same)
 
   // Show splash screen while initializing
   if (!isReady || !authInitialized) {
@@ -244,105 +103,19 @@ export default function Index() {
     );
   }
 
+
+
+  // Authenticated users are handled by useEffect + routeUser
+  // This return is for the brief moment before routing completes
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
-    >
-      <View style={styles.contentContainer}>
-        {/* Re-implementing the existing UI exactly as is, just need reference to previous Step */}
-        {step === 'email' ? (
-          // ... email step
-          <>
-            <View style={styles.inputContainer}>
-              <Text style={[styles.subtitle, { marginBottom: 8, textAlign: 'left', alignSelf: 'flex-start' }]}>Enter your email to get started</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="email@example.com"
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                autoCorrect={false}
-                placeholderTextColor="#666"
-              />
-            </View>
-
-            <TouchableOpacity
-              style={[styles.button, loading && { opacity: 0.7 }]}
-              onPress={handleEmailSubmit}
-              disabled={loading}
-            >
-              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Continue</Text>}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={{ marginTop: 20, padding: 10 }}
-              onPress={() => {
-                setStep('password');
-              }}
-            >
-              <Text style={styles.linkText}>Already have an account? Log in</Text>
-            </TouchableOpacity>
-          </>
-        ) : (
-          // ... password step
-          <>
-            <View style={{ width: '100%', alignItems: 'flex-start', marginBottom: 20 }}>
-              <TouchableOpacity onPress={() => setStep('email')} style={{ padding: 10, marginLeft: -10 }}>
-                <Ionicons name="arrow-back" size={24} color="#000" />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={[styles.title, { alignSelf: 'flex-start' }]}>Welcome Back</Text>
-            <Text style={[styles.subtitle, { alignSelf: 'flex-start', textAlign: 'left' }]}>Log in to your account</Text>
-
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                placeholder="email@example.com"
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                autoCorrect={false}
-                placeholderTextColor="#666"
-              />
-            </View>
-
-            <View style={[styles.inputContainer, { marginTop: 0 }]}>
-              <TextInput
-                style={styles.input}
-                placeholder="Password"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-                placeholderTextColor="#666"
-              />
-            </View>
-
-            <TouchableOpacity
-              style={[styles.button, loading && { opacity: 0.7 }]}
-              onPress={handleLogin}
-              disabled={loading}
-            >
-              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Log In</Text>}
-            </TouchableOpacity>
-
-            <TouchableOpacity style={{ marginTop: 20 }} onPress={() => router.push('/(auth)/forgot-password')}>
-              <Text style={styles.forgotText}>Forgot Password?</Text>
-            </TouchableOpacity>
-          </>
-        )}
-      </View>
-
-      <CustomAlertModal
-        visible={alertVisible}
-        title={alertTitle}
-        message={alertMessage}
-        onClose={() => setAlertVisible(false)}
+    <View style={styles.splashContainer}>
+      <Image
+        source={{ uri: LOGO_URL }}
+        style={styles.splashLogo}
+        resizeMode="contain"
       />
-    </KeyboardAvoidingView>
+      <ActivityIndicator size="small" color="#fff" style={{ marginTop: 30 }} />
+    </View>
   );
 }
 

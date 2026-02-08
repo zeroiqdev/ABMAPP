@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
 import { Order } from '@/types';
-import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/design';
+import { useColors, Typography, Spacing } from '@/constants/design';
 import { format } from 'date-fns';
 
 const TABS = ['All Orders', 'New Orders', 'Processing', 'Shipped', 'Cancelled'];
@@ -23,6 +23,7 @@ const TABS = ['All Orders', 'New Orders', 'Processing', 'Shipped', 'Cancelled'];
 export default function OrdersScreen() {
   const router = useRouter();
   const { user, isGuest, guestEmail } = useAuthStore();
+  const colors = useColors(); // Use dynamic theme colors
   const [orders, setOrders] = useState<Order[]>([]);
   const [salesOrders, setSalesOrders] = useState<Order[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<Order[]>([]);
@@ -30,6 +31,7 @@ export default function OrdersScreen() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('New Orders');
   const isVendor = user?.role === 'vendor';
+  const styles = getStyles(colors);
 
   useEffect(() => {
     let unsubscribe: () => void | undefined;
@@ -84,11 +86,11 @@ export default function OrdersScreen() {
 
   const getStatusColor = (status: Order['status']) => {
     switch (status) {
-      case 'confirmed': return Colors.success;
-      case 'shipped': return Colors.info;
-      case 'delivered': return Colors.success;
-      case 'cancelled': return Colors.error;
-      default: return Colors.warning;
+      case 'confirmed': return colors.success;
+      case 'shipped': return colors.info;
+      case 'delivered': return colors.success;
+      case 'cancelled': return colors.error;
+      default: return colors.warning;
     }
   };
 
@@ -148,7 +150,7 @@ export default function OrdersScreen() {
   };
 
   if (loading) return (
-    <View style={styles.centerContainer}><ActivityIndicator size="large" color="#000" /></View>
+    <View style={styles.centerContainer}><ActivityIndicator size="large" color={colors.textPrimary} /></View>
   );
 
   return (
@@ -182,7 +184,7 @@ export default function OrdersScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Ionicons name="bag-outline" size={64} color={Colors.textTertiary} />
+            <Ionicons name="bag-outline" size={64} color={colors.textTertiary} />
             <Text style={styles.emptyText}>No orders yet</Text>
             <Text style={styles.emptySubtext}>{isVendor ? 'Orders for your products will appear here' : 'Your marketplace orders will appear here'}</Text>
           </View>
@@ -192,11 +194,11 @@ export default function OrdersScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.background },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: Spacing.lg, paddingTop: Spacing['5xl'], backgroundColor: Colors.surface, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  headerTitle: { fontSize: Typography.fontSize.xl, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary },
+const getStyles = (colors: any) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: Spacing.lg, paddingTop: Spacing['5xl'], backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
+  headerTitle: { fontSize: Typography.fontSize.xl, fontWeight: Typography.fontWeight.bold, color: colors.textPrimary },
   listContent: { padding: 20 },
   orderCard: {
     flexDirection: 'row',
@@ -204,29 +206,29 @@ const styles = StyleSheet.create({
     marginBottom: 0,
     paddingVertical: 15,
     borderBottomWidth: 1,
-    borderBottomColor: '#f5f5f5',
-    backgroundColor: '#fff'
+    borderBottomColor: colors.border,
+    backgroundColor: colors.surface
   },
-  iconBox: { width: 80, height: 80, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginRight: 12, backgroundColor: '#f5f5f5' },
-  orderImage: { width: 76, height: 76, borderRadius: 6, backgroundColor: '#f5f5f5' },
+  iconBox: { width: 80, height: 80, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginRight: 12, backgroundColor: colors.background },
+  orderImage: { width: 76, height: 76, borderRadius: 6, backgroundColor: colors.background },
   orderDetails: { flex: 1, justifyContent: 'center' },
-  orderName: { fontSize: 16, fontWeight: '600', color: '#000', marginBottom: 4 },
-  orderPrice: { fontSize: 16, fontWeight: 'bold', color: '#000', marginBottom: 6 },
+  orderName: { fontSize: 16, fontWeight: '600', color: colors.textPrimary, marginBottom: 4 },
+  orderPrice: { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary, marginBottom: 6 },
   orderMeta: { flexDirection: 'row', alignItems: 'center' },
-  orderId: { fontSize: 12, color: '#666' },
-  orderDate: { fontSize: 12, color: '#666' },
+  orderId: { fontSize: 12, color: colors.textSecondary },
+  orderDate: { fontSize: 12, color: colors.textSecondary },
   orderActions: { justifyContent: 'center', alignItems: 'center', paddingLeft: 8, width: 80 },
-  viewButton: { backgroundColor: '#000', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
-  viewButtonText: { color: '#fff', fontWeight: '600', fontSize: 12 },
-  tabsContainer: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  viewButton: { backgroundColor: colors.textPrimary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+  viewButtonText: { color: colors.textInverse, fontWeight: '600', fontSize: 12 },
+  tabsContainer: { backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
   tabsContent: { paddingHorizontal: 15 },
   tabItem: { paddingVertical: 15, paddingHorizontal: 15, marginRight: 10, borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabItemActive: { borderBottomColor: '#000' },
-  tabText: { fontSize: 14, color: '#999', fontWeight: '500' },
-  tabTextActive: { color: '#000', fontWeight: '600' },
+  tabItemActive: { borderBottomColor: colors.textPrimary },
+  tabText: { fontSize: 14, color: colors.textSecondary, fontWeight: '500' },
+  tabTextActive: { color: colors.textPrimary, fontWeight: '600' },
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: Spacing['3xl'] },
-  emptyText: { fontSize: Typography.fontSize.base, fontWeight: Typography.fontWeight.semibold, color: Colors.textTertiary, marginTop: Spacing.base },
-  emptySubtext: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary, marginTop: Spacing.xs, textAlign: 'center' },
+  emptyText: { fontSize: Typography.fontSize.base, fontWeight: Typography.fontWeight.semibold, color: colors.textTertiary, marginTop: Spacing.base },
+  emptySubtext: { fontSize: Typography.fontSize.sm, color: colors.textSecondary, marginTop: Spacing.xs, textAlign: 'center' },
 });
 
 

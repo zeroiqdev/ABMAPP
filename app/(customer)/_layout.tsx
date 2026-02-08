@@ -16,17 +16,18 @@ import {
   ShoppingBagIcon as ShoppingBagIconSolid,
   UserIcon as UserIconSolid,
 } from 'react-native-heroicons/solid';
-import { Colors } from '@/constants/design';
+import { useColors } from '@/constants/design';
 
 export default function CustomerLayout() {
   const insets = useSafeAreaInsets();
+  const colors = useColors();
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: Colors.secondary,
-        tabBarInactiveTintColor: Colors.textSecondary,
+        tabBarActiveTintColor: colors.secondary,
+        tabBarInactiveTintColor: colors.textSecondary,
         tabBarStyle: {
           position: 'absolute',
           backgroundColor: 'transparent',
@@ -36,7 +37,7 @@ export default function CustomerLayout() {
           paddingBottom: Platform.OS === 'ios' ? insets.bottom : Math.max(insets.bottom, 20),
         },
         tabBarBackground: () => (
-          <BlurView intensity={80} tint="light" style={StyleSheet.absoluteFill} />
+          <BlurView intensity={80} tint={colors.background === '#000000' ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
         ),
       }}
     >
@@ -184,6 +185,18 @@ export default function CustomerLayout() {
       />
       <Tabs.Screen
         name="settings"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="quotes"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="quote-details"
         options={{
           href: null,
         }}

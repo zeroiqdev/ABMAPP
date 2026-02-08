@@ -2,7 +2,7 @@ import { Tabs, Redirect } from 'expo-router';
 import { Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/store/authStore';
-import { Colors } from '@/constants/design';
+import { useColors } from '@/constants/design';
 import {
   HomeIcon as HomeIconOutline,
   BanknotesIcon as BanknotesIconOutline,
@@ -27,6 +27,7 @@ import { View, ActivityIndicator } from 'react-native';
 
 export default function WorkshopLayout() {
   const insets = useSafeAreaInsets();
+  const colors = useColors();
   const { user } = useAuthStore();
   const [permissions, setPermissions] = useState<any>(null);
   const [customRoles, setCustomRoles] = useState<string[]>([]);
@@ -49,13 +50,16 @@ export default function WorkshopLayout() {
           // Admins always have full access
           if (user.role === 'admin' || user.role === 'super_admin') {
             setPermissions({
+              canViewDashboard: true,
               canViewFinance: true,
               canViewInventory: true,
               canManageStaff: true,
               canManageJobs: true,
             });
           } else {
-            setPermissions(allPerms[user.role] || {});
+            const rolePerms = allPerms[user.role] || {};
+            console.log('[Layout] User role:', user.role, 'Permissions loaded:', rolePerms);
+            setPermissions(rolePerms);
           }
         } catch (error) {
           console.error("Failed to fetch permissions", error);
@@ -73,13 +77,13 @@ export default function WorkshopLayout() {
   if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   if (!user) {
-    return <Redirect href="/(auth)/login" />;
+    return <Redirect href="/" />;
   }
 
   // Build workshopRoles dynamically: system roles + custom roles from Firestore
@@ -92,14 +96,30 @@ export default function WorkshopLayout() {
   const canViewDashboard = user.role === 'admin' || user.role === 'super_admin' || user.role === 'technician' || permissions?.canViewDashboard;
   const canViewFinance = user.role === 'admin' || user.role === 'super_admin' || permissions?.canViewFinance;
   const canViewInventory = user.role === 'admin' || user.role === 'super_admin' || permissions?.canViewInventory;
-  // const canManageStaff = user.role === 'admin' || permissions?.canManageStaff; // For Customers tab?
+  const canManageJobs = user.role === 'admin' || user.role === 'super_admin' || user.role === 'technician' || user.role === 'service_advisor' || permissions?.canManageJobs;
+  const canViewCustomers = user.role === 'admin' || user.role === 'super_admin' || user.role === 'service_advisor' || permissions?.canManageStaff || permissions?.canManageJobs;
+  const canViewMarketplace = user.role === 'admin' || user.role === 'super_admin' || user.role === 'storekeeper' || permissions?.canViewInventory;
 
-  // Determine the first available tab to avoid flash
+  // Debug logging for tab visibility
+  console.log('[Layout] Tab visibility for role:', user.role, {
+    canViewDashboard,
+    canViewFinance,
+    canViewInventory,
+    canManageJobs,
+    canViewCustomers,
+    canViewMarketplace,
+    permissions: JSON.stringify(permissions)
+  });
+
+  // Determine the first available tab to redirect to
   const getInitialRoute = () => {
     if (canViewDashboard) return 'dashboard';
+    if (canManageJobs) return 'jobs';
     if (canViewFinance) return 'finance';
-    // Jobs tab is always visible
-    return 'jobs';
+    if (canViewInventory) return 'inventory';
+    if (canViewCustomers) return 'customers';
+    if (canViewMarketplace) return 'marketplace';
+    return 'settings'; // Fallback - everyone can access settings
   };
 
   return (
@@ -108,12 +128,12 @@ export default function WorkshopLayout() {
       screenOptions={{
         headerShown: false,
         tabBarShowLabel: false,
-        tabBarActiveTintColor: Colors.secondary,
-        tabBarInactiveTintColor: Colors.textSecondary,
+        tabBarActiveTintColor: colors.secondary,
+        tabBarInactiveTintColor: colors.textSecondary,
         tabBarStyle: {
-          backgroundColor: Colors.surface,
+          backgroundColor: colors.surface,
           borderTopWidth: 1,
-          borderTopColor: Colors.border,
+          borderTopColor: colors.border,
           height: 60 + (Platform.OS === 'ios' ? insets.bottom : Math.max(insets.bottom, 10)),
           paddingBottom: Platform.OS === 'ios' ? insets.bottom : Math.max(insets.bottom, 10),
           paddingTop: 4,
@@ -148,6 +168,7 @@ export default function WorkshopLayout() {
       <Tabs.Screen
         name="jobs"
         options={{
+          href: canManageJobs ? undefined : null,
           title: 'Jobs',
           tabBarIcon: ({ focused, color, size }) => (
             focused ? <BriefcaseIconSolid size={size || 24} color={color} /> : <BriefcaseIconOutline size={size || 24} color={color} />
@@ -157,6 +178,7 @@ export default function WorkshopLayout() {
       <Tabs.Screen
         name="customers"
         options={{
+          href: canViewCustomers ? undefined : null,
           title: 'Customer',
           tabBarIcon: ({ focused, color, size }) => (
             focused ? <UserGroupIconSolid size={size || 24} color={color} /> : <UserGroupIconOutline size={size || 24} color={color} />
@@ -176,6 +198,7 @@ export default function WorkshopLayout() {
       <Tabs.Screen
         name="marketplace"
         options={{
+          href: canViewMarketplace ? undefined : null,
           title: 'Marketplace',
           tabBarIcon: ({ focused, color, size }) => (
             focused ? <ShoppingBagIconSolid size={size || 24} color={color} /> : <ShoppingBagIconOutline size={size || 24} color={color} />
@@ -301,6 +324,24 @@ export default function WorkshopLayout() {
       />
       <Tabs.Screen
         name="marketplace-order-details"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="quotes"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="create-quote"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="quote-details"
         options={{
           href: null,
         }}

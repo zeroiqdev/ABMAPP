@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,7 @@ import { StaffInvitation, UserRole, User } from '@/types';
 import VendorDetailsModal from '@/components/VendorDetailsModal';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { AppConfig } from '@/constants/config';
+import { useColors } from '@/constants/design';
 
 // Added 'customer' to system roles so it can be selected for invites
 const SYSTEM_ROLES: string[] = ['service_advisor', 'technician', 'storekeeper', 'accountant', 'admin', 'vendor'];
@@ -27,6 +28,8 @@ const SYSTEM_ROLES: string[] = ['service_advisor', 'technician', 'storekeeper', 
 export default function StaffInvitationsScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
+  const colors = useColors();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   const [invites, setInvites] = useState<StaffInvitation[]>([]);
   const [activeStaff, setActiveStaff] = useState<User[]>([]);
   const [activeVendors, setActiveVendors] = useState<User[]>([]);
@@ -296,14 +299,14 @@ export default function StaffInvitationsScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={24} color="#000" />
+          <TouchableOpacity onPress={() => router.push('/(workshop)/settings')}>
+            <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Staff Invites</Text>
           <View style={{ width: 24 }} />
         </View>
         <View style={styles.permissionCard}>
-          <Ionicons name="shield-checkmark" size={48} color="#000" />
+          <Ionicons name="shield-checkmark" size={48} color={colors.textPrimary} />
           <Text style={styles.permissionTitle}>Permission Required</Text>
           <Text style={styles.permissionText}>
             You do not have permission to invite new staff. Contact an admin.
@@ -316,12 +319,12 @@ export default function StaffInvitationsScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#000" />
+        <TouchableOpacity onPress={() => router.push('/(workshop)/settings')}>
+          <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Staff Management</Text>
         <TouchableOpacity onPress={() => setShowInviteModal(true)}>
-          <Ionicons name="add" size={28} color="#000" />
+          <Ionicons name="add" size={28} color={colors.textPrimary} />
         </TouchableOpacity>
       </View>
 
@@ -352,7 +355,7 @@ export default function StaffInvitationsScreen() {
 
         <View style={styles.listSection}>
           {loadingData ? (
-            <ActivityIndicator color="#000" style={{ marginTop: 20 }} />
+            <ActivityIndicator color={colors.textPrimary} style={{ marginTop: 20 }} />
           ) : activeTab === 'active' ? (
             activeStaff.length === 0 ? (
               <Text style={styles.emptyText}>No active staff members found.</Text>
@@ -436,7 +439,7 @@ export default function StaffInvitationsScreen() {
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Invite New Member</Text>
                 <TouchableOpacity onPress={() => setShowInviteModal(false)}>
-                  <Ionicons name="close" size={24} color="#000" />
+                  <Ionicons name="close" size={24} color={colors.textPrimary} />
                 </TouchableOpacity>
               </View>
 
@@ -515,10 +518,10 @@ export default function StaffInvitationsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -526,19 +529,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     paddingTop: 60,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: colors.border,
   },
   headerTitle: {
     fontSize: 22,
     fontWeight: 'bold',
+    color: colors.textPrimary,
   },
   content: {
     flex: 1,
   },
   section: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     margin: 15,
     padding: 20,
     borderRadius: 16,
@@ -556,37 +560,41 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 16,
-    paddingHorizontal: 15, // Ensure title still has padding if used (it's unused in listSection loop but defined)
+    paddingHorizontal: 15,
+    color: colors.textPrimary,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: colors.border,
     borderRadius: 8,
     padding: 15,
     marginBottom: 15,
     fontSize: 16,
+    color: colors.textPrimary,
+    backgroundColor: colors.background,
   },
   roleLabel: {
     fontSize: 14,
     fontWeight: '600',
     marginBottom: 8,
     marginTop: 4,
+    color: colors.textPrimary,
   },
   roleSelector: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: colors.border,
     borderRadius: 8,
     padding: 10,
     paddingLeft: 15,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     marginBottom: 20,
   },
   roleSelectorText: {
     fontSize: 16,
-    color: '#333',
+    color: colors.textPrimary,
     textTransform: 'capitalize',
     flex: 1,
   },
@@ -599,7 +607,7 @@ const styles = StyleSheet.create({
     padding: 2,
   },
   button: {
-    backgroundColor: '#111827',
+    backgroundColor: colors.secondary,
     padding: 16,
     borderRadius: 10,
     alignItems: 'center',
@@ -609,13 +617,13 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   buttonText: {
-    color: '#fff',
+    color: colors.textInverse,
     fontSize: 16,
     fontWeight: '600',
   },
   emptyText: {
     fontSize: 14,
-    color: '#777',
+    color: colors.textSecondary,
     textAlign: 'center',
     marginTop: 20,
   },
@@ -623,9 +631,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 0,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#f5f5f5',
+    borderBottomColor: colors.border,
     paddingVertical: 16,
     paddingHorizontal: 15,
   },
@@ -643,12 +651,12 @@ const styles = StyleSheet.create({
   itemName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   itemSubtitle: {
     fontSize: 13,
-    color: '#888',
+    color: colors.textSecondary,
   },
   itemRight: {
     alignItems: 'flex-end',
@@ -667,26 +675,26 @@ const styles = StyleSheet.create({
   },
   metaTimestamp: {
     fontSize: 11,
-    color: '#999',
+    color: colors.textSecondary,
     marginTop: 2,
   },
   permissionCard: {
     margin: 20,
     padding: 30,
     borderRadius: 16,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     alignItems: 'center',
     gap: 12,
   },
   permissionTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#111',
+    color: colors.textPrimary,
     textAlign: 'center',
   },
   permissionText: {
     fontSize: 14,
-    color: '#555',
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
   },
@@ -702,18 +710,18 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 20,
-    backgroundColor: '#e5e7eb',
+    backgroundColor: colors.background,
   },
   tabActive: {
-    backgroundColor: '#111827',
+    backgroundColor: colors.secondary,
   },
   tabText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#4b5563',
+    color: colors.textSecondary,
   },
   tabTextActive: {
-    color: '#fff',
+    color: colors.textInverse,
   },
   // Modal Styles
   modalOverlay: {
@@ -722,7 +730,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
@@ -739,6 +747,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     textAlign: 'center',
+    color: colors.textPrimary,
   },
   modalOption: {
     flexDirection: 'row',
@@ -746,40 +755,40 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 15,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: colors.border,
   },
   modalOptionSelected: {
-    backgroundColor: '#f0f9ff',
+    backgroundColor: colors.background,
   },
   modalOptionText: {
     fontSize: 16,
-    color: '#333',
+    color: colors.textPrimary,
     textTransform: 'capitalize',
   },
   modalOptionTextSelected: {
-    color: '#007AFF',
+    color: colors.primary,
     fontWeight: '600',
   },
   inlineRoleList: {
     borderWidth: 1,
-    borderColor: '#eee',
+    borderColor: colors.border,
     borderRadius: 10,
     marginTop: -10,
     marginBottom: 20,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     overflow: 'hidden',
   },
   modalCloseButton: {
     marginTop: 20,
     padding: 15,
     alignItems: 'center',
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.background,
     borderRadius: 10,
   },
   modalCloseText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
+    color: colors.textPrimary,
   },
   deleteAction: {
     backgroundColor: '#ef4444',

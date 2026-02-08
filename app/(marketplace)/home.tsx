@@ -17,6 +17,7 @@ import { MarketplaceProduct, Order } from '@/types';
 import { useAuthStore } from '@/store/authStore';
 import { useCartStore } from '@/store/cartStore';
 import { VendorHome } from '@/components/VendorHome';
+import { useColors } from '@/constants/design';
 
 const { width } = Dimensions.get('window');
 const COLUMN_WIDTH = (width - 40) / 2;
@@ -36,7 +37,9 @@ const CATEGORIES = [
 
 export default function MarketplaceHomeScreen() {
   const router = useRouter();
-  const { user } = useAuthStore();
+  const { user, isGuest } = useAuthStore();
+  const colors = useColors();
+  const styles = getStyles(colors);
   const [products, setProducts] = useState<MarketplaceProduct[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
@@ -84,12 +87,9 @@ export default function MarketplaceHomeScreen() {
           <Image source={{ uri: item.images[0] }} style={styles.productImage} />
         ) : (
           <View style={[styles.productImage, styles.placeholderImage]}>
-            <Ionicons name="image-outline" size={30} color="#ccc" />
+            <Ionicons name="image-outline" size={30} color={colors.textTertiary} />
           </View>
         )}
-        <TouchableOpacity style={styles.favoriteButton}>
-          <Ionicons name="heart-outline" size={18} color="#fff" />
-        </TouchableOpacity>
         {item.stock <= 0 && (
           <View style={styles.outOfStockOverlay}>
             <Text style={styles.outOfStockText}>SOLD OUT</Text>
@@ -103,7 +103,7 @@ export default function MarketplaceHomeScreen() {
         </Text>
 
         <View style={styles.ratingRow}>
-          <Ionicons name="star" size={16} color="#000" />
+          <Ionicons name="star" size={16} color={colors.textPrimary} />
           <Text style={styles.ratingText}>{item.rating || 'New'}</Text>
           <Text style={styles.ratingSeparator}>|</Text>
           <View style={styles.soldBadge}>
@@ -113,12 +113,12 @@ export default function MarketplaceHomeScreen() {
 
         <Text style={styles.productPrice}>₦{item.price.toLocaleString()}</Text>
       </View>
-    </TouchableOpacity>
+    </TouchableOpacity >
   );
 
   if (user?.role === 'vendor') {
     if (user.vendorStatus === 'pending_details' || user.vendorStatus === 'rejected' || user.vendorStatus === 'pending_approval') {
-      return <View style={{ flex: 1, backgroundColor: '#fff' }} />;
+      return <View style={{ flex: 1, backgroundColor: colors.background }} />;
     }
     return <VendorHome />;
   }
@@ -127,15 +127,20 @@ export default function MarketplaceHomeScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          <View style={styles.menuButton}>
-            <Ionicons name="grid-outline" size={24} color="#000" />
-          </View>
+          {/* Hide menu button for guests - only show for authenticated users */}
+          {user && !isGuest ? (
+            <View style={styles.menuButton}>
+              <Ionicons name="grid-outline" size={24} color={colors.textPrimary} />
+            </View>
+          ) : (
+            <View style={{ width: 40 }} />
+          )}
           <Text style={styles.headerTitle}>Marketplace</Text>
           <TouchableOpacity
             style={styles.cartButton}
             onPress={() => router.push('/(marketplace)/cart')}
           >
-            <Ionicons name="bag-handle-outline" size={24} color="#000" />
+            <Ionicons name="bag-outline" size={24} color={colors.textPrimary} />
             {cartItemCount > 0 && (
               <View style={styles.cartBadge}>
                 <Text style={styles.cartBadgeText}>{cartItemCount}</Text>
@@ -146,13 +151,13 @@ export default function MarketplaceHomeScreen() {
 
         {/* Search Bar */}
         <View style={styles.searchContainer}>
-          <Ionicons name="search-outline" size={20} color="#666" />
+          <Ionicons name="search-outline" size={20} color={colors.textSecondary} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search parts, tools..."
             value={searchTerm}
             onChangeText={setSearchTerm}
-            placeholderTextColor="#999"
+            placeholderTextColor={colors.textTertiary}
           />
         </View>
       </View>
@@ -202,7 +207,7 @@ export default function MarketplaceHomeScreen() {
           ListEmptyComponent={
             !loading ? (
               <View style={styles.emptyState}>
-                <Ionicons name="search" size={64} color="#ccc" />
+                <Ionicons name="search" size={64} color={colors.textTertiary} />
                 <Text style={styles.emptyText}>No products found</Text>
               </View>
             ) : null
@@ -213,16 +218,16 @@ export default function MarketplaceHomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.background,
   },
   header: {
     paddingTop: 60,
     paddingHorizontal: 20,
     paddingBottom: 15,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
   },
   headerTop: {
     flexDirection: 'row',
@@ -234,19 +239,20 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.background,
     justifyContent: 'center',
     alignItems: 'center',
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
+    color: colors.textPrimary,
   },
   cartButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.background,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
@@ -258,9 +264,9 @@ const styles = StyleSheet.create({
     minWidth: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: 'red',
+    backgroundColor: colors.error,
     borderWidth: 2,
-    borderColor: '#fff',
+    borderColor: colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 4,
@@ -273,7 +279,7 @@ const styles = StyleSheet.create({
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.background,
     paddingHorizontal: 15,
     paddingVertical: 12,
     borderRadius: 25,
@@ -282,13 +288,14 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 16,
-    color: '#000',
+    color: colors.textPrimary,
   },
   contentContainer: {
     flex: 1,
   },
   categoriesWrapper: {
     paddingVertical: 10,
+    marginBottom: 12,
   },
   categoriesList: {
     paddingHorizontal: 20,
@@ -298,22 +305,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 25,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#eee',
+    borderColor: colors.border,
     marginRight: 8,
   },
   categoryChipActive: {
-    backgroundColor: '#000',
-    borderColor: '#000',
+    backgroundColor: colors.textPrimary,
+    borderColor: colors.textPrimary,
   },
   categoryText: {
     fontSize: 14,
-    color: '#000',
+    color: colors.textPrimary,
     fontWeight: '500',
   },
   categoryTextActive: {
-    color: '#fff',
+    color: colors.textInverse,
   },
   productsList: {
     paddingHorizontal: 16,
@@ -333,7 +340,7 @@ const styles = StyleSheet.create({
     width: '100%',
     height: COLUMN_WIDTH * 1.0,
     borderRadius: 20,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.background,
     marginBottom: 0,
     overflow: 'hidden',
     position: 'relative',
@@ -354,7 +361,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#000',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 10,
@@ -384,38 +391,38 @@ const styles = StyleSheet.create({
   ratingText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#000',
+    color: colors.textPrimary,
     marginLeft: 4,
   },
   ratingSeparator: {
     marginHorizontal: 8,
-    color: '#ccc',
+    color: colors.textTertiary,
     fontSize: 14,
   },
   soldBadge: {
-    backgroundColor: '#f0f0f0',
+    backgroundColor: colors.background,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
   },
   soldText: {
     fontSize: 10,
-    color: '#666',
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   productName: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#000',
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   productPrice: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#000',
+    color: colors.textPrimary,
   },
   promoBanner: {
-    backgroundColor: '#000',
+    backgroundColor: colors.textPrimary,
     borderRadius: 20,
     padding: 24,
     marginBottom: 30,
@@ -427,19 +434,19 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   promoTitle: {
-    color: '#fff',
+    color: colors.textInverse,
     fontSize: 24,
     fontWeight: 'bold',
     marginBottom: 8,
   },
   promoSubtitle: {
-    color: '#ccc',
+    color: colors.textTertiary,
     fontSize: 14,
   },
   promoImagePlaceholder: {
     width: 80,
     height: 80,
-    backgroundColor: '#333',
+    backgroundColor: colors.textSecondary,
     borderRadius: 40,
     justifyContent: 'center',
     alignItems: 'center',
@@ -451,7 +458,7 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: '#000',
+    backgroundColor: colors.textPrimary,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
@@ -466,7 +473,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     marginTop: 10,
-    color: '#999',
+    color: colors.textTertiary,
     fontSize: 16,
   },
 });

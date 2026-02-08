@@ -20,7 +20,7 @@ interface AuthState {
   isGuest: boolean;
   guestEmail: string | null;
   login: (email: string, password: string) => Promise<void>;
-  registerCustomerAccount: (email: string, password: string, registrationCode: string) => Promise<void>;
+  registerCustomerAccount: (email: string, password: string, name?: string, phone?: string, workshopId?: string) => Promise<void>;
   acceptStaffInvite: (email: string, password: string, invitationCode: string) => Promise<void>;
   logout: () => Promise<void>;
   deleteAccount: () => Promise<void>;
@@ -67,23 +67,47 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      // Explicitly for customers redeeming a registration code
-      registerCustomerAccount: async (email: string, password: string, registrationCode: string) => {
+      // Customer signup - accepts name, phone, workshopId from signup form
+      // Also looks up existing customer records by email to auto-link additional workshops
+      registerCustomerAccount: async (email: string, password: string, name?: string, phone?: string, selectedWorkshopId?: string) => {
         set({ loading: true });
         try {
-          const registration = await firebaseService.getCustomerRegistrationByCode(registrationCode.trim());
+          const normalizedEmail = email.toLowerCase().trim();
 
-          if (!registration) {
-            throw new Error('Invalid or expired registration code');
+          // Find ALL existing customer records with this email (across all workshops)
+          let existingCustomers: { id: string; workshopId: string; name?: string; phone?: string }[] = [];
+          try {
+            const usersQuery = query(
+              collection(db, 'users'),
+              where('email', '==', normalizedEmail),
+              where('role', '==', 'customer')
+            );
+            const usersSnapshot = await getDocs(usersQuery);
+            existingCustomers = usersSnapshot.docs.map(d => ({
+              id: d.id,
+              workshopId: d.data().workshopId,
+              name: d.data().name,
+              phone: d.data().phone,
+            }));
+            console.log('[Signup] Found', existingCustomers.length, 'existing customer records for:', normalizedEmail);
+          } catch (error) {
+            console.log('[Signup] Could not query existing customers:', error);
           }
 
-          if (registration.email.toLowerCase().trim() !== email.toLowerCase().trim()) {
-            throw new Error('Email does not match the registered email address');
+          // Collect all workshopIds: start with user-selected workshop, then add from existing records
+          const workshopIds: string[] = [];
+          if (selectedWorkshopId) {
+            workshopIds.push(selectedWorkshopId);
+          }
+          for (const c of existingCustomers) {
+            if (c.workshopId && !workshopIds.includes(c.workshopId)) {
+              workshopIds.push(c.workshopId);
+            }
           }
 
-          if (registration.used) {
-            throw new Error('This registration code has already been used');
-          }
+          // Use provided name/phone, fallback to existing record if not provided
+          const finalName = name || existingCustomers.find(c => c.name)?.name || '';
+          const finalPhone = phone || existingCustomers.find(c => c.phone)?.phone || '';
 
           let firebaseUser;
           try {
@@ -91,7 +115,7 @@ export const useAuthStore = create<AuthState>()(
             firebaseUser = userCredential.user;
           } catch (createError: any) {
             if (createError.code === 'auth/email-already-in-use') {
-              // Account exists. Try to sign in to link new workshop.
+              // Account exists. Try to sign in to link workshops.
               try {
                 const userCredential = await signInWithEmailAndPassword(auth, email, password);
                 firebaseUser = userCredential.user;
@@ -99,108 +123,87 @@ export const useAuthStore = create<AuthState>()(
                 // Check if user data document exists
                 const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
                 if (userDoc.exists()) {
-                  // Existing user: Link new workshop
+                  // Existing user: Update connected workshops
                   const existingUserData = userDoc.data() as User;
                   const currentConnected = existingUserData.connectedWorkshopIds || [existingUserData.workshopId || ''];
 
-                  if (!currentConnected.includes(registration.workshopId)) {
-                    currentConnected.push(registration.workshopId);
+                  // Add any new workshops from customer records or selected workshop
+                  for (const wsId of workshopIds) {
+                    if (wsId && !currentConnected.includes(wsId)) {
+                      currentConnected.push(wsId);
+                    }
                   }
 
-                  // Update user to link workshop and SWITCH to it
+                  // Update user with all connected workshops and new name/phone if provided
                   await setDoc(doc(db, 'users', firebaseUser.uid), {
                     ...existingUserData,
-                    connectedWorkshopIds: currentConnected,
-                    workshopId: registration.workshopId, // Auto-switch context
+                    name: finalName || existingUserData.name,
+                    phone: finalPhone || existingUserData.phone,
+                    connectedWorkshopIds: currentConnected.filter(Boolean),
+                    workshopId: currentConnected[0] || existingUserData.workshopId,
                     updatedAt: new Date(),
                   }, { merge: true });
-
-                  await firebaseService.markRegistrationAsUsed(registration.id);
 
                   // Update local state
                   const updatedUser = {
                     ...existingUserData,
-                    connectedWorkshopIds: currentConnected,
-                    workshopId: registration.workshopId,
+                    name: finalName || existingUserData.name,
+                    phone: finalPhone || existingUserData.phone,
+                    connectedWorkshopIds: currentConnected.filter(Boolean),
+                    workshopId: currentConnected[0] || existingUserData.workshopId,
                   };
                   set({ user: updatedUser, firebaseUser, loading: false, isGuest: false, guestEmail: null });
                   return; // Done
                 }
 
-                // If data is missing (zombie), proceed to create fresh below
+                // If data is missing (zombie account), proceed to create fresh below
                 console.log('[Signup] Recovering incomplete account for:', email);
               } catch (signInError) {
-                // Password wrong or other issue
-                throw new Error('Account exists. Please use correct password to link this workshop.');
+                throw new Error('Account exists. Please use correct password to sign in.');
               }
             } else {
               throw createError;
             }
           }
 
-          // Find existing customer document created by admin (by email)
-          // Query directly by email instead of getting all customers (permissions issue)
-          let existingCustomer: User | null = null;
-          try {
-            const usersQuery = query(
-              collection(db, 'users'),
-              where('email', '==', registration.email.toLowerCase().trim()),
-              where('role', '==', 'customer'),
-              where('workshopId', '==', registration.workshopId),
-              limit(1)
-            );
-            const usersSnapshot = await getDocs(usersQuery);
-            if (!usersSnapshot.empty) {
-              const doc = usersSnapshot.docs[0];
-              const data = doc.data();
-              existingCustomer = {
-                id: doc.id,
-                ...data,
-                createdAt: data.createdAt?.toDate() || new Date(),
-                updatedAt: data.updatedAt?.toDate() || new Date(),
-              } as User;
-            }
-          } catch (error) {
-            console.log('[Signup] Could not find existing customer (may not exist):', error);
-            // Continue without existing customer - this is fine for new signups
-          }
-
+          // Build user data
           const userData: User = {
             id: firebaseUser.uid,
-            email: registration.email,
-            name: registration.name,
-            phone: registration.phone,
+            email: normalizedEmail,
+            name: finalName,
+            phone: finalPhone,
             role: 'customer',
-            workshopId: registration.workshopId,
-            connectedWorkshopIds: [registration.workshopId], // Initialize list
-            createdAt: existingCustomer?.createdAt || new Date(),
+            workshopId: workshopIds[0] || '', // First workshop as active, or empty if none
+            connectedWorkshopIds: workshopIds.length > 0 ? workshopIds : [],
+            createdAt: new Date(),
             updatedAt: new Date(),
           };
 
-          // If existing customer document found, update vehicles to use new Firebase Auth UID
-          if (existingCustomer && existingCustomer.id !== firebaseUser.uid) {
-            console.log('[Signup] Migrating vehicles from old customer ID:', existingCustomer.id, 'to new UID:', firebaseUser.uid);
-            // Get all vehicles with old customer ID
-            const oldVehicles = await firebaseService.getVehicles(existingCustomer.id);
-            // Update each vehicle to use the new Firebase Auth UID
-            for (const vehicle of oldVehicles) {
-              await firebaseService.updateVehicle(vehicle.id, { userId: firebaseUser.uid });
+          // If existing customer documents found, migrate vehicles and delete old records
+          for (const existing of existingCustomers) {
+            if (existing.id !== firebaseUser.uid) {
+              console.log('[Signup] Migrating data from old customer ID:', existing.id);
+              try {
+                const oldVehicles = await firebaseService.getVehicles(existing.id);
+                for (const vehicle of oldVehicles) {
+                  await firebaseService.updateVehicle(vehicle.id, { userId: firebaseUser.uid });
+                }
+                console.log('[Signup] Migrated', oldVehicles.length, 'vehicles from', existing.id);
+                // Delete the old customer document
+                await deleteDoc(doc(db, 'users', existing.id));
+                console.log('[Signup] Deleted old customer document:', existing.id);
+              } catch (migrationError) {
+                console.warn('[Signup] Migration error for', existing.id, migrationError);
+              }
             }
-            console.log('[Signup] Migrated', oldVehicles.length, 'vehicles to new UID');
-
-            // Delete the old customer document
-            await deleteDoc(doc(db, 'users', existingCustomer.id));
-            console.log('[Signup] Deleted old customer document:', existingCustomer.id);
           }
 
-          // Create/update user document with Firebase Auth UID
+          // Create user document with Firebase Auth UID
           await setDoc(doc(db, 'users', firebaseUser.uid), {
             ...userData,
             createdAt: userData.createdAt,
             updatedAt: new Date(),
           });
-
-          await firebaseService.markRegistrationAsUsed(registration.id);
 
           set({ user: userData, firebaseUser, loading: false, isGuest: false, guestEmail: null });
         } catch (error: any) {

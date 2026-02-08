@@ -15,9 +15,10 @@ import { User } from '@/types';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { useCallback } from 'react';
-import { Colors, Typography, Spacing, BorderRadius } from '@/constants/design';
+import { Colors, Typography, Spacing, BorderRadius, useColors } from '@/constants/design';
 
 export default function CustomersScreen() {
+  const colors = useColors();
   const { user } = useAuthStore();
   const router = useRouter();
   const [customers, setCustomers] = useState<User[]>([]);
@@ -26,21 +27,45 @@ export default function CustomersScreen() {
   const loadCustomers = useCallback(async () => {
     if (!user?.workshopId) return;
     try {
-      const q = query(
+      // Query by direct workshopId field (staff-created customers)
+      const directQuery = query(
         collection(db, 'users'),
         where('role', '==', 'customer'),
         where('workshopId', '==', user.workshopId)
       );
-      const snapshot = await getDocs(q);
-      const customersList = snapshot.docs.map((doc) => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          ...data,
-          createdAt: data.createdAt?.toDate() || new Date(),
-          updatedAt: data.updatedAt?.toDate() || new Date(),
-        } as User;
-      });
+
+      // Query by selectedWorkshopIds array (member mode customers)
+      const arrayQuery = query(
+        collection(db, 'users'),
+        where('role', '==', 'customer'),
+        where('selectedWorkshopIds', 'array-contains', user.workshopId)
+      );
+
+      // Execute both queries
+      const [directSnapshot, arraySnapshot] = await Promise.all([
+        getDocs(directQuery),
+        getDocs(arrayQuery)
+      ]);
+
+      // Combine results using Map to avoid duplicates
+      const customerMap = new Map<string, User>();
+
+      const processDoc = (doc: any) => {
+        if (!customerMap.has(doc.id)) {
+          const data = doc.data();
+          customerMap.set(doc.id, {
+            id: doc.id,
+            ...data,
+            createdAt: data.createdAt?.toDate() || new Date(),
+            updatedAt: data.updatedAt?.toDate() || new Date(),
+          } as User);
+        }
+      };
+
+      directSnapshot.docs.forEach(processDoc);
+      arraySnapshot.docs.forEach(processDoc);
+
+      const customersList = Array.from(customerMap.values());
       setCustomers(customersList);
     } catch (error) {
       console.error('Error loading customers:', error);
@@ -67,7 +92,7 @@ export default function CustomersScreen() {
 
   const renderCustomer = ({ item }: { item: User }) => (
     <TouchableOpacity
-      style={styles.customerRow}
+      style={[styles.customerRow, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}
       onPress={() => router.push({
         pathname: '/(workshop)/customer-details',
         params: {
@@ -82,29 +107,29 @@ export default function CustomersScreen() {
       })}
     >
       <View style={styles.customerInfo}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{getInitial(item.name)}</Text>
+        <View style={[styles.avatar, { backgroundColor: colors.textPrimary }]}>
+          <Text style={[styles.avatarText, { color: colors.textInverse }]}>{getInitial(item.name)}</Text>
         </View>
         <View style={styles.customerDetails}>
-          <Text style={styles.customerName}>{item.name}</Text>
-          <Text style={styles.customerEmail}>{item.email}</Text>
-          <Text style={styles.customerPhone}>{item.phone}</Text>
+          <Text style={[styles.customerName, { color: colors.textPrimary }]}>{item.name}</Text>
+          <Text style={[styles.customerEmail, { color: colors.textSecondary }]}>{item.email}</Text>
+          <Text style={[styles.customerPhone, { color: colors.textTertiary }]}>{item.phone}</Text>
         </View>
 
       </View>
-      <Ionicons name="chevron-forward" size={20} color="#999" />
+      <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
     </TouchableOpacity>
   );
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Customers</Text>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+        <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Customers</Text>
         <TouchableOpacity
-          style={styles.addButton}
+          style={[styles.addButton, { backgroundColor: colors.textPrimary }]}
           onPress={() => router.push('/(workshop)/register-customer')}
         >
-          <Ionicons name="add" size={20} color="#fff" />
+          <Ionicons name="add" size={20} color={colors.textInverse} />
         </TouchableOpacity>
       </View>
 
@@ -114,12 +139,12 @@ export default function CustomersScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textPrimary} />
         }
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Ionicons name="people-outline" size={64} color="#ccc" />
-            <Text style={styles.emptyText}>No customers found</Text>
+            <Ionicons name="people-outline" size={64} color={colors.textTertiary} />
+            <Text style={[styles.emptyText, { color: colors.textTertiary }]}>No customers found</Text>
           </View>
         }
       />

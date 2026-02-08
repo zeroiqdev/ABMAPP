@@ -17,12 +17,15 @@ import { firebaseService } from '@/services/firebaseService';
 import { MarketplaceProduct } from '@/types';
 import { useAuthStore } from '@/store/authStore';
 import { useCartStore } from '@/store/cartStore';
+import { useColors } from '@/constants/design';
 
 const { width } = Dimensions.get('window');
 
 export default function ProductDetailsScreen() {
     const router = useRouter();
     const { id, from } = useLocalSearchParams<{ id: string, from?: string }>();
+    const colors = useColors();
+    const styles = getStyles(colors);
 
     const addItem = useCartStore((state) => state.addItem);
     const [product, setProduct] = useState<MarketplaceProduct | null>(null);
@@ -101,7 +104,7 @@ export default function ProductDetailsScreen() {
             <View style={styles.container}>
                 <View style={styles.header}>
                     <TouchableOpacity onPress={handleBack}>
-                        <Ionicons name="arrow-back" size={24} color="#000" />
+                        <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
                     </TouchableOpacity>
                 </View>
                 <View style={styles.emptyState}>
@@ -116,11 +119,11 @@ export default function ProductDetailsScreen() {
             {/* Header */}
             <View style={styles.header}>
                 <TouchableOpacity style={styles.iconButton} onPress={handleBack}>
-                    <Ionicons name="arrow-back" size={24} color="#000" />
+                    <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle} numberOfLines={1}>{product.name}</Text>
+                <Text style={styles.headerTitle} numberOfLines={1}>Product Details</Text>
                 <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/(workshop)/cart')}>
-                    <Ionicons name="bag-handle-outline" size={24} color="#000" />
+                    <Ionicons name="bag-outline" size={24} color={colors.textPrimary} />
                 </TouchableOpacity>
             </View>
 
@@ -148,7 +151,7 @@ export default function ProductDetailsScreen() {
                             ))
                         ) : (
                             <View style={[styles.carouselImage, styles.placeholderImage]}>
-                                <Ionicons name="image-outline" size={64} color="#ccc" />
+                                <Ionicons name="image-outline" size={64} color={colors.textTertiary} />
                             </View>
                         )}
                     </ScrollView>
@@ -173,14 +176,11 @@ export default function ProductDetailsScreen() {
                     {/* Title & Stats */}
                     <View style={styles.titleRow}>
                         <Text style={styles.productName}>{product.name}</Text>
-                        <TouchableOpacity>
-                            <Ionicons name="heart-outline" size={24} color="#000" />
-                        </TouchableOpacity>
                     </View>
 
                     <View style={styles.statsRow}>
                         <View style={styles.ratingBadge}>
-                            <Ionicons name="star" size={12} color="#000" />
+                            <Ionicons name="star" size={12} color={colors.textPrimary} />
                             <Text style={styles.ratingText}>{product.rating || 'New'}</Text>
                         </View>
                         <Text style={styles.soldCount}>{product.soldCount || 0} sold</Text>
@@ -217,14 +217,14 @@ export default function ProductDetailsScreen() {
                                 style={styles.quantityBtn}
                                 onPress={() => setQuantity(Math.max(1, quantity - 1))}
                             >
-                                <Ionicons name="remove" size={20} color="#000" />
+                                <Ionicons name="remove" size={20} color={colors.textPrimary} />
                             </TouchableOpacity>
                             <Text style={styles.quantityValue}>{quantity}</Text>
                             <TouchableOpacity
                                 style={styles.quantityBtn}
                                 onPress={() => setQuantity(Math.min(product.stock, quantity + 1))}
                             >
-                                <Ionicons name="add" size={20} color="#000" />
+                                <Ionicons name="add" size={20} color={colors.textPrimary} />
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -244,7 +244,7 @@ export default function ProductDetailsScreen() {
                     onPress={handleAddToCart}
                     disabled={product.stock === 0}
                 >
-                    <Ionicons name="bag-handle" size={20} color="#fff" />
+                    <Ionicons name="bag-outline" size={20} color="#fff" />
                     <Text style={styles.addToCartText}>Add to Cart</Text>
                 </TouchableOpacity>
             </View>
@@ -275,15 +275,16 @@ export default function ProductDetailsScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#fff',
+        backgroundColor: colors.background,
     },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
+        backgroundColor: colors.background,
     },
     header: {
         flexDirection: 'row',
@@ -292,7 +293,7 @@ const styles = StyleSheet.create({
         paddingTop: 60,
         paddingHorizontal: 20,
         paddingBottom: 10,
-        backgroundColor: '#fff',
+        backgroundColor: 'transparent',
         zIndex: 10,
     },
     headerTitle: {
@@ -301,6 +302,7 @@ const styles = StyleSheet.create({
         flex: 1,
         textAlign: 'center',
         marginHorizontal: 10,
+        color: colors.textPrimary,
     },
     iconButton: {
         width: 40,
@@ -308,7 +310,7 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         borderRadius: 20,
-        backgroundColor: '#f9f9f9',
+        backgroundColor: colors.surface,
     },
     carouselContainer: {
         height: width, // Square images
@@ -319,7 +321,7 @@ const styles = StyleSheet.create({
         width: width,
         height: width,
         resizeMode: 'cover',
-        backgroundColor: '#f5f5f5',
+        backgroundColor: colors.surface,
     },
     placeholderImage: {
         justifyContent: 'center',
@@ -336,10 +338,10 @@ const styles = StyleSheet.create({
         width: 8,
         height: 8,
         borderRadius: 4,
-        backgroundColor: 'rgba(0,0,0,0.2)',
+        backgroundColor: 'rgba(255,255,255,0.5)',
     },
     paginationDotActive: {
-        backgroundColor: '#000',
+        backgroundColor: '#fff',
         width: 20,
     },
     content: {
@@ -354,7 +356,7 @@ const styles = StyleSheet.create({
     productName: {
         fontSize: 24,
         fontWeight: 'bold',
-        color: '#000',
+        color: colors.textPrimary,
         flex: 1,
         marginRight: 10,
     },
@@ -368,7 +370,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 4,
-        backgroundColor: '#f5f5f5',
+        backgroundColor: colors.surface,
         paddingHorizontal: 8,
         paddingVertical: 4,
         borderRadius: 8,
@@ -376,18 +378,19 @@ const styles = StyleSheet.create({
     ratingText: {
         fontWeight: 'bold',
         fontSize: 12,
+        color: colors.textPrimary,
     },
     soldCount: {
-        color: '#666',
-        backgroundColor: '#f5f5f5',
+        color: colors.textSecondary,
+        backgroundColor: colors.surface,
         paddingHorizontal: 8,
         paddingVertical: 4,
         borderRadius: 8,
         fontSize: 12,
     },
     conditionText: {
-        color: '#666',
-        backgroundColor: '#f5f5f5',
+        color: colors.textSecondary,
+        backgroundColor: colors.surface,
         paddingHorizontal: 8,
         paddingVertical: 4,
         borderRadius: 8,
@@ -396,18 +399,18 @@ const styles = StyleSheet.create({
     },
     divider: {
         height: 1,
-        backgroundColor: '#eee',
+        backgroundColor: colors.border,
         marginVertical: 20,
     },
     sectionTitle: {
         fontSize: 18,
         fontWeight: 'bold',
         marginBottom: 10,
-        color: '#000',
+        color: colors.textPrimary,
     },
     description: {
         fontSize: 15,
-        color: '#666',
+        color: colors.textSecondary,
         lineHeight: 24,
         marginBottom: 20,
     },
@@ -422,12 +425,14 @@ const styles = StyleSheet.create({
     compatibilityChip: {
         paddingHorizontal: 12,
         paddingVertical: 8,
-        backgroundColor: '#f0f0f0',
+        backgroundColor: colors.surface,
         borderRadius: 20,
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     compatibilityText: {
         fontSize: 14,
-        color: '#333',
+        color: colors.textPrimary,
     },
     quantitySection: {
         flexDirection: 'row',
@@ -438,38 +443,37 @@ const styles = StyleSheet.create({
     quantityControl: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#f5f5f5',
+        backgroundColor: colors.surface,
         borderRadius: 25,
         gap: 15,
         paddingHorizontal: 10,
         paddingVertical: 5,
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     quantityBtn: {
         width: 30,
         height: 30,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#fff',
+        backgroundColor: colors.background,
         borderRadius: 15,
-        shadowColor: '#000',
-        shadowOpacity: 0.1,
-        shadowRadius: 2,
-        elevation: 1,
     },
     quantityValue: {
         fontSize: 16,
         fontWeight: 'bold',
+        color: colors.textPrimary,
     },
     footer: {
         position: 'absolute',
         bottom: 0,
         left: 0,
         right: 0,
-        backgroundColor: '#fff',
+        backgroundColor: colors.background,
         padding: 20,
         paddingBottom: 40,
         borderTopWidth: 1,
-        borderTopColor: '#f0f0f0',
+        borderTopColor: colors.border,
         flexDirection: 'row',
         alignItems: 'center',
         gap: 20,
@@ -479,17 +483,17 @@ const styles = StyleSheet.create({
     },
     totalLabel: {
         fontSize: 12,
-        color: '#999',
+        color: colors.textSecondary,
         marginBottom: 4,
     },
     totalPrice: {
         fontSize: 24,
         fontWeight: 'bold',
-        color: '#000',
+        color: colors.textPrimary,
     },
     addToCartButton: {
         flex: 2,
-        backgroundColor: '#000',
+        backgroundColor: colors.textPrimary,
         flexDirection: 'row',
         justifyContent: 'center',
         alignItems: 'center',
@@ -498,10 +502,10 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     disabledButton: {
-        backgroundColor: '#ccc',
+        backgroundColor: colors.textSecondary,
     },
     addToCartText: {
-        color: '#fff',
+        color: colors.background,
         fontSize: 16,
         fontWeight: 'bold',
     },
@@ -512,14 +516,14 @@ const styles = StyleSheet.create({
     },
     emptyText: {
         fontSize: 16,
-        color: '#999',
+        color: colors.textSecondary,
     },
     toast: {
         position: 'absolute',
         top: 100,
         left: 20,
         right: 20,
-        backgroundColor: '#000',
+        backgroundColor: colors.textPrimary,
         flexDirection: 'row',
         alignItems: 'center',
         paddingHorizontal: 20,
@@ -534,7 +538,7 @@ const styles = StyleSheet.create({
         elevation: 5,
     },
     toastText: {
-        color: '#fff',
+        color: colors.background,
         fontSize: 14,
         fontWeight: '600',
     },

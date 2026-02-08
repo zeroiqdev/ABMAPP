@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -16,8 +16,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
 import { notificationService } from '@/services/notificationService';
-import { Vehicle } from '@/types';
-import { Colors, Spacing, Typography, BorderRadius } from '@/constants/design';
+import { Vehicle, Workshop } from '@/types';
+import { Colors, Spacing, Typography, BorderRadius, useColors } from '@/constants/design';
+import { WorkshopSelectorModal } from '@/components/WorkshopSelectorModal';
+import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { db } from '@/config/firebase';
 
 // Duplicate of admin issue options for consistency
 const ISSUE_OPTIONS = [
@@ -37,6 +40,8 @@ const ISSUE_OPTIONS = [
 export default function ServiceScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
+  const colors = useColors();
+  const styles = useMemo(() => getStyles(colors), [colors]);
 
   // Form State
   const [description, setDescription] = useState('');
@@ -49,9 +54,15 @@ export default function ServiceScreen() {
   const [loadingVehicles, setLoadingVehicles] = useState(true);
   const [showVehicleDropdown, setShowVehicleDropdown] = useState(false);
 
+  // Workshop selection state
+  const [selectedWorkshopId, setSelectedWorkshopId] = useState<string>('');
+  const [availableWorkshops, setAvailableWorkshops] = useState<Workshop[]>([]);
+  const [showWorkshopSelector, setShowWorkshopSelector] = useState(false);
+
   useFocusEffect(
     useCallback(() => {
       loadVehicles();
+      loadWorkshops();
     }, [user])
   );
 
@@ -72,6 +83,44 @@ export default function ServiceScreen() {
     }
   };
 
+  const loadWorkshops = async () => {
+    if (!user) return;
+    const ids = new Set([
+      ...(user.selectedWorkshopIds || []),
+      ...(user.addedByWorkshopIds || []),
+      ...(user.connectedWorkshopIds || []),
+      ...(user.workshopId ? [user.workshopId] : [])
+    ]);
+
+    const workshops: Workshop[] = [];
+    for (const id of Array.from(ids)) {
+      if (!id) continue;
+      const w = await firebaseService.getWorkshop(id);
+      if (w) workshops.push(w);
+    }
+    setAvailableWorkshops(workshops);
+    if (workshops.length > 0 && !selectedWorkshopId) {
+      setSelectedWorkshopId(workshops[0].id);
+    }
+  };
+
+  const handleAddNewWorkshops = async (newIds: string[]) => {
+    if (!user?.id) return;
+    try {
+      setLoading(true);
+      await updateDoc(doc(db, 'users', user.id), {
+        selectedWorkshopIds: arrayUnion(...newIds)
+      });
+      await loadWorkshops();
+      if (newIds.length > 0) setSelectedWorkshopId(newIds[newIds.length - 1]);
+    } catch (e) {
+      console.error(e);
+      Alert.alert('Error', 'Failed to add workshops');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const toggleIssue = (issue: string) => {
     setIssues((prev) =>
       prev.includes(issue) ? prev.filter((i) => i !== issue) : [...prev, issue]
@@ -81,6 +130,11 @@ export default function ServiceScreen() {
   const handleSubmit = async () => {
     if (!user || !selectedVehicle) {
       Alert.alert('Error', 'Please select a vehicle');
+      return;
+    }
+
+    if (!selectedWorkshopId) {
+      Alert.alert('Error', 'Please select a workshop');
       return;
     }
 
@@ -113,7 +167,7 @@ export default function ServiceScreen() {
       const jobId = await firebaseService.createJob({
         userId: user.id,
         vehicleId: selectedVehicle.id,
-        workshopId: user.workshopId || 'default-workshop', // Fallback if not set
+        workshopId: selectedWorkshopId || user.workshopId || 'default-workshop', // Fallback if not set
         type: jobType,
         issues,
         description: description.trim(),
@@ -149,7 +203,7 @@ export default function ServiceScreen() {
   if (loadingVehicles) {
     return (
       <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -157,7 +211,7 @@ export default function ServiceScreen() {
   if (vehicles.length === 0) {
     return (
       <View style={styles.centerContainer}>
-        <Ionicons name="car-outline" size={64} color={Colors.textTertiary} />
+        <Ionicons name="car-outline" size={64} color={colors.textTertiary} />
         <Text style={styles.emptyText}>No vehicles found</Text>
         <TouchableOpacity
           style={styles.addButton}
@@ -176,7 +230,7 @@ export default function ServiceScreen() {
     >
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={Colors.textPrimary} />
+          <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Request Repair</Text>
         <View style={{ width: 24 }} />
@@ -199,7 +253,7 @@ export default function ServiceScreen() {
             <Ionicons
               name={showVehicleDropdown ? 'chevron-up' : 'chevron-down'}
               size={20}
-              color={Colors.textSecondary}
+              color={colors.textSecondary}
             />
           </TouchableOpacity>
 
@@ -218,12 +272,52 @@ export default function ServiceScreen() {
                     {v.make} {v.model} ({v.licensePlate})
                   </Text>
                   {selectedVehicle?.id === v.id && (
-                    <Ionicons name="checkmark" size={16} color={Colors.primary} />
+                    <Ionicons name="checkmark" size={16} color={colors.primary} />
                   )}
                 </TouchableOpacity>
               ))}
             </View>
           )}
+        </View>
+
+        {/* Workshop Selection */}
+        <View style={styles.section}>
+          <Text style={styles.label}>Select Workshop</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 20 }}>
+            {availableWorkshops.map(workshop => (
+              <TouchableOpacity
+                key={workshop.id}
+                style={[
+                  styles.dropdownTrigger,
+                  selectedWorkshopId === workshop.id && { backgroundColor: colors.surface, borderColor: colors.primary, borderWidth: 2 },
+                  { padding: 15, width: 140, height: 80, flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center' }
+                ]}
+                onPress={() => setSelectedWorkshopId(workshop.id)}
+              >
+                <Text style={[
+                  styles.dropdownText,
+                  selectedWorkshopId === workshop.id && { fontWeight: '600' }
+                ]}>
+                  {workshop.name}
+                </Text>
+                {workshop.address && (
+                  <Text numberOfLines={1} style={{ fontSize: 10, color: '#666', marginTop: 4 }}>
+                    {workshop.address}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity
+              style={[
+                styles.dropdownTrigger,
+                { padding: 15, width: 80, height: 80, alignItems: 'center', justifyContent: 'center', borderStyle: 'dashed' }
+              ]}
+              onPress={() => setShowWorkshopSelector(true)}
+            >
+              <Ionicons name="add" size={24} color={colors.primary} />
+              <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 12 }}>Add</Text>
+            </TouchableOpacity>
+          </ScrollView>
         </View>
 
         {/* Issue Categories */}
@@ -258,6 +352,7 @@ export default function ServiceScreen() {
             value={description}
             onChangeText={setDescription}
             placeholder="Please describe the noise, leak, or problem..."
+            placeholderTextColor={colors.textTertiary}
             multiline
             numberOfLines={6}
             textAlignVertical="top"
@@ -277,20 +372,28 @@ export default function ServiceScreen() {
         </TouchableOpacity>
 
       </ScrollView>
+
+      <WorkshopSelectorModal
+        visible={showWorkshopSelector}
+        onClose={() => setShowWorkshopSelector(false)}
+        onSelect={handleAddNewWorkshops}
+        excludeIds={availableWorkshops.map(w => w.id)}
+        title="Add Workshop"
+      />
     </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
   },
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -299,9 +402,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing['5xl'],
     paddingBottom: Spacing.lg,
-    backgroundColor: Colors.surface,
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: colors.border,
   },
   backButton: {
     padding: Spacing.xs,
@@ -309,7 +412,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: Typography.fontSize.lg,
     fontWeight: Typography.fontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   content: {
     flex: 1,
@@ -321,29 +424,29 @@ const styles = StyleSheet.create({
   label: {
     fontSize: Typography.fontSize.base,
     fontWeight: Typography.fontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
     marginBottom: Spacing.sm,
   },
   dropdownTrigger: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: Colors.surface,
+    backgroundColor: colors.surface,
     padding: Spacing.md,
     borderRadius: BorderRadius.md,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
   },
   dropdownText: {
     fontSize: Typography.fontSize.base,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   dropdownList: {
     marginTop: Spacing.xs,
-    backgroundColor: Colors.surface,
+    backgroundColor: colors.surface,
     borderRadius: BorderRadius.md,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     overflow: 'hidden',
   },
   dropdownItem: {
@@ -352,11 +455,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: Spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
+    borderBottomColor: colors.border,
   },
   dropdownItemText: {
     fontSize: Typography.fontSize.base,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   issueChipsContainer: {
     flexDirection: 'row',
@@ -367,38 +470,40 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.full,
-    backgroundColor: Colors.surface,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
   },
   issueChipActive: {
-    backgroundColor: '#f0f0f0',
-    borderColor: '#000',
+    backgroundColor: colors.surface,
+    borderColor: colors.primary,
+    borderWidth: 2,
   },
   issueChipText: {
     fontSize: Typography.fontSize.sm,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   issueChipTextActive: {
-    color: '#000',
+    color: colors.primary,
     fontWeight: '600',
   },
   issueHint: {
     fontSize: Typography.fontSize.xs,
-    color: Colors.textTertiary,
+    color: colors.textTertiary,
     marginTop: Spacing.xs,
   },
   textArea: {
-    backgroundColor: Colors.surface,
+    backgroundColor: colors.surface,
     borderRadius: BorderRadius.md,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     padding: Spacing.md,
     fontSize: Typography.fontSize.base,
     minHeight: 120,
+    color: colors.textPrimary,
   },
   submitButton: {
-    backgroundColor: '#000',
+    backgroundColor: colors.primary,
     padding: Spacing.md,
     borderRadius: BorderRadius.md,
     alignItems: 'center',
@@ -412,24 +517,24 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   submitButtonText: {
-    color: Colors.textInverse,
+    color: colors.textInverse,
     fontSize: Typography.fontSize.base,
     fontWeight: Typography.fontWeight.bold,
   },
   emptyText: {
     marginTop: Spacing.md,
     fontSize: Typography.fontSize.base,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   addButton: {
     marginTop: Spacing.lg,
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.textPrimary,
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.md,
     borderRadius: BorderRadius.md,
   },
   addButtonText: {
-    color: Colors.textInverse,
+    color: colors.textInverse,
     fontWeight: Typography.fontWeight.bold,
   },
 });

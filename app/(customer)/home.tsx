@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -13,19 +13,21 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
 import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 import { db } from '@/config/firebase';
-import { Job, Notification, Vehicle, MarketplaceProduct } from '@/types';
+import { Notification, Vehicle, MarketplaceProduct } from '@/types';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Typography, Spacing, BorderRadius, Shadows, StatusColors } from '@/constants/design';
+import { Spacing, BorderRadius, useColors } from '@/constants/design';
 import { firebaseService } from '@/services/firebaseService';
 import { BrandLogo } from '@/components/BrandLogo';
 import { CAR_BRANDS } from '@/constants/carBrands';
 
 const { width } = Dimensions.get('window');
-const PRODUCT_CARD_WIDTH = (width - 40) / 2; // Match admin marketplace: (width - 40) / 2
+const PRODUCT_CARD_WIDTH = (width - 40) / 2;
 
 export default function CustomerHomeScreen() {
   const { user } = useAuthStore();
   const router = useRouter();
+  const colors = useColors();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   const [activeTab, setActiveTab] = useState<'tow' | 'repairs' | 'orders'>('repairs');
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
 
@@ -33,34 +35,16 @@ export default function CustomerHomeScreen() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
-
-
   const loadData = useCallback(async () => {
     if (!user) return;
 
     try {
-      // Load vehicles - includes vehicles created by admin/technician for this customer
-      // (vehicles are stored with userId pointing to the customer's user ID)
-      console.log('[Customer Home] Loading vehicles for user ID:', user.id, 'Email:', user.email);
       const userVehicles = await firebaseService.getVehicles(user.id);
-      console.log('[Customer Home] Loaded vehicles count:', userVehicles.length);
-      if (userVehicles.length > 0) {
-        console.log('[Customer Home] Vehicle details:', userVehicles.map(v => ({
-          id: v.id,
-          make: v.make,
-          model: v.model,
-          userId: v.userId
-        })));
-      } else {
-        console.log('[Customer Home] No vehicles found for user ID:', user.id);
-      }
       setVehicles(userVehicles);
 
-      // Load marketplace products (limit to 6 for home screen)
       const products = await firebaseService.getMarketplaceProducts(undefined, undefined, true);
       setMarketplaceProducts(products.slice(0, 6));
 
-      // Load notifications
       const notificationsQuery = query(
         collection(db, 'notifications'),
         where('userId', '==', user.id),
@@ -84,13 +68,11 @@ export default function CustomerHomeScreen() {
     loadData();
   }, [loadData]);
 
-  // Reload data when screen comes into focus (e.g., after adding a vehicle)
   useFocusEffect(
     useCallback(() => {
       loadData();
     }, [loadData])
   );
-
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -102,25 +84,23 @@ export default function CustomerHomeScreen() {
     return CAR_BRANDS.find(b => b.name.toLowerCase() === make.toLowerCase());
   };
 
-  // Get at least 2 vehicles for display
   const displayVehicles = vehicles.slice(0, 2);
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#f0f0f0', justifyContent: 'center', alignItems: 'center', marginRight: 12 }}>
-            <Ionicons name="person" size={24} color="#666" />
+          <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center', marginRight: 12, borderWidth: 1, borderColor: colors.border }}>
+            <Ionicons name="person" size={24} color={colors.textSecondary} />
           </View>
           <View>
-            <Text style={{ fontSize: 14, color: '#666' }}>Welcome back,</Text>
-            <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#000' }}>{user?.name || 'Customer'}</Text>
+            <Text style={{ fontSize: 14, color: colors.textSecondary }}>Welcome back,</Text>
+            <Text style={{ fontSize: 18, fontWeight: 'bold', color: colors.textPrimary }}>{user?.name || 'Customer'}</Text>
           </View>
         </View>
         <View style={styles.headerActions}>
-
           <TouchableOpacity onPress={() => router.push('/(customer)/notifications')}>
-            <Ionicons name="notifications-outline" size={24} color={Colors.textPrimary} />
+            <Ionicons name="notifications-outline" size={24} color={colors.textPrimary} />
             {notifications.length > 0 && (
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>{notifications.length}</Text>
@@ -133,18 +113,15 @@ export default function CustomerHomeScreen() {
       <ScrollView
         style={styles.content}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textPrimary} />
         }
       >
-
-
-        {/* Wallet-Style Vehicle Card */}
+        {/* Vehicles Card */}
         <View style={styles.cardContainer}>
           <View style={styles.cardHeader}>
             <View>
               <Text style={styles.cardTitle}>My Vehicles</Text>
             </View>
-            {/* Filters removed as requested */}
           </View>
 
           <View style={styles.cardBody}>
@@ -187,7 +164,6 @@ export default function CustomerHomeScreen() {
                   <Text style={styles.seeFleetText}>+ {vehicles.length - 2} more (See Fleet)</Text>
                 </TouchableOpacity>
               )}
-              {/* If <= 2, we can just show empty or "See Fleet" anyway if they want to manage */}
               {vehicles.length <= 2 && vehicles.length > 0 && (
                 <TouchableOpacity onPress={() => router.push('/(customer)/vehicles')}>
                   <Text style={styles.seeFleetText}>View Fleet</Text>
@@ -210,11 +186,9 @@ export default function CustomerHomeScreen() {
             style={[styles.tab, activeTab === 'tow' && styles.tabActive]}
             onPress={() => {
               setActiveTab('tow');
-              // Navigate to tow request screen
               router.push('/(customer)/tow-request');
             }}
           >
-
             <Text style={[styles.tabText, activeTab === 'tow' && styles.tabTextActive]} numberOfLines={1}>
               Request Tow
             </Text>
@@ -227,7 +201,6 @@ export default function CustomerHomeScreen() {
               router.push('/(customer)/service');
             }}
           >
-
             <Text style={[styles.tabText, activeTab === 'repairs' && styles.tabTextActive]} numberOfLines={1}>
               Request Repair
             </Text>
@@ -240,7 +213,6 @@ export default function CustomerHomeScreen() {
               router.push('/(customer)/orders');
             }}
           >
-
             <Text style={[styles.tabText, activeTab === 'orders' && styles.tabTextActive]} numberOfLines={1}>
               Orders
             </Text>
@@ -272,12 +244,9 @@ export default function CustomerHomeScreen() {
                     />
                   ) : (
                     <View style={[styles.productImage, styles.placeholderImage]}>
-                      <Ionicons name="image-outline" size={30} color="#ccc" />
+                      <Ionicons name="image-outline" size={30} color={colors.textTertiary} />
                     </View>
                   )}
-                  <TouchableOpacity style={styles.favoriteButton}>
-                    <Ionicons name="heart-outline" size={18} color="#fff" />
-                  </TouchableOpacity>
                   {product.stock <= 0 && (
                     <View style={styles.outOfStockOverlay}>
                       <Text style={styles.outOfStockText}>SOLD OUT</Text>
@@ -291,7 +260,7 @@ export default function CustomerHomeScreen() {
                   </Text>
 
                   <View style={styles.ratingRow}>
-                    <Ionicons name="star" size={16} color="#000" />
+                    <Ionicons name="star" size={16} color={colors.textPrimary} />
                     <Text style={styles.ratingText}>
                       {(product.rating || 0) > 0 ? product.rating : 'New'}
                     </Text>
@@ -308,7 +277,7 @@ export default function CustomerHomeScreen() {
           </View>
           {marketplaceProducts.length === 0 && (
             <View style={styles.emptyState}>
-              <Ionicons name="storefront-outline" size={48} color={Colors.textTertiary} />
+              <Ionicons name="storefront-outline" size={48} color={colors.textTertiary} />
               <Text style={styles.emptyText}>No products available</Text>
             </View>
           )}
@@ -318,10 +287,10 @@ export default function CustomerHomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -329,45 +298,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: Spacing.lg,
     paddingTop: Spacing['5xl'],
-    backgroundColor: Colors.surface,
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  profileSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  profileIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.borderLight,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: Spacing.md,
-  },
-  welcomeText: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.textSecondary,
-  },
-  userName: {
-    fontSize: Typography.fontSize.lg,
-    fontWeight: Typography.fontWeight.bold,
-    color: Colors.textPrimary,
+    borderBottomColor: colors.border,
   },
   headerActions: {
     flexDirection: 'row',
     gap: Spacing.base,
     alignItems: 'center',
   },
-  headerButton: {
-    padding: Spacing.xs,
-  },
   badge: {
     position: 'absolute',
     top: -5,
     right: -5,
-    backgroundColor: Colors.error,
+    backgroundColor: colors.error,
     borderRadius: 10,
     minWidth: 20,
     height: 20,
@@ -376,23 +320,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
   },
   badgeText: {
-    color: Colors.textInverse,
-    fontSize: Typography.fontSize.xs,
-    fontWeight: Typography.fontWeight.bold,
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
   content: {
     flex: 1,
   },
   cardContainer: {
-    backgroundColor: '#000', // Black card
+    backgroundColor: colors.surface, // Dynamic surface color (Dark in dark mode)
     margin: 16,
     borderRadius: 20,
     padding: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.1,
     shadowRadius: 10,
-    elevation: 5,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -402,12 +348,8 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#fff', // White text
+    color: colors.textPrimary,
     marginBottom: 4,
-  },
-  cardSubtitle: {
-    fontSize: 14,
-    color: '#ccc', // Light gray
   },
   cardBody: {
     marginBottom: 20,
@@ -426,22 +368,22 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#333', // Dark gray circle
+    backgroundColor: colors.background,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
     borderWidth: 1,
-    borderColor: '#444',
+    borderColor: colors.border,
   },
   vehicleIconText: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#fff', // White text
+    color: colors.textPrimary,
   },
   vehicleName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#fff', // White text
+    color: colors.textPrimary,
   },
   emptyVehicleState: {
     flexDirection: 'row',
@@ -449,10 +391,10 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   emptyVehicleText: {
-    color: '#999',
+    color: colors.textTertiary,
   },
   addLink: {
-    color: Colors.primary, // Keep primary color or make it white/blue
+    color: colors.textPrimary,
     fontWeight: 'bold',
   },
   cardFooter: {
@@ -467,16 +409,16 @@ const styles = StyleSheet.create({
   seeFleetText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#ccc', // Light gray
+    color: colors.textSecondary,
   },
   detailsButton: {
-    backgroundColor: '#fff', // White button
+    backgroundColor: colors.textPrimary, // Inverted for contrast
     paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: 30,
   },
   detailsButtonText: {
-    color: '#000', // Black text
+    color: colors.textInverse, // Text inverse for contrast
     fontWeight: '600',
     fontSize: 14,
   },
@@ -488,32 +430,31 @@ const styles = StyleSheet.create({
   },
   tab: {
     flex: 1,
-    flexDirection: 'column', // Changed to column for better text display
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: Spacing.md,
     paddingHorizontal: 6,
     borderRadius: BorderRadius.md,
-    backgroundColor: Colors.surface,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     gap: 2,
     minHeight: 48,
   },
   tabActive: {
-    backgroundColor: Colors.secondary,
-    borderColor: Colors.secondary,
+    backgroundColor: colors.secondary,
+    borderColor: colors.secondary,
   },
   tabText: {
-    fontSize: 11, // Slightly smaller for Android fit
-    color: Colors.textSecondary,
-    fontWeight: Typography.fontWeight.medium,
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: '500',
     textAlign: 'center',
-    flexShrink: 1,
   },
   tabTextActive: {
-    color: Colors.textInverse,
-    fontWeight: Typography.fontWeight.semibold,
+    color: colors.textInverse,
+    fontWeight: '600',
   },
   section: {
     paddingBottom: Spacing.base,
@@ -523,17 +464,17 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: Spacing.base,
-    paddingHorizontal: 16, // Align with vehicle card margin
+    paddingHorizontal: 16,
   },
   sectionTitle: {
-    fontSize: Typography.fontSize.xl,
-    fontWeight: Typography.fontWeight.bold,
-    color: Colors.textPrimary,
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: colors.textPrimary,
   },
   seeAllText: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.secondary,
-    fontWeight: Typography.fontWeight.semibold,
+    fontSize: 14,
+    color: colors.secondary,
+    fontWeight: '600',
   },
   productsGrid: {
     flexDirection: 'row',
@@ -547,24 +488,26 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     backgroundColor: 'transparent',
     flexDirection: 'column',
-    overflow: 'visible',
   },
   imageContainer: {
     width: '100%',
-    height: PRODUCT_CARD_WIDTH * 1.0, // Reduced from 1.2 to 1.0 (Square)
+    height: PRODUCT_CARD_WIDTH * 1.0,
     borderRadius: 20,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
     overflow: 'hidden',
     position: 'relative',
   },
   productImage: {
     width: '100%',
     height: '100%',
-    resizeMode: 'contain', // Changed to contain to see full product if it's cut off, or cover? Reference looked like cover/contain mix. Let's stick to cover but maybe 'contain' is better for "parts". The reference engine looked full. Let's try 'cover' with square.
+    resizeMode: 'cover',
   },
   placeholderImage: {
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: colors.surface,
   },
   favoriteButton: {
     position: 'absolute',
@@ -573,7 +516,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#000',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 10,
@@ -592,54 +535,56 @@ const styles = StyleSheet.create({
   },
   productInfo: {
     paddingHorizontal: 0,
-    marginTop: 8, // Reduced from 12
+    marginTop: 8,
     flexDirection: 'column',
   },
   productName: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#000',
-    marginBottom: 4, // Reduced from 6
+    color: colors.textPrimary,
+    marginBottom: 4,
   },
   ratingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 4, // Reduced from 8
+    marginBottom: 4,
   },
   ratingText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#000',
+    color: colors.textPrimary,
     marginLeft: 4,
   },
   ratingSeparator: {
     marginHorizontal: 8,
-    color: '#ccc',
+    color: colors.textTertiary,
     fontSize: 14,
   },
   soldBadge: {
-    backgroundColor: '#f0f0f0',
-    paddingHorizontal: 6, // Slightly reduced
-    paddingVertical: 2, // Slightly reduced
+    backgroundColor: colors.surface,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
     borderRadius: 4,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   soldText: {
     fontSize: 10,
-    color: '#666',
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   productPrice: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#000',
+    color: colors.textPrimary,
   },
   emptyState: {
-    padding: Spacing['3xl'],
+    padding: 30,
     alignItems: 'center',
   },
   emptyText: {
-    marginTop: Spacing.base,
-    fontSize: Typography.fontSize.base,
-    color: Colors.textTertiary,
+    marginTop: 10,
+    fontSize: 14,
+    color: colors.textTertiary,
   },
 });

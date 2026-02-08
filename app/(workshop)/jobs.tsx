@@ -17,10 +17,12 @@ import { firebaseService } from '@/services/firebaseService';
 import { Job, Vehicle } from '@/types';
 import { formatDistanceToNow } from 'date-fns';
 import { BrandLogo } from '@/components/BrandLogo';
+import { useColors } from '@/constants/design';
 
 export default function JobsScreen() {
   const { user } = useAuthStore();
   const router = useRouter();
+  const colors = useColors();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [filteredJobs, setFilteredJobs] = useState<Job[]>([]);
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
@@ -32,9 +34,11 @@ export default function JobsScreen() {
 
     setRefreshing(true);
     const unsubscribe = firebaseService.subscribeToWorkshopJobs(user.workshopId, (updatedJobs) => {
-      // For technicians, only show jobs assigned to them
+      // For technicians, only show jobs assigned to them (check both new array and legacy field)
       if (user.role === 'technician') {
-        const assignedJobs = updatedJobs.filter(job => job.assignedTechnicianId === user.id);
+        const assignedJobs = updatedJobs.filter(job =>
+          job.assignedTechnicianIds?.includes(user.id) || job.assignedTechnicianId === user.id
+        );
         setJobs(assignedJobs);
       } else {
         setJobs(updatedJobs);
@@ -65,6 +69,7 @@ export default function JobsScreen() {
       result = result.filter(j =>
         j.description.toLowerCase().includes(query) ||
         j.id.toLowerCase().includes(query) ||
+        (j.technicianNames?.some(name => name.toLowerCase().includes(query))) ||
         (j.technicianName && j.technicianName.toLowerCase().includes(query))
       );
     }
@@ -80,26 +85,26 @@ export default function JobsScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
         <View style={styles.headerTop}>
-          <Text style={styles.headerTitle}>My Tasks</Text>
+          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>My Tasks</Text>
           <TouchableOpacity
-            style={styles.addButton}
+            style={[styles.addButton, { backgroundColor: colors.primary }]}
             onPress={() => router.push('/(workshop)/create-job')}
           >
-            <Ionicons name="add" size={20} color="#fff" />
+            <Ionicons name="add" size={20} color={colors.background === '#000000' ? '#000' : '#fff'} />
           </TouchableOpacity>
         </View>
 
-        <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color="#999" style={styles.searchIcon} />
+        <View style={[styles.searchContainer, { backgroundColor: colors.surface }]}>
+          <Ionicons name="search" size={20} color={colors.textSecondary} style={styles.searchIcon} />
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, { color: colors.textPrimary }]}
             placeholder="By car name/registration number"
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholderTextColor="#999"
+            placeholderTextColor={colors.textTertiary}
           />
         </View>
 
@@ -116,11 +121,11 @@ export default function JobsScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textPrimary} />
         }
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>No jobs found</Text>
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No jobs found</Text>
           </View>
         }
       />
@@ -130,18 +135,28 @@ export default function JobsScreen() {
 }
 
 function FilterPill({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  const colors = useColors();
   return (
     <TouchableOpacity
-      style={[styles.filterPill, active && styles.filterPillActive]}
+      style={[
+        styles.filterPill,
+        { backgroundColor: colors.background, borderColor: colors.border },
+        active && { backgroundColor: colors.textPrimary, borderColor: colors.textPrimary }
+      ]}
       onPress={onPress}
     >
-      <Text style={[styles.filterPillText, active && styles.filterPillTextActive]}>{label}</Text>
+      <Text style={[
+        styles.filterPillText,
+        { color: colors.textSecondary },
+        active && { color: colors.textInverse }
+      ]}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
 function JobCard({ job }: { job: Job }) {
   const router = useRouter();
+  const colors = useColors();
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -186,34 +201,39 @@ function JobCard({ job }: { job: Job }) {
 
   return (
     <TouchableOpacity
-      style={styles.itemCard}
+      style={[styles.itemCard, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}
       onPress={handlePress}
     >
-      <View style={[styles.iconBox, { backgroundColor: (vehicle || loading) ? 'transparent' : getStatusColor(job.status) }]}>
-        {loading && job.vehicleId ? (
-          <ActivityIndicator color="#000" size="small" />
-        ) : vehicle ? (
-          <BrandLogo brand={vehicle.make} size={30} />
-        ) : (
-          <Ionicons name="car-sport-outline" size={24} color="#fff" />
-        )}
-      </View>
+      <View style={styles.itemLeft}>
+        <View style={[styles.iconBox, { backgroundColor: (vehicle || loading) ? 'transparent' : getStatusColor(job.status) }]}>
+          {loading && job.vehicleId ? (
+            <ActivityIndicator color={colors.textPrimary} size="small" />
+          ) : vehicle ? (
+            <BrandLogo brand={vehicle.make} size={30} />
+          ) : (
+            <Ionicons name="car-sport-outline" size={24} color={colors.textPrimary} />
+          )}
+        </View>
 
-      <View style={styles.itemInfo}>
-        <Text style={styles.itemName}>
-          {loading ? 'Loading...' : vehicle ? `${vehicle.make} ${vehicle.model}` : 'Unknown Vehicle'}
-        </Text>
-        <Text style={styles.itemSubtitle}>
-          {vehicle?.licensePlate || 'No Reg'} • {formatDistanceToNow(job.createdAt, { addSuffix: true })}
-        </Text>
+        <View style={styles.itemInfo}>
+          <Text style={[styles.itemName, { color: colors.textPrimary }]}>
+            {loading ? 'Loading...' : vehicle ? `${vehicle.make} ${vehicle.model}` : 'Unknown Vehicle'}
+          </Text>
+          <Text style={[styles.itemSubtitle, { color: colors.textSecondary }]}>
+            {vehicle?.licensePlate || 'No Reg'} • {formatDistanceToNow(job.createdAt, { addSuffix: true })}
+          </Text>
+        </View>
       </View>
 
       <View style={styles.itemRight}>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(job.status) + '15' }]}>
-          <Text style={[styles.statusText, { color: getStatusColor(job.status) }]}>
-            {isUnassigned ? 'Unassigned' : job.status.charAt(0).toUpperCase() + job.status.slice(1)}
-          </Text>
+        <View style={{ alignItems: 'flex-end', marginRight: 10 }}>
+          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(job.status) + '15' }]}>
+            <Text style={[styles.statusText, { color: getStatusColor(job.status) }]}>
+              {isUnassigned ? 'Unassigned' : job.status.charAt(0).toUpperCase() + job.status.slice(1)}
+            </Text>
+          </View>
         </View>
+        <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
       </View>
     </TouchableOpacity>
   );
@@ -285,24 +305,31 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   listContent: {
-    padding: 20,
+    padding: 0,
   },
   itemCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    justifyContent: 'space-between',
+    marginBottom: 0,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#f5f5f5',
-    paddingBottom: 15,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  itemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
   },
   iconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 15,
+    marginRight: 16,
   },
   itemInfo: {
     flex: 1,
@@ -314,20 +341,20 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   itemSubtitle: {
-    fontSize: 13,
+    fontSize: 14,
     color: '#888',
   },
   itemRight: {
-    alignItems: 'flex-end',
-    gap: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   statusText: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '500',
   },
   statusBadge: {
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 4,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',

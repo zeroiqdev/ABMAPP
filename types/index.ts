@@ -18,6 +18,10 @@ export type JobStatus =
 
 export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded' | 'partially_paid';
 
+export type QuoteStatus = 'draft' | 'pending_approval' | 'rejected' | 'converted' | 'cancelled';
+
+export type InvoiceStatus = 'pending_approval' | 'approved' | 'in_progress' | 'settled' | 'void';
+
 export interface User {
   id: string;
   email: string;
@@ -55,6 +59,10 @@ export interface User {
   emailNotificationsEnabled?: boolean;
   pushToken?: string;
 
+  // Customer workshop selection (for customers only)
+  selectedWorkshopIds?: string[];    // Workshops customer selected at signup
+  addedByWorkshopIds?: string[];     // Workshops that added this customer
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -72,6 +80,14 @@ export interface Vehicle {
   updatedAt: Date;
 }
 
+export interface StatusHistoryEntry {
+  fromStatus: JobStatus;
+  toStatus: JobStatus;
+  changedBy: string;      // User ID
+  changedByName: string;  // User name for display
+  changedAt: Date;
+}
+
 export interface Job {
   id: string;
   userId: string;
@@ -81,14 +97,17 @@ export interface Job {
   issues?: string[]; // Selected issue categories
   description: string;
   status: JobStatus;
-  assignedTechnicianId?: string;
-  technicianName?: string;
+  assignedTechnicianId?: string; // Legacy: single technician
+  technicianName?: string; // Legacy: single technician name
+  assignedTechnicianIds?: string[]; // New: multiple technicians
+  technicianNames?: string[]; // New: multiple technician names
   images?: string[];
   videos?: string[];
   scheduledDate?: Date;
   partsUsed?: PartUsed[];
   notes?: string;
   serviceCharge?: number;
+  statusHistory?: StatusHistoryEntry[];
   createdAt: Date;
   updatedAt: Date;
   completedAt?: Date;
@@ -106,6 +125,69 @@ export interface PaymentRecord {
   date: Date;
   method: string;
   recordedBy?: string;
+  recordedByName?: string;
+  reference?: string;
+  note?: string;
+  entityType?: 'quote' | 'invoice';
+  entityId?: string;
+}
+
+export interface ApprovalEntry {
+  approvedBy: string;
+  approvedByName: string;
+  approvedAmount: number;
+  approvedAt: Date;
+}
+
+export interface QuoteItem {
+  id: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+  isAdditionalWork: boolean;
+  addedAt: Date;
+  approvedAt?: Date;
+}
+
+export interface QuoteLogEntry {
+  action: 'create' | 'edit' | 'send' | 'reject' | 'approve' | 'convert' | 'other';
+  description: string;
+  userId: string;
+  userName: string;
+  timestamp: Date;
+}
+
+export interface Quote {
+  id: string;
+  workshopId: string;
+  jobId?: string;
+
+  // Customer
+  userId?: string;
+  customerName: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  customerAddress?: string;
+  customerId?: string; // Sometimes used instead of userId
+
+  // Items & Pricing
+  items: QuoteItem[];
+  subtotal: number;
+  vatRate: number;
+  vat: number;
+  discount: number;
+  total: number;
+
+  // Workflow
+  status: QuoteStatus;
+  convertedToInvoiceId?: string;
+  rejectionReason?: string;
+  history?: QuoteLogEntry[]; // Audit trail
+
+  createdAt: Date;
+  updatedAt: Date;
+  sentAt?: Date;
 }
 
 export interface Invoice {
@@ -118,10 +200,11 @@ export interface Invoice {
   customerAddress?: string;
   workshopId: string;
   items: InvoiceItem[];
+  pendingItems?: InvoiceItem[];      // Unapproved additions
   subtotal: number;
   vat: number;
-  vatRate?: number; // VAT percentage
-  discount: number; // Discount amount
+  vatRate?: number;
+  discount: number;
   total: number;
   paymentStatus: PaymentStatus;
   paymentMethod?: string;
@@ -129,9 +212,14 @@ export interface Invoice {
   dueDate?: Date;
   amountPaid?: number;
   paymentHistory?: PaymentRecord[];
-  status: 'draft' | 'approved' | 'void';
+  status: 'draft' | 'approved' | 'void';  // Backwards compat
+  invoiceStatus?: InvoiceStatus;          // New workflow status
   approvedAt?: Date;
   approvedBy?: string;
+  approvalHistory?: ApprovalEntry[];      // All approvals
+  sourceQuoteId?: string;                 // Original quote
+  lastUpdatedAt?: Date;                   // Last staff edit time
+  wasUpdated?: boolean;                   // Flag for customer notification
   createdAt: Date;
 }
 
@@ -226,6 +314,7 @@ export interface OrderItem {
 export interface Workshop {
   id: string;
   name: string;
+  address?: string;
   subscriptionStatus: 'active' | 'inactive' | 'trial';
   subscriptionPlan: 'basic' | 'premium' | 'enterprise';
   subscriptionExpiry?: Date;

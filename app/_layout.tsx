@@ -8,10 +8,13 @@ import { useAuthStore } from '@/store/authStore';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { User } from '@/types';
+import { useThemeStore } from '@/store/themeStore';
 
 export default function RootLayout() {
   const router = useRouter(); // Use Expo Router
   const { setUser, setFirebaseUser } = useAuthStore();
+  const { getEffectiveTheme } = useThemeStore();
+  const effectiveTheme = getEffectiveTheme();
 
   useEffect(() => {
     let userUnsubscribe: (() => void) | null = null;
@@ -107,7 +110,7 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <StatusBar style="auto" />
+      <StatusBar style={effectiveTheme === 'dark' ? 'light' : 'dark'} />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(customer)" />

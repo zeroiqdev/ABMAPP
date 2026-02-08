@@ -11,7 +11,7 @@ export default function SubscriptionExpiredScreen() {
 
     const handleLogout = async () => {
         await logout();
-        router.replace('/(auth)/login');
+        router.replace('/');
     };
 
     return (

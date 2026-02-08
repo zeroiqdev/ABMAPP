@@ -1,0 +1,742 @@
+import React, { useState } from 'react';
+import {
+    View,
+    Text,
+    StyleSheet,
+    TextInput,
+    TouchableOpacity,
+    ScrollView,
+    Alert,
+    ActivityIndicator,
+    KeyboardAvoidingView,
+    Platform,
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useAuthStore } from '@/store/authStore';
+import { useColors } from '@/constants/design';
+import { collection, query, where, getDocs, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { db, auth } from '@/config/firebase';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { WorkshopSelectorModal } from '@/components/WorkshopSelectorModal';
+
+// Account flow steps
+type AuthStep = 'email' | 'login' | 'create' | 'createCustomer' | 'selectWorkshops' | 'completeProfile';
+
+// Workshop Roles - for routing after login
+const workshopRoles = ['admin', 'technician', 'storekeeper', 'accountant', 'service_advisor', 'super_admin'];
+
+export default function MemberAuthScreen() {
+    const router = useRouter();
+    const colors = useColors();
+    const styles = getStyles(colors);
+    const { setGuest, acceptStaffInvite, registerCustomerAccount } = useAuthStore();
+
+    // Auth state
+    const [step, setStep] = useState<AuthStep>('email');
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+
+    // Profile completion state
+    const [firstName, setFirstName] = useState('');
+    const [lastName, setLastName] = useState('');
+    const [phone, setPhone] = useState('');
+
+    // Invitation info
+    const [invitation, setInvitation] = useState<{
+        type: 'staff' | 'customer' | null;
+        role: string;
+        code: string;
+        id: string;
+    } | null>(null);
+
+    // Workshop selection
+    const [selectedWorkshopIds, setSelectedWorkshopIds] = useState<string[]>([]);
+    const [showWorkshopSelector, setShowWorkshopSelector] = useState(false);
+
+    // New user ID for profile completion
+    const [newUserId, setNewUserId] = useState<string | null>(null);
+
+    // Step 1: Check email for existing account or invitation
+    const handleEmailContinue = async () => {
+        const trimmedEmail = email.trim().toLowerCase();
+        if (!trimmedEmail || !trimmedEmail.includes('@')) {
+            setError('Please enter a valid email address');
+            return;
+        }
+
+        setLoading(true);
+        setError('');
+        setInvitation(null);
+
+        try {
+            // Check for staff invitation
+            const staffQ = query(
+                collection(db, 'staffInvitations'),
+                where('email', '==', trimmedEmail),
+                where('used', '==', false)
+            );
+            const staffSnap = await getDocs(staffQ);
+
+            if (!staffSnap.empty) {
+                const staffDoc = staffSnap.docs[0];
+                const data = staffDoc.data();
+                setInvitation({
+                    type: 'staff',
+                    role: data.role || 'Staff',
+                    code: data.invitationCode,
+                    id: staffDoc.id
+                });
+                setStep('create');
+                setLoading(false);
+                return;
+            }
+
+            // Check for customer registration
+            const customerQ = query(
+                collection(db, 'customerRegistrations'),
+                where('email', '==', trimmedEmail),
+                where('used', '==', false)
+            );
+            const customerSnap = await getDocs(customerQ);
+
+            if (!customerSnap.empty) {
+                const customerDoc = customerSnap.docs[0];
+                const data = customerDoc.data();
+                setInvitation({
+                    type: 'customer',
+                    role: 'Customer',
+                    code: data.registrationCode,
+                    id: customerDoc.id
+                });
+                setStep('create');
+                setLoading(false);
+                return;
+            }
+
+            // Check for vendor invitation
+            const vendorQ = query(
+                collection(db, 'staffInvitations'),
+                where('email', '==', trimmedEmail),
+                where('role', '==', 'vendor'),
+                where('used', '==', false)
+            );
+            const vendorSnap = await getDocs(vendorQ);
+
+            if (!vendorSnap.empty) {
+                const vendorDoc = vendorSnap.docs[0];
+                const data = vendorDoc.data();
+                setInvitation({
+                    type: 'staff',
+                    role: 'Vendor',
+                    code: data.invitationCode,
+                    id: vendorDoc.id
+                });
+                setStep('create');
+                setLoading(false);
+                return;
+            }
+
+            // No invitation found -> Proceed to Login/Signup
+            setStep('login');
+        } catch (err) {
+            console.error('Error checking email:', err);
+            setStep('login');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Handle unified login/signup
+    const handleUnifiedAuth = async () => {
+        if (!password) {
+            setError('Please enter your password');
+            return;
+        }
+
+        setLoading(true);
+        setError('');
+
+        try {
+            const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
+            setGuest(false);
+
+            const userDocRef = doc(db, 'users', userCredential.user.uid);
+            const userDocSnap = await getDoc(userDocRef);
+
+            if (userDocSnap.exists()) {
+                navigateUser({ ...userDocSnap.data(), role: userDocSnap.data().role } as any);
+            } else {
+                router.replace('/(marketplace)/home');
+            }
+        } catch (err: any) {
+            if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+                // User doesn't exist - go to create customer flow
+                setStep('createCustomer');
+            } else if (err.code === 'auth/wrong-password') {
+                setError('Incorrect password. Please try again.');
+            } else {
+                setError(err.message || 'Login failed');
+            }
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Handle invited user account creation
+    const handleCreateInvitedAccount = async () => {
+        if (!password || password.length < 6) {
+            setError('Password must be at least 6 characters');
+            return;
+        }
+
+        if (password !== confirmPassword) {
+            setError('Passwords do not match');
+            return;
+        }
+
+        setLoading(true);
+        setError('');
+
+        try {
+            if (invitation?.type === 'staff') {
+                await acceptStaffInvite(email.trim(), password, invitation.code);
+            } else if (invitation?.type === 'customer') {
+                await registerCustomerAccount(email.trim(), password, invitation.code);
+            }
+            setGuest(false);
+        } catch (err: any) {
+            setError(err.message || 'Account creation failed');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Handle new customer creation
+    const handleCreateNewCustomer = async () => {
+        if (!password || password.length < 6) {
+            setError('Password must be at least 6 characters');
+            return;
+        }
+
+        if (password !== confirmPassword) {
+            setError('Passwords do not match');
+            return;
+        }
+
+        if (selectedWorkshopIds.length === 0) {
+            setError('Please select at least one workshop');
+            return;
+        }
+
+        setLoading(true);
+        setError('');
+
+        try {
+            const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
+            const uid = userCredential.user.uid;
+
+            await setDoc(doc(db, 'users', uid), {
+                email: email.trim().toLowerCase(),
+                role: 'customer',
+                workshopIds: selectedWorkshopIds,
+                createdAt: new Date(),
+                needsProfileCompletion: true,
+            });
+
+            setNewUserId(uid);
+            setStep('completeProfile');
+        } catch (err: any) {
+            if (err.code === 'auth/email-already-in-use') {
+                setError('This email is already registered. Please sign in instead.');
+                setStep('login');
+            } else {
+                setError(err.message || 'Account creation failed');
+            }
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Handle profile completion
+    const handleCompleteProfile = async () => {
+        if (!firstName.trim() || !lastName.trim()) {
+            setError('Please enter your first and last name');
+            return;
+        }
+
+        setLoading(true);
+        setError('');
+
+        try {
+            const uid = newUserId || auth.currentUser?.uid;
+            if (!uid) throw new Error('User ID not found');
+
+            await updateDoc(doc(db, 'users', uid), {
+                name: `${firstName.trim()} ${lastName.trim()}`,
+                phone: phone.trim(),
+                needsProfileCompletion: false,
+            });
+
+            setGuest(false);
+            router.replace('/(customer)/home');
+        } catch (err: any) {
+            setError(err.message || 'Failed to save profile');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Navigate user based on role
+    const navigateUser = (userData: any) => {
+        if (userData.role === 'super_admin' || workshopRoles.includes(userData.role)) {
+            router.replace('/(workshop)/dashboard');
+        } else if (userData.role === 'vendor') {
+            if (userData.vendorStatus === 'active') {
+                router.replace('/(marketplace)/home');
+            } else {
+                router.replace('/(marketplace)/vendor-registration');
+            }
+        } else if (userData.role === 'customer') {
+            router.replace('/(customer)/home');
+        } else if (userData.workshopId) {
+            router.replace('/(workshop)/dashboard');
+        } else {
+            router.replace('/(customer)/home');
+        }
+    };
+
+    const handleBack = () => {
+        if (step === 'email') {
+            router.back();
+        } else if (step === 'completeProfile') {
+            // Can't go back from profile completion
+        } else {
+            setStep('email');
+            setPassword('');
+            setConfirmPassword('');
+            setError('');
+        }
+    };
+
+    return (
+        <View style={styles.container}>
+            {/* Header */}
+            <View style={styles.header}>
+                <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+                    <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
+                </TouchableOpacity>
+                <Text style={styles.headerTitle}>
+                    {step === 'email' && 'Sign In'}
+                    {step === 'login' && 'Welcome Back'}
+                    {step === 'create' && 'Create Account'}
+                    {step === 'createCustomer' && 'Create Account'}
+                    {step === 'selectWorkshops' && 'Select Workshop'}
+                    {step === 'completeProfile' && 'Complete Profile'}
+                </Text>
+                <View style={{ width: 24 }} />
+            </View>
+
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={{ flex: 1 }}
+            >
+                <ScrollView
+                    style={styles.content}
+                    contentContainerStyle={styles.contentContainer}
+                    keyboardShouldPersistTaps="handled"
+                >
+                    {/* Email Step */}
+                    {step === 'email' && (
+                        <>
+                            <Text style={styles.subtitle}>Enter your email to continue</Text>
+                            <View style={styles.card}>
+                                <View style={styles.inputGroup}>
+                                    <TextInput
+                                        style={styles.input}
+                                        placeholder="your@email.com"
+                                        placeholderTextColor={colors.textTertiary}
+                                        value={email}
+                                        onChangeText={setEmail}
+                                        autoCapitalize="none"
+                                        keyboardType="email-address"
+                                        autoCorrect={false}
+                                        autoFocus
+                                    />
+                                </View>
+                            </View>
+                            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+                            <TouchableOpacity
+                                style={[styles.primaryButton, loading && styles.buttonDisabled]}
+                                onPress={handleEmailContinue}
+                                disabled={loading}
+                            >
+                                {loading ? (
+                                    <ActivityIndicator color={colors.textInverse} />
+                                ) : (
+                                    <Text style={styles.primaryButtonText}>Continue</Text>
+                                )}
+                            </TouchableOpacity>
+                        </>
+                    )}
+
+                    {/* Login Step */}
+                    {step === 'login' && (
+                        <>
+                            <Text style={styles.subtitle}>Enter your password to sign in</Text>
+                            <View style={styles.card}>
+                                <View style={styles.inputGroup}>
+                                    <Text style={styles.inputLabel}>Email</Text>
+                                    <View style={styles.emailDisplayRow}>
+                                        <Text style={styles.emailDisplayText}>{email}</Text>
+                                        <TouchableOpacity onPress={handleBack}>
+                                            <Text style={styles.changeLink}>Change</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                                <View style={styles.divider} />
+                                <View style={styles.inputGroup}>
+                                    <Text style={styles.inputLabel}>Password</Text>
+                                    <TextInput
+                                        style={styles.input}
+                                        placeholder="Enter password"
+                                        placeholderTextColor={colors.textTertiary}
+                                        value={password}
+                                        onChangeText={setPassword}
+                                        secureTextEntry
+                                    />
+                                </View>
+                            </View>
+                            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+                            <TouchableOpacity
+                                style={[styles.primaryButton, loading && styles.buttonDisabled]}
+                                onPress={handleUnifiedAuth}
+                                disabled={loading}
+                            >
+                                {loading ? (
+                                    <ActivityIndicator color={colors.textInverse} />
+                                ) : (
+                                    <Text style={styles.primaryButtonText}>Sign In</Text>
+                                )}
+                            </TouchableOpacity>
+                        </>
+                    )}
+
+                    {/* Create Invited Account Step */}
+                    {step === 'create' && invitation && (
+                        <>
+                            <View style={styles.invitationBadge}>
+                                <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+                                <Text style={styles.invitationText}>
+                                    You've been invited as {invitation.role}
+                                </Text>
+                            </View>
+                            <Text style={styles.subtitle}>Create your password to get started</Text>
+                            <View style={styles.card}>
+                                <View style={styles.inputGroup}>
+                                    <Text style={styles.inputLabel}>Email</Text>
+                                    <Text style={styles.emailDisplayText}>{email}</Text>
+                                </View>
+                                <View style={styles.divider} />
+                                <View style={styles.inputGroup}>
+                                    <Text style={styles.inputLabel}>Password</Text>
+                                    <TextInput
+                                        style={styles.input}
+                                        placeholder="Create password"
+                                        placeholderTextColor={colors.textTertiary}
+                                        value={password}
+                                        onChangeText={setPassword}
+                                        secureTextEntry
+                                    />
+                                </View>
+                                <View style={styles.divider} />
+                                <View style={styles.inputGroup}>
+                                    <Text style={styles.inputLabel}>Confirm Password</Text>
+                                    <TextInput
+                                        style={styles.input}
+                                        placeholder="Confirm password"
+                                        placeholderTextColor={colors.textTertiary}
+                                        value={confirmPassword}
+                                        onChangeText={setConfirmPassword}
+                                        secureTextEntry
+                                    />
+                                </View>
+                            </View>
+                            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+                            <TouchableOpacity
+                                style={[styles.primaryButton, loading && styles.buttonDisabled]}
+                                onPress={handleCreateInvitedAccount}
+                                disabled={loading}
+                            >
+                                {loading ? (
+                                    <ActivityIndicator color={colors.textInverse} />
+                                ) : (
+                                    <Text style={styles.primaryButtonText}>Create Account</Text>
+                                )}
+                            </TouchableOpacity>
+                        </>
+                    )}
+
+                    {/* Create New Customer Step */}
+                    {step === 'createCustomer' && (
+                        <>
+                            <Text style={styles.subtitle}>Create your account</Text>
+                            <View style={styles.card}>
+                                <View style={styles.inputGroup}>
+                                    <Text style={styles.inputLabel}>Email</Text>
+                                    <Text style={styles.emailDisplayText}>{email}</Text>
+                                </View>
+                                <View style={styles.divider} />
+                                <View style={styles.inputGroup}>
+                                    <Text style={styles.inputLabel}>Password</Text>
+                                    <TextInput
+                                        style={styles.input}
+                                        placeholder="Create password"
+                                        placeholderTextColor={colors.textTertiary}
+                                        value={password}
+                                        onChangeText={setPassword}
+                                        secureTextEntry
+                                    />
+                                </View>
+                                <View style={styles.divider} />
+                                <View style={styles.inputGroup}>
+                                    <Text style={styles.inputLabel}>Confirm Password</Text>
+                                    <TextInput
+                                        style={styles.input}
+                                        placeholder="Confirm password"
+                                        placeholderTextColor={colors.textTertiary}
+                                        value={confirmPassword}
+                                        onChangeText={setConfirmPassword}
+                                        secureTextEntry
+                                    />
+                                </View>
+                            </View>
+
+                            {/* Workshop Selector */}
+                            <Text style={[styles.inputLabel, { marginTop: 20, marginBottom: 10 }]}>
+                                Select Workshop(s)
+                            </Text>
+                            <TouchableOpacity
+                                style={styles.workshopButton}
+                                onPress={() => setShowWorkshopSelector(true)}
+                            >
+                                <Text style={{ color: selectedWorkshopIds.length === 0 ? colors.textTertiary : colors.textPrimary }}>
+                                    {selectedWorkshopIds.length === 0
+                                        ? 'Select Workshop'
+                                        : `${selectedWorkshopIds.length} workshop${selectedWorkshopIds.length > 1 ? 's' : ''} selected`}
+                                </Text>
+                                <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
+                            </TouchableOpacity>
+
+                            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+                            <TouchableOpacity
+                                style={[styles.primaryButton, loading && styles.buttonDisabled]}
+                                onPress={handleCreateNewCustomer}
+                                disabled={loading}
+                            >
+                                {loading ? (
+                                    <ActivityIndicator color={colors.textInverse} />
+                                ) : (
+                                    <Text style={styles.primaryButtonText}>Create Account</Text>
+                                )}
+                            </TouchableOpacity>
+                        </>
+                    )}
+
+                    {/* Complete Profile Step */}
+                    {step === 'completeProfile' && (
+                        <>
+                            <Text style={styles.subtitle}>Complete your profile</Text>
+                            <View style={styles.card}>
+                                <View style={styles.inputGroup}>
+                                    <Text style={styles.inputLabel}>First name</Text>
+                                    <TextInput
+                                        style={styles.input}
+                                        placeholder="First name"
+                                        placeholderTextColor={colors.textTertiary}
+                                        value={firstName}
+                                        onChangeText={setFirstName}
+                                        autoCapitalize="words"
+                                        autoFocus
+                                    />
+                                </View>
+                                <View style={styles.divider} />
+                                <View style={styles.inputGroup}>
+                                    <Text style={styles.inputLabel}>Last name</Text>
+                                    <TextInput
+                                        style={styles.input}
+                                        placeholder="Last name"
+                                        placeholderTextColor={colors.textTertiary}
+                                        value={lastName}
+                                        onChangeText={setLastName}
+                                        autoCapitalize="words"
+                                    />
+                                </View>
+                                <View style={styles.divider} />
+                                <View style={styles.inputGroup}>
+                                    <Text style={styles.inputLabel}>Phone (optional)</Text>
+                                    <TextInput
+                                        style={styles.input}
+                                        placeholder="Phone number"
+                                        placeholderTextColor={colors.textTertiary}
+                                        value={phone}
+                                        onChangeText={setPhone}
+                                        keyboardType="phone-pad"
+                                    />
+                                </View>
+                            </View>
+                            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+                            <TouchableOpacity
+                                style={[styles.primaryButton, loading && styles.buttonDisabled]}
+                                onPress={handleCompleteProfile}
+                                disabled={loading}
+                            >
+                                {loading ? (
+                                    <ActivityIndicator color={colors.textInverse} />
+                                ) : (
+                                    <Text style={styles.primaryButtonText}>Continue</Text>
+                                )}
+                            </TouchableOpacity>
+                        </>
+                    )}
+                </ScrollView>
+            </KeyboardAvoidingView>
+
+            <WorkshopSelectorModal
+                visible={showWorkshopSelector}
+                onClose={() => setShowWorkshopSelector(false)}
+                onSelect={(ids) => {
+                    setSelectedWorkshopIds(ids);
+                    setShowWorkshopSelector(false);
+                }}
+                initialSelectedIds={selectedWorkshopIds}
+                title="Select Workshop(s)"
+                multiSelect={true}
+            />
+        </View>
+    );
+}
+
+const getStyles = (colors: any) => StyleSheet.create({
+    container: {
+        flex: 1,
+        backgroundColor: colors.background,
+    },
+    header: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingTop: 60,
+        paddingHorizontal: 20,
+        paddingBottom: 20,
+        backgroundColor: colors.background,
+    },
+    backButton: {
+        padding: 4,
+    },
+    headerTitle: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: colors.textPrimary,
+    },
+    content: {
+        flex: 1,
+    },
+    contentContainer: {
+        padding: 20,
+        paddingBottom: 40,
+    },
+    subtitle: {
+        fontSize: 16,
+        color: colors.textSecondary,
+        marginBottom: 20,
+    },
+    card: {
+        backgroundColor: colors.surface,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: colors.border,
+        overflow: 'hidden',
+    },
+    inputGroup: {
+        padding: 16,
+    },
+    inputLabel: {
+        fontSize: 14,
+        color: colors.textSecondary,
+        marginBottom: 8,
+    },
+    input: {
+        fontSize: 16,
+        color: colors.textPrimary,
+        padding: 0,
+    },
+    divider: {
+        height: 1,
+        backgroundColor: colors.border,
+    },
+    emailDisplayRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    emailDisplayText: {
+        fontSize: 16,
+        color: colors.textPrimary,
+    },
+    changeLink: {
+        fontSize: 14,
+        color: colors.primary,
+        fontWeight: '600',
+    },
+    primaryButton: {
+        backgroundColor: colors.textPrimary,
+        paddingVertical: 16,
+        borderRadius: 12,
+        alignItems: 'center',
+        marginTop: 24,
+    },
+    buttonDisabled: {
+        opacity: 0.6,
+    },
+    primaryButtonText: {
+        color: colors.textInverse,
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    errorText: {
+        color: colors.error,
+        fontSize: 14,
+        textAlign: 'center',
+        marginTop: 12,
+    },
+    invitationBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: colors.success + '20',
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        borderRadius: 8,
+        marginBottom: 16,
+        gap: 8,
+    },
+    invitationText: {
+        fontSize: 14,
+        color: colors.success,
+        fontWeight: '600',
+    },
+    workshopButton: {
+        backgroundColor: colors.surface,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: colors.border,
+        padding: 16,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+});

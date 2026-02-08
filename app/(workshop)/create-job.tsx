@@ -21,6 +21,7 @@ import { firebaseService } from '@/services/firebaseService';
 import { User, Vehicle, InventoryItem, PartUsed } from '@/types';
 import { CAR_BRANDS } from '@/constants/carBrands';
 import { BrandLogo } from '@/components/BrandLogo';
+import { Colors, useColors } from '@/constants/design';
 
 const ISSUE_OPTIONS = [
     'Servicing',
@@ -40,6 +41,7 @@ const ISSUE_OPTIONS = [
 export default function CreateJobScreen() {
     const router = useRouter();
     const { user } = useAuthStore();
+    const colors = useColors();
     const params = useLocalSearchParams<{ jobId: string }>();
     const editJobId = params.jobId;
 
@@ -49,7 +51,7 @@ export default function CreateJobScreen() {
     const [serviceCharge, setServiceCharge] = useState('');
     const [selectedCustomer, setSelectedCustomer] = useState<User | null>(null);
     const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
-    const [selectedTechnician, setSelectedTechnician] = useState<User | null>(null);
+    const [selectedTechnicians, setSelectedTechnicians] = useState<User[]>([]);
     const [parts, setParts] = useState<PartUsed[]>([]);
 
     // Data State
@@ -81,6 +83,7 @@ export default function CreateJobScreen() {
     // Brand Selection State
     const [isBrandSelectionMode, setIsBrandSelectionMode] = useState(false);
     const [searchBrandQuery, setSearchBrandQuery] = useState('');
+    const [searchCustomerQuery, setSearchCustomerQuery] = useState('');
 
     const filteredBrands = CAR_BRANDS.filter(b =>
         b.name.toLowerCase().includes(searchBrandQuery.toLowerCase())
@@ -104,19 +107,36 @@ export default function CreateJobScreen() {
         setServiceCharge('');
         setSelectedCustomer(null);
         setSelectedVehicle(null);
-        setSelectedTechnician(null);
+        setSelectedTechnicians([]);
         setParts([]);
         setPartMode('inventory');
         setSelectedInventoryItems(new Map());
         setExternalPart({ name: '', quantity: '1', cost: '', supplier: '' });
     };
 
+    // Real-time subscription for customers
+    useEffect(() => {
+        if (!user?.workshopId) {
+            console.log('[CreateJob] No workshopId, skipping customer subscription');
+            return;
+        }
+        console.log('[CreateJob] Subscribing to customers for workshop:', user.workshopId);
+        const unsubscribe = firebaseService.subscribeToUsersByRole('customer', user.workshopId, (custs) => {
+            console.log('[CreateJob] Customer subscription received:', custs.length, 'customers');
+            setCustomers(custs);
+        });
+        return () => {
+            console.log('[CreateJob] Unsubscribing from customers');
+            unsubscribe();
+        };
+    }, [user?.workshopId]);
+
+    // Load vehicles when customer is selected
     useEffect(() => {
         if (selectedCustomer) {
             loadCustomerVehicles(selectedCustomer.id);
         } else if (!editJobId) {
-            // Only clear vehicles if not in edit mode (to prevent flicker or race conditions)
-            // or if we truly deselected customer
+            // Only clear vehicles if not in edit mode
             setCustomerVehicles([]);
             setSelectedVehicle(null);
         }
@@ -125,26 +145,18 @@ export default function CreateJobScreen() {
     const loadInitialData = async () => {
         if (!user?.workshopId) return;
         try {
-            // Fetch data independently to catch specific errors
+            // Fetch technicians
             try {
                 const techs = await firebaseService.getUsersByRole('technician', user.workshopId);
                 setTechnicians(techs);
             } catch (e) { console.error('Tech fetch error', e); }
 
+            // Fetch inventory
             try {
                 const inv = await firebaseService.getInventoryItems(user.workshopId);
                 setInventory(inv);
             } catch (e) { console.error('Inventory fetch error', e); }
 
-            try {
-                const custs = await firebaseService.getUsersByRole('customer', user.workshopId);
-                setCustomers(custs);
-            } catch (error: any) {
-                console.error('Customer fetch error:', error);
-                if (error.message?.includes('requires an index')) {
-                    Alert.alert('Configuration Error', 'Missing Firestore Index for Customers. Please check the console or documentation.');
-                }
-            }
         } catch (error) {
             console.error('Error loading data:', error);
         }
@@ -184,10 +196,16 @@ export default function CreateJobScreen() {
             }
             // Service charge/tech/parts will likely be empty for new requests, but we populate if they exist
             if (job.serviceCharge) setServiceCharge(job.serviceCharge.toString());
-            if (job.assignedTechnicianId) {
-                // We need to wait for technicians to load, or fetch specific user
+            // Load multiple technicians if available
+            if (job.assignedTechnicianIds && job.assignedTechnicianIds.length > 0) {
+                const techs = await Promise.all(
+                    job.assignedTechnicianIds.map(id => firebaseService.getUser(id))
+                );
+                setSelectedTechnicians(techs.filter((t): t is User => t !== null));
+            } else if (job.assignedTechnicianId) {
+                // Fallback for single technician
                 const tech = await firebaseService.getUser(job.assignedTechnicianId);
-                if (tech) setSelectedTechnician(tech as User);
+                if (tech) setSelectedTechnicians([tech as User]);
             }
             if (job.partsUsed) setParts(job.partsUsed);
 
@@ -240,20 +258,32 @@ export default function CreateJobScreen() {
                 workshopId: user.workshopId,
             } as any);
 
-            // Create registration code for account setup
-            await firebaseService.createCustomerRegistration(
-                newCustomer.email,
-                newCustomer.name,
-                newCustomer.phone || '',
-                user.id,
-                user.workshopId
-            );
+            // Customer is created in users collection - when they signup with this email,
+            // they will be auto-linked to this workshop
 
-            const createdUser = { id, ...newCustomer, role: 'customer' } as User;
-            setCustomers([...customers, createdUser]);
+            const createdUser: User = {
+                id,
+                ...newCustomer,
+                email: newCustomer.email.toLowerCase().trim(),
+                role: 'customer',
+                workshopId: user.workshopId,
+                createdAt: new Date(),
+                updatedAt: new Date()
+            };
+
+            setCustomers(prev => {
+                const exists = prev.some(c => c.id === createdUser.id);
+                if (exists) return prev;
+                // Add and sort by name
+                const updated = [...prev, createdUser];
+                return updated.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+            });
             setSelectedCustomer(createdUser);
             setIsCreatingCustomer(false);
             setShowCustomerModal(false);
+            setSearchCustomerQuery('');
+            setNewCustomer({ name: '', email: '', phone: '' }); // Reset form for next use
+            console.log('[CreateJob] Customer created successfully:', createdUser.id, createdUser.name);
         } catch (error) {
             console.error('Error creating customer:', error);
             Alert.alert('Error', 'Failed to create customer');
@@ -496,8 +526,8 @@ export default function CreateJobScreen() {
                         : 'repair',
                 issues,
                 description,
-                assignedTechnicianId: selectedTechnician?.id,
-                technicianName: selectedTechnician?.name,
+                assignedTechnicianIds: selectedTechnicians.map(t => t.id),
+                technicianNames: selectedTechnicians.map(t => t.name),
                 partsUsed: parts,
                 serviceCharge: parseFloat(serviceCharge),
                 // Only set status to 'received' if we are creating, 
@@ -565,7 +595,7 @@ export default function CreateJobScreen() {
             // TODO: In future, check for existing invoice.
 
             const labourCost = parseFloat(serviceCharge);
-            const invoiceItems = [
+            const quoteItems = [
                 {
                     description: 'LABOUR',
                     quantity: 1,
@@ -575,7 +605,7 @@ export default function CreateJobScreen() {
             ];
 
             parts.forEach(part => {
-                invoiceItems.push({
+                quoteItems.push({
                     description: part.partName,
                     quantity: part.quantity,
                     unitPrice: part.unitPrice,
@@ -583,24 +613,23 @@ export default function CreateJobScreen() {
                 });
             });
 
-            const subtotal = invoiceItems.reduce((sum, item) => sum + item.total, 0);
+            const subtotal = quoteItems.reduce((sum, item) => sum + item.total, 0);
             const total = subtotal;
 
-            const invoiceData: any = {
+            const quoteData: any = {
                 jobId,
-                userId: selectedCustomer.id,
+                customerId: selectedCustomer.id,
+                customerName: selectedCustomer.name,
                 workshopId: user.workshopId,
-                items: invoiceItems,
+                items: quoteItems,
                 subtotal,
                 vat: 0,
                 discount: 0,
                 total,
-                paymentStatus: 'pending',
-                amountPaid: 0,
-                paymentHistory: [],
+                status: 'pending_approval',
             };
 
-            await firebaseService.createInvoice(invoiceData);
+            await firebaseService.createQuote(quoteData);
 
             setShowSuccessModal(true);
         } catch (error) {
@@ -613,74 +642,82 @@ export default function CreateJobScreen() {
 
     return (
         <KeyboardAvoidingView
-            style={styles.container}
+            style={[styles.container, { backgroundColor: colors.background }]}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-            <View style={styles.header}>
+            <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
                 <TouchableOpacity onPress={() => router.push('/(workshop)/jobs')}>
-                    <Ionicons name="close" size={24} color="#000" />
+                    <Ionicons name="close" size={24} color={colors.textPrimary} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>{editJobId ? 'Confirm Job' : 'New Job'}</Text>
+                <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>{editJobId ? 'Confirm Job' : 'New Job'}</Text>
                 <TouchableOpacity onPress={handleSubmitJob} disabled={loading || loadingJob}>
                     {loading ? (
-                        <ActivityIndicator size="small" color="#000" />
+                        <ActivityIndicator size="small" color={colors.textPrimary} />
                     ) : (
-                        <Text style={styles.saveText}>{editJobId ? 'Update' : 'Create'}</Text>
+                        <Text style={[styles.saveText, { color: colors.primary }]}>{editJobId ? 'Update' : 'Create'}</Text>
                     )}
                 </TouchableOpacity>
             </View>
 
             {loadingJob ? (
                 <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color="#000" />
-                    <Text>Loading Job Details...</Text>
+                    <ActivityIndicator size="large" color={colors.primary} />
+                    <Text style={{ color: colors.textSecondary }}>Loading Job Details...</Text>
                 </View>
             ) : (
                 <ScrollView style={styles.content}>
                     {/* Customer Section */}
-                    <View style={styles.section}>
-                        <Text style={styles.label}>Customer Details</Text>
+                    <View style={[styles.section, { backgroundColor: 'transparent' }]}>
+                        <Text style={[styles.label, { color: colors.textSecondary }]}>Customer Details</Text>
                         <TouchableOpacity
-                            style={styles.selector}
+                            style={[styles.selector, { backgroundColor: 'transparent', borderColor: colors.border }]}
                             onPress={() => setShowCustomerModal(true)}
                         >
-                            <Text style={selectedCustomer ? styles.value : styles.placeholder}>
+                            <Text style={selectedCustomer ? [styles.value, { color: colors.textPrimary }] : [styles.placeholder, { color: colors.textTertiary }]}>
                                 {selectedCustomer ? selectedCustomer.name : 'Select Customer'}
                             </Text>
-                            <Ionicons name="chevron-down" size={20} color="#666" />
+                            <Ionicons name="chevron-down" size={20} color={colors.textSecondary} />
                         </TouchableOpacity>
                     </View>
 
                     {/* Vehicle Section */}
-                    <View style={styles.section}>
-                        <Text style={styles.label}>Vehicle Details</Text>
+                    <View style={[styles.section, { backgroundColor: 'transparent' }]}>
+                        <Text style={[styles.label, { color: colors.textSecondary }]}>Vehicle Details</Text>
                         <TouchableOpacity
-                            style={[styles.selector, !selectedCustomer && styles.disabled]}
+                            style={[styles.selector, { backgroundColor: 'transparent', borderColor: colors.border }, !selectedCustomer && styles.disabled]}
                             onPress={() => selectedCustomer && setShowVehicleModal(true)}
                             disabled={!selectedCustomer}
                         >
-                            <Text style={selectedVehicle ? styles.value : styles.placeholder}>
+                            <Text style={selectedVehicle ? [styles.value, { color: colors.textPrimary }] : [styles.placeholder, { color: colors.textTertiary }]}>
                                 {selectedVehicle
                                     ? `${selectedVehicle.make} ${selectedVehicle.model} (${selectedVehicle.licensePlate})`
                                     : 'Select Vehicle'}
                             </Text>
-                            <Ionicons name="chevron-down" size={20} color="#666" />
+                            <Ionicons name="chevron-down" size={20} color={colors.textSecondary} />
                         </TouchableOpacity>
                     </View>
 
                     {/* Issue Categories */}
-                    <View style={styles.section}>
-                        <Text style={styles.label}>Issue</Text>
+                    <View style={[styles.section, { backgroundColor: 'transparent' }]}>
+                        <Text style={[styles.label, { color: colors.textSecondary }]}>Issue</Text>
                         <View style={styles.issueChipsContainer}>
                             {ISSUE_OPTIONS.map((option) => {
                                 const active = issues.includes(option);
                                 return (
                                     <TouchableOpacity
                                         key={option}
-                                        style={[styles.issueChip, active && styles.issueChipActive]}
+                                        style={[
+                                            styles.issueChip,
+                                            { backgroundColor: colors.background, borderColor: colors.border },
+                                            active && { backgroundColor: colors.textPrimary, borderColor: colors.textPrimary }
+                                        ]}
                                         onPress={() => toggleIssue(option)}
                                     >
-                                        <Text style={[styles.issueChipText, active && styles.issueChipTextActive]}>
+                                        <Text style={[
+                                            styles.issueChipText,
+                                            { color: colors.textPrimary },
+                                            active && { color: colors.textInverse }
+                                        ]}>
                                             {option}
                                         </Text>
                                     </TouchableOpacity>
@@ -688,18 +725,19 @@ export default function CreateJobScreen() {
                             })}
                         </View>
                         {issues.length > 1 && (
-                            <Text style={styles.issueHint}>Multiple selections will be summarized on cards</Text>
+                            <Text style={[styles.issueHint, { color: colors.textSecondary }]}>Multiple selections will be summarized on cards</Text>
                         )}
                     </View>
 
                     {/* Description */}
-                    <View style={styles.section}>
-                        <Text style={styles.label}>Issue Description</Text>
+                    <View style={[styles.section, { backgroundColor: 'transparent' }]}>
+                        <Text style={[styles.label, { color: colors.textSecondary }]}>Issue Description</Text>
                         <TextInput
-                            style={styles.textArea}
+                            style={[styles.textArea, { backgroundColor: 'transparent', borderColor: colors.border, color: colors.textPrimary }]}
                             value={description}
                             onChangeText={setDescription}
                             placeholder="Describe the issue..."
+                            placeholderTextColor={colors.textTertiary}
                             multiline
                             numberOfLines={4}
                             textAlignVertical="top"
@@ -707,41 +745,42 @@ export default function CreateJobScreen() {
                     </View>
 
                     {/* Service Charge */}
-                    <View style={styles.section}>
-                        <Text style={styles.label}>Service Charge *</Text>
-                        <View style={styles.currencyInputContainer}>
-                            <Text style={styles.currencySymbol}>₦</Text>
+                    <View style={[styles.section, { backgroundColor: 'transparent' }]}>
+                        <Text style={[styles.label, { color: colors.textSecondary }]}>Service Charge *</Text>
+                        <View style={[styles.currencyInputContainer, { backgroundColor: 'transparent', borderColor: colors.border }]}>
+                            <Text style={[styles.currencySymbol, { color: colors.textPrimary }]}>₦</Text>
                             <TextInput
-                                style={styles.currencyInput}
+                                style={[styles.currencyInput, { color: colors.textPrimary }]}
                                 value={serviceCharge}
                                 onChangeText={(text) => {
                                     const numericValue = text.replace(/[^0-9.]/g, '');
                                     setServiceCharge(numericValue);
                                 }}
                                 placeholder="Enter service charge"
+                                placeholderTextColor={colors.textTertiary}
                                 keyboardType="numeric"
                             />
                         </View>
                     </View>
 
                     {/* Technician */}
-                    <View style={styles.section}>
-                        <Text style={styles.label}>Technician Assignment</Text>
+                    <View style={[styles.section, { backgroundColor: 'transparent' }]}>
+                        <Text style={[styles.label, { color: colors.textSecondary }]}>Technician Assignment</Text>
                         <TouchableOpacity
-                            style={styles.selector}
+                            style={[styles.selector, { backgroundColor: 'transparent', borderColor: colors.border }]}
                             onPress={() => setShowTechnicianModal(true)}
                         >
-                            <Text style={selectedTechnician ? styles.value : styles.placeholder}>
-                                {selectedTechnician ? selectedTechnician.name : 'Assign Technician'}
+                            <Text style={selectedTechnicians.length > 0 ? [styles.value, { color: colors.textPrimary }] : [styles.placeholder, { color: colors.textTertiary }]}>
+                                {selectedTechnicians.length > 0 ? selectedTechnicians.map(t => t.name).join(', ') : 'Assign Technicians'}
                             </Text>
-                            <Ionicons name="chevron-down" size={20} color="#666" />
+                            <Ionicons name="chevron-down" size={20} color={colors.textSecondary} />
                         </TouchableOpacity>
                     </View>
 
                     {/* Parts */}
-                    <View style={styles.section}>
+                    <View style={[styles.section, { backgroundColor: 'transparent' }]}>
                         <View style={styles.sectionHeader}>
-                            <Text style={styles.label}>Parts Needed</Text>
+                            <Text style={[styles.label, { color: colors.textSecondary }]}>Parts Needed</Text>
                             <TouchableOpacity onPress={async () => {
                                 // Reload inventory to get accurate stock when opening modal
                                 if (user?.workshopId) {
@@ -761,17 +800,17 @@ export default function CreateJobScreen() {
                                 }
                                 setShowPartModal(true);
                             }}>
-                                <Text style={styles.addText}>+ Add Part</Text>
+                                <Text style={[styles.addText, { color: colors.primary }]}>+ Add Part</Text>
                             </TouchableOpacity>
                         </View>
                         {parts.map((part, index) => (
-                            <View key={index} style={styles.partItem}>
+                            <View key={index} style={[styles.partItem, { backgroundColor: 'transparent', borderColor: colors.border }]}>
                                 <View>
-                                    <Text style={styles.partName}>{part.partName}</Text>
-                                    <Text style={styles.partMeta}>Qty: {part.quantity} • ₦{part.unitPrice}</Text>
+                                    <Text style={[styles.partName, { color: colors.textPrimary }]}>{part.partName}</Text>
+                                    <Text style={[styles.partMeta, { color: colors.textSecondary }]}>Qty: {part.quantity} • ₦{part.unitPrice}</Text>
                                 </View>
                                 <TouchableOpacity onPress={() => handleRemovePart(index)}>
-                                    <Ionicons name="trash-outline" size={20} color="#FF3B30" />
+                                    <Ionicons name="trash-outline" size={20} color={Colors.error} />
                                 </TouchableOpacity>
                             </View>
                         ))}
@@ -782,58 +821,77 @@ export default function CreateJobScreen() {
             {/* Customer Modal */}
             <Modal visible={showCustomerModal} animationType="slide">
                 <SafeAreaWrapper>
-                    <View style={styles.modalHeader}>
+                    <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
                         <TouchableOpacity onPress={() => setShowCustomerModal(false)}>
-                            <Text style={styles.closeText}>Close</Text>
+                            <Text style={[styles.closeText, { color: colors.textPrimary }]}>Close</Text>
                         </TouchableOpacity>
-                        <Text style={styles.modalTitle}>Select Customer</Text>
+                        <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Select Customer</Text>
                         <TouchableOpacity onPress={() => setIsCreatingCustomer(!isCreatingCustomer)}>
-                            <Text style={styles.addText}>{isCreatingCustomer ? 'Cancel' : 'New'}</Text>
+                            <Text style={[styles.addText, { color: colors.primary }]}>{isCreatingCustomer ? 'Cancel' : 'New'}</Text>
                         </TouchableOpacity>
                     </View>
 
                     {isCreatingCustomer ? (
                         <View style={styles.modalForm}>
                             <TextInput
-                                style={styles.input}
+                                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
                                 placeholder="Name"
+                                placeholderTextColor={colors.textTertiary}
                                 value={newCustomer.name}
                                 onChangeText={(t) => setNewCustomer({ ...newCustomer, name: t })}
                             />
                             <TextInput
-                                style={styles.input}
+                                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
                                 placeholder="Email"
+                                placeholderTextColor={colors.textTertiary}
                                 value={newCustomer.email}
                                 onChangeText={(t) => setNewCustomer({ ...newCustomer, email: t })}
                                 autoCapitalize="none"
                             />
                             <TextInput
-                                style={styles.input}
+                                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
                                 placeholder="Phone"
+                                placeholderTextColor={colors.textTertiary}
                                 value={newCustomer.phone}
                                 onChangeText={(t) => setNewCustomer({ ...newCustomer, phone: t })}
                             />
-                            <TouchableOpacity style={styles.primaryButton} onPress={handleCreateCustomer}>
+                            <TouchableOpacity style={[styles.primaryButton, { backgroundColor: colors.primary }]} onPress={handleCreateCustomer}>
                                 <Text style={styles.primaryButtonText}>Create Customer</Text>
                             </TouchableOpacity>
                         </View>
                     ) : (
-                        <FlatList
-                            data={customers}
-                            keyExtractor={(item) => item.id}
-                            renderItem={({ item }) => (
-                                <TouchableOpacity
-                                    style={styles.listItem}
-                                    onPress={() => {
-                                        setSelectedCustomer(item);
-                                        setShowCustomerModal(false);
-                                    }}
-                                >
-                                    <Text style={styles.listItemTitle}>{item.name}</Text>
-                                    <Text style={styles.listItemSubtitle}>{item.email}</Text>
-                                </TouchableOpacity>
-                            )}
-                        />
+                        <View style={{ flex: 1 }}>
+                            <TextInput
+                                style={[styles.input, { backgroundColor: 'transparent', borderColor: colors.border, color: colors.textPrimary, margin: 20, marginBottom: 10 }]}
+                                placeholder="Search Customer..."
+                                placeholderTextColor={colors.textTertiary}
+                                value={searchCustomerQuery}
+                                onChangeText={setSearchCustomerQuery}
+                            />
+                            <FlatList
+                                data={customers
+                                    .filter(c =>
+                                        c.name.toLowerCase().includes(searchCustomerQuery.toLowerCase()) ||
+                                        c.email.toLowerCase().includes(searchCustomerQuery.toLowerCase()) ||
+                                        (c.phone && c.phone.includes(searchCustomerQuery))
+                                    )
+                                    .sort((a, b) => a.name.localeCompare(b.name))
+                                }
+                                keyExtractor={(item) => item.id}
+                                renderItem={({ item }) => (
+                                    <TouchableOpacity
+                                        style={[styles.listItem, { borderBottomColor: colors.border }]}
+                                        onPress={() => {
+                                            setSelectedCustomer(item);
+                                            setShowCustomerModal(false);
+                                        }}
+                                    >
+                                        <Text style={[styles.listItemTitle, { color: colors.textPrimary }]}>{item.name}</Text>
+                                        <Text style={[styles.listItemSubtitle, { color: colors.textSecondary }]}>{item.email}</Text>
+                                    </TouchableOpacity>
+                                )}
+                            />
+                        </View>
                     )}
                 </SafeAreaWrapper>
             </Modal>
@@ -841,25 +899,26 @@ export default function CreateJobScreen() {
             {/* Vehicle Modal */}
             <Modal visible={showVehicleModal} animationType="slide">
                 <SafeAreaWrapper>
-                    <View style={styles.modalHeader}>
+                    <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
                         <TouchableOpacity onPress={isBrandSelectionMode ? () => setIsBrandSelectionMode(false) : () => {
                             setShowVehicleModal(false);
                             setNewVehicle({ make: '', model: '', year: '', licensePlate: '', vin: '' });
                             setIsCreatingVehicle(false);
                         }}>
-                            <Text style={styles.closeText}>{isBrandSelectionMode ? 'Back' : 'Close'}</Text>
+                            <Text style={[styles.closeText, { color: colors.textPrimary }]}>{isBrandSelectionMode ? 'Back' : 'Close'}</Text>
                         </TouchableOpacity>
-                        <Text style={styles.modalTitle}>{isBrandSelectionMode ? 'Select Make' : 'Select Vehicle'}</Text>
+                        <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>{isBrandSelectionMode ? 'Select Make' : 'Select Vehicle'}</Text>
                         <TouchableOpacity onPress={() => setIsCreatingVehicle(!isCreatingVehicle)} disabled={isBrandSelectionMode}>
-                            {!isBrandSelectionMode && <Text style={styles.addText}>{isCreatingVehicle ? 'Cancel' : 'New'}</Text>}
+                            {!isBrandSelectionMode && <Text style={[styles.addText, { color: colors.primary }]}>{isCreatingVehicle ? 'Cancel' : 'New'}</Text>}
                         </TouchableOpacity>
                     </View>
 
                     {isBrandSelectionMode ? (
                         <View style={{ flex: 1, padding: 20 }}>
                             <TextInput
-                                style={styles.input}
+                                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
                                 placeholder="Search or Enter Custom Brand..."
+                                placeholderTextColor={colors.textTertiary}
                                 value={searchBrandQuery}
                                 onChangeText={setSearchBrandQuery}
                                 autoFocus
@@ -870,21 +929,21 @@ export default function CreateJobScreen() {
                                 ListHeaderComponent={() => (
                                     searchBrandQuery.length > 0 ? (
                                         <TouchableOpacity
-                                            style={[styles.brandItem, { borderBottomWidth: 2, borderBottomColor: '#f0f0f0' }]}
+                                            style={[styles.brandItem, { borderBottomColor: colors.border }]}
                                             onPress={() => {
                                                 setNewVehicle({ ...newVehicle, make: searchBrandQuery });
                                                 setIsBrandSelectionMode(false);
                                                 setSearchBrandQuery('');
                                             }}
                                         >
-                                            <Ionicons name="create-outline" size={24} color="#000" style={{ marginRight: 12 }} />
-                                            <Text style={[styles.brandName, { fontWeight: '600' }]}>Use "{searchBrandQuery}"</Text>
+                                            <Ionicons name="create-outline" size={24} color={colors.textPrimary} style={{ marginRight: 12 }} />
+                                            <Text style={[styles.brandName, { fontWeight: '600', color: colors.textPrimary }]}>Use "{searchBrandQuery}"</Text>
                                         </TouchableOpacity>
                                     ) : null
                                 )}
                                 renderItem={({ item }) => (
                                     <TouchableOpacity
-                                        style={styles.brandItem}
+                                        style={[styles.brandItem, { borderBottomColor: colors.border }]}
                                         onPress={() => {
                                             setNewVehicle({ ...newVehicle, make: item.name });
                                             setIsBrandSelectionMode(false);
@@ -892,7 +951,7 @@ export default function CreateJobScreen() {
                                         }}
                                     >
                                         <BrandLogo brand={item.name} size={28} style={{ marginRight: 12 }} />
-                                        <Text style={styles.brandName}>{item.name}</Text>
+                                        <Text style={[styles.brandName, { color: colors.textPrimary }]}>{item.name}</Text>
                                     </TouchableOpacity>
                                 )}
                             />
@@ -901,21 +960,21 @@ export default function CreateJobScreen() {
                         <ScrollView style={styles.modalForm} contentContainerStyle={{ padding: 20 }}>
                             <View style={{ marginBottom: 20 }}>
                                 <TouchableOpacity
-                                    style={styles.selector}
+                                    style={[styles.selector, { backgroundColor: colors.surface, borderColor: colors.border }]}
                                     onPress={() => setIsBrandSelectionMode(true)}
                                 >
-                                    <Text style={newVehicle.make ? styles.value : styles.placeholder}>
+                                    <Text style={newVehicle.make ? [styles.value, { color: colors.textPrimary }] : [styles.placeholder, { color: colors.textTertiary }]}>
                                         {newVehicle.make || 'Select Make'}
                                     </Text>
-                                    <Ionicons name="chevron-down" size={20} color="#666" />
+                                    <Ionicons name="chevron-down" size={20} color={colors.textSecondary} />
                                 </TouchableOpacity>
                             </View>
 
                             <View style={{ marginBottom: 20 }}>
                                 <TextInput
-                                    style={styles.input}
+                                    style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
                                     placeholder="Model (e.g. Camry)"
-                                    placeholderTextColor="#999"
+                                    placeholderTextColor={colors.textTertiary}
                                     value={newVehicle.model}
                                     onChangeText={(t) => setNewVehicle({ ...newVehicle, model: t })}
                                 />
@@ -923,9 +982,9 @@ export default function CreateJobScreen() {
 
                             <View style={{ marginBottom: 20 }}>
                                 <TextInput
-                                    style={styles.input}
+                                    style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
                                     placeholder="Year"
-                                    placeholderTextColor="#999"
+                                    placeholderTextColor={colors.textTertiary}
                                     value={newVehicle.year}
                                     onChangeText={(t) => setNewVehicle({ ...newVehicle, year: t })}
                                     keyboardType="numeric"
@@ -934,9 +993,9 @@ export default function CreateJobScreen() {
 
                             <View style={{ marginBottom: 20 }}>
                                 <TextInput
-                                    style={styles.input}
+                                    style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
                                     placeholder="License Plate"
-                                    placeholderTextColor="#999"
+                                    placeholderTextColor={colors.textTertiary}
                                     value={newVehicle.licensePlate}
                                     onChangeText={(t) => setNewVehicle({ ...newVehicle, licensePlate: t })}
                                 />
@@ -944,26 +1003,26 @@ export default function CreateJobScreen() {
 
                             <View style={{ marginBottom: 20 }}>
                                 <TextInput
-                                    style={styles.input}
+                                    style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
                                     placeholder="VIN (Optional)"
-                                    placeholderTextColor="#999"
+                                    placeholderTextColor={colors.textTertiary}
                                     value={newVehicle.vin}
                                     onChangeText={(t) => setNewVehicle({ ...newVehicle, vin: t })}
                                 />
                             </View>
 
-                            <TouchableOpacity style={styles.primaryButton} onPress={handleCreateVehicle}>
-                                <Text style={styles.primaryButtonText}>Add Vehicle</Text>
+                            <TouchableOpacity style={[styles.primaryButton, { backgroundColor: colors.primary }]} onPress={handleCreateVehicle}>
+                                <Text style={[styles.primaryButtonText, { color: colors.textInverse }]}>Add Vehicle</Text>
                             </TouchableOpacity>
                         </ScrollView>
                     ) : (
                         <FlatList
                             data={customerVehicles}
                             keyExtractor={(item) => item.id}
-                            ListEmptyComponent={<Text style={styles.emptyText}>No vehicles found</Text>}
+                            ListEmptyComponent={<Text style={[styles.emptyText, { color: colors.textSecondary }]}>No vehicles found</Text>}
                             renderItem={({ item }) => (
                                 <TouchableOpacity
-                                    style={styles.listItem}
+                                    style={[styles.listItem, { borderBottomColor: colors.border }]}
                                     onPress={() => {
                                         setSelectedVehicle(item);
                                         setShowVehicleModal(false);
@@ -972,8 +1031,8 @@ export default function CreateJobScreen() {
                                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                                         <BrandLogo brand={item.make} size={30} style={{ marginRight: 12 }} />
                                         <View>
-                                            <Text style={styles.listItemTitle}>{item.make} {item.model}</Text>
-                                            <Text style={styles.listItemSubtitle}>{item.licensePlate}</Text>
+                                            <Text style={[styles.listItemTitle, { color: colors.textPrimary }]}>{item.make} {item.model}</Text>
+                                            <Text style={[styles.listItemSubtitle, { color: colors.textSecondary }]}>{item.licensePlate}</Text>
                                         </View>
                                     </View>
                                 </TouchableOpacity>
@@ -983,31 +1042,46 @@ export default function CreateJobScreen() {
                 </SafeAreaWrapper>
             </Modal>
 
-            {/* Technician Modal */}
+            {/* Technician Modal - Multi-Select */}
             <Modal visible={showTechnicianModal} animationType="slide">
                 <SafeAreaWrapper>
-                    <View style={styles.modalHeader}>
+                    <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
                         <TouchableOpacity onPress={() => setShowTechnicianModal(false)}>
-                            <Ionicons name="close" size={24} color="#000" />
+                            <Ionicons name="close" size={24} color={colors.textPrimary} />
                         </TouchableOpacity>
-                        <Text style={styles.modalTitle}>Select Technician</Text>
-                        <View style={{ width: 40 }} />
+                        <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Select Technicians ({selectedTechnicians.length})</Text>
+                        <TouchableOpacity onPress={() => setShowTechnicianModal(false)}>
+                            <Text style={[styles.saveText, { color: colors.primary }]}>Done</Text>
+                        </TouchableOpacity>
                     </View>
                     <FlatList
                         data={technicians}
                         keyExtractor={(item) => item.id}
-                        renderItem={({ item }) => (
-                            <TouchableOpacity
-                                style={styles.listItem}
-                                onPress={() => {
-                                    setSelectedTechnician(item);
-                                    setShowTechnicianModal(false);
-                                }}
-                            >
-                                <Text style={styles.listItemTitle}>{item.name}</Text>
-                                <Text style={styles.listItemSubtitle}>{item.email}</Text>
-                            </TouchableOpacity>
-                        )}
+                        renderItem={({ item }) => {
+                            const isSelected = selectedTechnicians.some(t => t.id === item.id);
+                            return (
+                                <TouchableOpacity
+                                    style={[styles.listItem, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomColor: colors.border }]}
+                                    onPress={() => {
+                                        if (isSelected) {
+                                            setSelectedTechnicians(selectedTechnicians.filter(t => t.id !== item.id));
+                                        } else {
+                                            setSelectedTechnicians([...selectedTechnicians, item]);
+                                        }
+                                    }}
+                                >
+                                    <View>
+                                        <Text style={[styles.listItemTitle, { color: colors.textPrimary }]}>{item.name}</Text>
+                                        <Text style={[styles.listItemSubtitle, { color: colors.textSecondary }]}>{item.email}</Text>
+                                    </View>
+                                    <Ionicons
+                                        name={isSelected ? "checkbox" : "square-outline"}
+                                        size={24}
+                                        color={isSelected ? colors.textPrimary : colors.textTertiary}
+                                    />
+                                </TouchableOpacity>
+                            );
+                        }}
                     />
                 </SafeAreaWrapper>
             </Modal>
@@ -1015,11 +1089,11 @@ export default function CreateJobScreen() {
             {/* Part Modal */}
             <Modal visible={showPartModal} animationType="slide">
                 <SafeAreaWrapper>
-                    <View style={styles.modalHeader}>
+                    <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
                         <TouchableOpacity onPress={() => setShowPartModal(false)}>
-                            <Ionicons name="close" size={24} color="#000" />
+                            <Ionicons name="close" size={24} color={colors.textPrimary} />
                         </TouchableOpacity>
-                        <Text style={styles.modalTitle}>Add Parts ({parts.length})</Text>
+                        <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Add Parts ({parts.length})</Text>
                         <View style={{ width: 40 }} />
                     </View>
 
@@ -1027,24 +1101,24 @@ export default function CreateJobScreen() {
                         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingBottom: 100 }}>
                             {/* Show Added Parts */}
                             {parts.length > 0 && (
-                                <View style={styles.addedPartsSection}>
-                                    <Text style={styles.label}>Added Parts</Text>
+                                <View style={[styles.addedPartsSection, { borderBottomColor: colors.border }]}>
+                                    <Text style={[styles.label, { color: colors.textSecondary }]}>Added Parts</Text>
                                     {parts.map((part, index) => (
-                                        <View key={index} style={styles.addedPartItem}>
+                                        <View key={index} style={[styles.addedPartItem, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
                                             <View style={{ flex: 1 }}>
-                                                <Text style={styles.addedPartName}>{part.partName}</Text>
-                                                <Text style={styles.addedPartMeta}>
+                                                <Text style={[styles.addedPartName, { color: colors.textPrimary }]}>{part.partName}</Text>
+                                                <Text style={[styles.addedPartMeta, { color: colors.textSecondary }]}>
                                                     Qty: {part.quantity} • ₦{part.unitPrice.toLocaleString()} each
                                                 </Text>
                                             </View>
                                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 15 }}>
                                                 {part.partId === 'EXTERNAL' && (
                                                     <TouchableOpacity onPress={() => handleEditPart(index)}>
-                                                        <Ionicons name="create-outline" size={22} color="#000" />
+                                                        <Ionicons name="create-outline" size={22} color={colors.textPrimary} />
                                                     </TouchableOpacity>
                                                 )}
                                                 <TouchableOpacity onPress={() => handleRemovePart(index)}>
-                                                    <Ionicons name="trash-outline" size={22} color="#FF3B30" />
+                                                    <Ionicons name="trash-outline" size={22} color={Colors.error} />
                                                 </TouchableOpacity>
                                             </View>
                                         </View>
@@ -1052,26 +1126,26 @@ export default function CreateJobScreen() {
                                 </View>
                             )}
 
-                            <View style={styles.tabContainer}>
+                            <View style={[styles.tabContainer, { backgroundColor: colors.background }]}>
                                 <TouchableOpacity
-                                    style={[styles.tab, partMode === 'inventory' && styles.activeTab]}
+                                    style={[styles.tab, partMode === 'inventory' && [styles.activeTab, { backgroundColor: colors.surface }]]}
                                     onPress={() => setPartMode('inventory')}
                                 >
-                                    <Text style={[styles.tabText, partMode === 'inventory' && styles.activeTabText]}>Inventory</Text>
+                                    <Text style={[styles.tabText, { color: colors.textSecondary }, partMode === 'inventory' && [styles.activeTabText, { color: colors.textPrimary }]]}>Inventory</Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity
-                                    style={[styles.tab, partMode === 'external' && styles.activeTab]}
+                                    style={[styles.tab, partMode === 'external' && [styles.activeTab, { backgroundColor: colors.surface }]]}
                                     onPress={() => setPartMode('external')}
                                 >
-                                    <Text style={[styles.tabText, partMode === 'external' && styles.activeTabText]}>External</Text>
+                                    <Text style={[styles.tabText, { color: colors.textSecondary }, partMode === 'external' && [styles.activeTabText, { color: colors.textPrimary }]]}>External</Text>
                                 </TouchableOpacity>
                             </View>
 
                             <View style={styles.modalForm}>
                                 {partMode === 'inventory' ? (
                                     <>
-                                        <Text style={styles.label}>Select Items</Text>
-                                        <Text style={styles.helperText}>Tap to select multiple items</Text>
+                                        <Text style={[styles.label, { color: colors.textSecondary }]}>Select Items</Text>
+                                        <Text style={[styles.helperText, { color: colors.textTertiary }]}>Tap to select multiple items</Text>
                                         <FlatList
                                             data={inventory.filter(item => getAvailableStock(item.id) > 0)}
                                             scrollEnabled={false}
@@ -1086,7 +1160,8 @@ export default function CreateJobScreen() {
                                                     <TouchableOpacity
                                                         style={[
                                                             styles.listItem,
-                                                            isSelected && styles.selectedItem,
+                                                            { borderBottomColor: colors.border },
+                                                            isSelected && [styles.selectedItem, { backgroundColor: colors.surface, borderColor: colors.textPrimary }],
                                                             availableStock === 0 && styles.disabledItem
                                                         ]}
                                                         onPress={() => availableStock > 0 && toggleInventoryItem(item)}
@@ -1094,15 +1169,15 @@ export default function CreateJobScreen() {
                                                     >
                                                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                                                             <View style={{ flex: 1 }}>
-                                                                <Text style={styles.listItemTitle}>{item.name}</Text>
-                                                                <Text style={styles.listItemSubtitle}>
+                                                                <Text style={[styles.listItemTitle, { color: colors.textPrimary }]}>{item.name}</Text>
+                                                                <Text style={[styles.listItemSubtitle, { color: colors.textSecondary }]}>
                                                                     Available: {availableStock} • ₦{item.sellingPrice || item.unitPrice}
                                                                 </Text>
                                                             </View>
                                                             {isSelected ? (
-                                                                <View style={styles.stepperContainer}>
+                                                                <View style={[styles.stepperContainer, { backgroundColor: colors.background }]}>
                                                                     <TouchableOpacity
-                                                                        style={styles.stepperButton}
+                                                                        style={[styles.stepperButton, { backgroundColor: colors.surface }]}
                                                                         onPress={(e) => {
                                                                             e.stopPropagation();
                                                                             const currentQty = parseInt(qty) || 0;
@@ -1115,13 +1190,13 @@ export default function CreateJobScreen() {
                                                                             }
                                                                         }}
                                                                     >
-                                                                        <Ionicons name="remove" size={20} color="#000" />
+                                                                        <Ionicons name="remove" size={20} color={colors.textPrimary} />
                                                                     </TouchableOpacity>
 
-                                                                    <Text style={styles.stepperValue}>{qty}</Text>
+                                                                    <Text style={[styles.stepperValue, { color: colors.textPrimary }]}>{qty}</Text>
 
                                                                     <TouchableOpacity
-                                                                        style={styles.stepperButton}
+                                                                        style={[styles.stepperButton, { backgroundColor: colors.surface }]}
                                                                         onPress={(e) => {
                                                                             e.stopPropagation();
                                                                             const currentQty = parseInt(qty) || 0;
@@ -1132,11 +1207,11 @@ export default function CreateJobScreen() {
                                                                             }
                                                                         }}
                                                                     >
-                                                                        <Ionicons name="add" size={20} color="#000" />
+                                                                        <Ionicons name="add" size={20} color={colors.textPrimary} />
                                                                     </TouchableOpacity>
                                                                 </View>
                                                             ) : (
-                                                                <Ionicons name="ellipse-outline" size={24} color="#ccc" />
+                                                                <Ionicons name="ellipse-outline" size={24} color={colors.border} />
                                                             )}
                                                         </View>
                                                     </TouchableOpacity>
@@ -1145,7 +1220,7 @@ export default function CreateJobScreen() {
                                         />
                                         <TouchableOpacity
                                             style={{
-                                                backgroundColor: '#F0F0F0',
+                                                backgroundColor: colors.surface,
                                                 padding: 15,
                                                 borderRadius: 12,
                                                 alignItems: 'center',
@@ -1153,24 +1228,24 @@ export default function CreateJobScreen() {
                                             }}
                                             onPress={addInventorySelectionToList}
                                         >
-                                            <Text style={{ color: '#000', fontWeight: '600', fontSize: 16 }}>+ Add Selection to List</Text>
+                                            <Text style={{ color: colors.textPrimary, fontWeight: '600', fontSize: 16 }}>+ Add Selection to List</Text>
                                         </TouchableOpacity>
                                     </>
                                 ) : (
                                     <>
                                         <TextInput
-                                            style={styles.input}
+                                            style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
                                             placeholder="Part Name"
-                                            placeholderTextColor="#999"
+                                            placeholderTextColor={colors.textTertiary}
                                             value={externalPart.name}
                                             onChangeText={(t) => setExternalPart({ ...externalPart, name: t })}
                                         />
 
                                         <View style={{ marginBottom: 15 }}>
-                                            <Text style={styles.label}>Quantity</Text>
-                                            <View style={[styles.stepperContainer, { justifyContent: 'space-between', padding: 10, backgroundColor: '#f9f9f9' }]}>
+                                            <Text style={[styles.label, { color: colors.textSecondary }]}>Quantity</Text>
+                                            <View style={[styles.stepperContainer, { justifyContent: 'space-between', padding: 10, backgroundColor: colors.surface }]}>
                                                 <TouchableOpacity
-                                                    style={styles.stepperButton}
+                                                    style={[styles.stepperButton, { backgroundColor: colors.surface }]}
                                                     onPress={() => {
                                                         const currentQty = parseInt(externalPart.quantity) || 1;
                                                         if (currentQty > 1) {
@@ -1178,41 +1253,41 @@ export default function CreateJobScreen() {
                                                         }
                                                     }}
                                                 >
-                                                    <Ionicons name="remove" size={24} color="#000" />
+                                                    <Ionicons name="remove" size={24} color={colors.textPrimary} />
                                                 </TouchableOpacity>
 
-                                                <Text style={[styles.stepperValue, { fontSize: 18 }]}>{externalPart.quantity}</Text>
+                                                <Text style={[styles.stepperValue, { fontSize: 18, color: colors.textPrimary }]}>{externalPart.quantity}</Text>
 
                                                 <TouchableOpacity
-                                                    style={styles.stepperButton}
+                                                    style={[styles.stepperButton, { backgroundColor: colors.surface }]}
                                                     onPress={() => {
                                                         const currentQty = parseInt(externalPart.quantity) || 1;
                                                         setExternalPart({ ...externalPart, quantity: (currentQty + 1).toString() });
                                                     }}
                                                 >
-                                                    <Ionicons name="add" size={24} color="#000" />
+                                                    <Ionicons name="add" size={24} color={colors.textPrimary} />
                                                 </TouchableOpacity>
                                             </View>
                                         </View>
 
                                         <TextInput
-                                            style={styles.input}
+                                            style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
                                             placeholder="Unit Cost"
-                                            placeholderTextColor="#999"
+                                            placeholderTextColor={colors.textTertiary}
                                             value={externalPart.cost}
                                             onChangeText={(t) => setExternalPart({ ...externalPart, cost: t })}
                                             keyboardType="numeric"
                                         />
                                         <TextInput
-                                            style={styles.input}
+                                            style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.textPrimary }]}
                                             placeholder="Supplier (Optional)"
-                                            placeholderTextColor="#999"
+                                            placeholderTextColor={colors.textTertiary}
                                             value={externalPart.supplier}
                                             onChangeText={(t) => setExternalPart({ ...externalPart, supplier: t })}
                                         />
                                         <TouchableOpacity
                                             style={{
-                                                backgroundColor: '#F0F0F0',
+                                                backgroundColor: colors.surface,
                                                 padding: 15,
                                                 borderRadius: 12,
                                                 alignItems: 'center',
@@ -1221,43 +1296,43 @@ export default function CreateJobScreen() {
                                             }}
                                             onPress={addExternalPartToList}
                                         >
-                                            <Text style={{ color: '#000', fontWeight: '600', fontSize: 16 }}>+ Add to List</Text>
+                                            <Text style={{ color: colors.textPrimary, fontWeight: '600', fontSize: 16 }}>+ Add to List</Text>
                                         </TouchableOpacity>
                                     </>
                                 )}
                             </View>
-                        </ScrollView>
+                        </ScrollView >
 
                         {/* Global Add Button */}
-                        <View style={styles.footer}>
-                            <TouchableOpacity style={styles.primaryButton} onPress={handleAddPart}>
-                                <Text style={styles.primaryButtonText}>
+                        < View style={[styles.footer, { backgroundColor: colors.background, borderTopColor: colors.border }]} >
+                            <TouchableOpacity style={[styles.primaryButton, { backgroundColor: colors.primary }]} onPress={handleAddPart}>
+                                <Text style={[styles.primaryButtonText, { color: colors.textInverse }]}>
                                     Done
                                 </Text>
                             </TouchableOpacity>
-                        </View>
-                    </View>
-                </SafeAreaWrapper>
-            </Modal>
+                        </View >
+                    </View >
+                </SafeAreaWrapper >
+            </Modal >
 
             {/* Success Modal */}
-            <Modal
+            < Modal
                 visible={showSuccessModal}
                 transparent={true}
                 animationType="fade"
                 statusBarTranslucent={true}
             >
                 <View style={styles.successModalOverlay}>
-                    <View style={styles.successModalContent}>
-                        <View style={styles.successIconContainer}>
+                    <View style={[styles.successModalContent, { backgroundColor: colors.surface }]}>
+                        <View style={[styles.successIconContainer, { backgroundColor: '#30D158' }]}>
                             <Ionicons name="checkmark" size={40} color="#fff" />
                         </View>
-                        <Text style={styles.successTitle}>Job Created!</Text>
-                        <Text style={styles.successMessage}>
+                        <Text style={[styles.successTitle, { color: colors.textPrimary }]}>Job Created!</Text>
+                        <Text style={[styles.successMessage, { color: colors.textSecondary }]}>
                             The job has been successfully created for {selectedCustomer?.name}
                         </Text>
                         <TouchableOpacity
-                            style={styles.successButton}
+                            style={[styles.successButton, { backgroundColor: '#30D158' }]}
                             onPress={() => {
                                 setShowSuccessModal(false);
                                 router.back();
@@ -1267,14 +1342,15 @@ export default function CreateJobScreen() {
                         </TouchableOpacity>
                     </View>
                 </View>
-            </Modal>
-        </KeyboardAvoidingView>
+            </Modal >
+        </KeyboardAvoidingView >
     );
 }
 
 function SafeAreaWrapper({ children }: { children: React.ReactNode }) {
+    const colors = useColors();
     return (
-        <View style={{ flex: 1, backgroundColor: '#fff', paddingTop: Platform.OS === 'ios' ? 50 : 20 }}>
+        <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: Platform.OS === 'ios' ? 50 : 20 }}>
             {children}
         </View>
     );

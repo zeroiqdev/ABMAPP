@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  Platform,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,10 +17,17 @@ import { Invoice, Job, User } from '@/types';
 import { format } from 'date-fns';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { useColors } from '@/constants/design';
 
 export default function InvoiceDetailsScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const insets = useSafeAreaInsets();
+  const colors = useColors();
+  const styles = useMemo(() => getStyles(colors, insets), [colors, insets]);
+
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [job, setJob] = useState<Job | null>(null);
   const [customer, setCustomer] = useState<User | null>(null);
@@ -162,18 +170,18 @@ export default function InvoiceDetailsScreen() {
 
   const getPaymentStatusColor = (status: string) => {
     switch (status) {
-      case 'paid': return '#30D158';
-      case 'pending': return '#FFA500';
-      case 'partially_paid': return '#5856D6';
-      case 'failed': return '#FF3B30';
-      default: return '#666';
+      case 'paid': return colors.success;
+      case 'pending': return colors.warning;
+      case 'partially_paid': return colors.primary; // Or specific purple if available, but primary is safe
+      case 'failed': return colors.error;
+      default: return colors.textSecondary;
     }
   };
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#000" />
+        <ActivityIndicator size="large" color={colors.textPrimary} />
       </View>
     );
   }
@@ -183,7 +191,7 @@ export default function InvoiceDetailsScreen() {
       <View style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={24} color="#000" />
+            <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Invoice Details</Text>
           <View style={{ width: 24 }} />
@@ -199,16 +207,19 @@ export default function InvoiceDetailsScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#000" />
+          <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Invoice Details</Text>
         <TouchableOpacity onPress={handleDownload} style={styles.downloadButton}>
           <Text style={styles.downloadButtonText}>Download</Text>
-          <Ionicons name="download-outline" size={20} color="#000" />
+          <Ionicons name="download-outline" size={20} color={colors.textPrimary} />
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={{ paddingBottom: (Platform.OS === 'ios' ? insets.bottom : Math.max(insets.bottom, 20)) + 80 }}
+      >
 
         {/* Invoice Info Card */}
         <View style={styles.invoiceCard}>
@@ -217,12 +228,16 @@ export default function InvoiceDetailsScreen() {
               <Text style={styles.invoiceNumber}>Invoice #{invoice.id.slice(0, 8)}</Text>
               <Text style={styles.invoiceDate}>{format(invoice.createdAt, 'MMM dd, yyyy')}</Text>
               {invoice.dueDate && (
-                <Text style={[styles.invoiceDate, { color: '#FF3B30', marginTop: 4 }]}>
+                <Text style={[styles.invoiceDate, { color: colors.error, marginTop: 4 }]}>
                   Due: {format(invoice.dueDate, 'MMM dd, yyyy')}
                 </Text>
               )}
             </View>
-            <View style={[styles.statusBadge, { backgroundColor: getPaymentStatusColor(invoice.paymentStatus) + '20' }]}>
+            <View style={[styles.statusBadge, {
+              backgroundColor: getPaymentStatusColor(invoice.paymentStatus) + '15',
+              borderWidth: 1,
+              borderColor: getPaymentStatusColor(invoice.paymentStatus) + '30'
+            }]}>
               <Text style={[styles.statusText, { color: getPaymentStatusColor(invoice.paymentStatus) }]}>
                 {invoice.paymentStatus.replace('_', ' ').toUpperCase()}
               </Text>
@@ -297,12 +312,17 @@ export default function InvoiceDetailsScreen() {
               </View>
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>
-                  {(invoice.total - (invoice.amountPaid || 0)) < 0 ? 'Overpayment:' : 'Balance Due:'}
+                  {(invoice.total - (invoice.amountPaid || 0)) <= 0 ? 'Status:' : 'Balance Due:'}
                 </Text>
-                <Text style={[styles.summaryValue, (invoice.total - (invoice.amountPaid || 0)) < 0 ? { color: '#30D158' } : styles.balanceDue]}>
-                  ₦
-                  {Math.abs(invoice.total - (invoice.amountPaid || 0)).toLocaleString()}
-                </Text>
+                {(invoice.total - (invoice.amountPaid || 0)) <= 0 ? (
+                  <Text style={[styles.summaryValue, { color: colors.success }]}>
+                    Fully Paid {(invoice.total - (invoice.amountPaid || 0)) < 0 ? `(Credit ₦${Math.abs(invoice.total - (invoice.amountPaid || 0)).toLocaleString()})` : ''}
+                  </Text>
+                ) : (
+                  <Text style={[styles.summaryValue, styles.balanceDue]}>
+                    ₦{Math.abs(invoice.total - (invoice.amountPaid || 0)).toLocaleString()}
+                  </Text>
+                )}
               </View>
             </>
           )}
@@ -311,10 +331,10 @@ export default function InvoiceDetailsScreen() {
         {/* Payment Button */}
         {invoice.paymentStatus !== 'paid' && (
           <TouchableOpacity
-            style={styles.payButton}
+            style={[styles.payButton, { backgroundColor: colors.textPrimary }]}
             onPress={() => setShowPaymentModal(true)}
           >
-            <Text style={styles.payButtonText}>Pay Now</Text>
+            <Text style={[styles.payButtonText, { color: colors.textInverse }]}>Pay Now</Text>
           </TouchableOpacity>
         )}
 
@@ -332,7 +352,7 @@ export default function InvoiceDetailsScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Bank Transfer</Text>
               <TouchableOpacity onPress={() => setShowPaymentModal(false)}>
-                <Ionicons name="close" size={24} color="#000" />
+                <Ionicons name="close" size={24} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
             <View style={styles.bankDetailsContainer}>
@@ -349,12 +369,12 @@ export default function InvoiceDetailsScreen() {
                   // Copy logic could be here
                   Alert.alert('Copied', 'Account number copied to clipboard');
                 }}>
-                  <Ionicons name="copy-outline" size={20} color="#000" />
+                  <Ionicons name="copy-outline" size={20} color={colors.textPrimary} />
                 </TouchableOpacity>
               </View>
 
               <View style={styles.instructionContainer}>
-                <Ionicons name="information-circle-outline" size={20} color="#666" />
+                <Ionicons name="information-circle-outline" size={20} color={colors.textSecondary} />
                 <Text style={styles.instructionText}>
                   Please use your Invoice #{invoice.id.slice(0, 8)} as the payment reference.
                 </Text>
@@ -362,10 +382,10 @@ export default function InvoiceDetailsScreen() {
             </View>
 
             <TouchableOpacity
-              style={styles.doneButton}
+              style={[styles.doneButton, { backgroundColor: colors.textPrimary }]}
               onPress={() => setShowPaymentModal(false)}
             >
-              <Text style={styles.doneButtonText}>I've made the transfer</Text>
+              <Text style={[styles.doneButtonText, { color: colors.textInverse }]}>I've made the transfer</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -374,15 +394,16 @@ export default function InvoiceDetailsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any, insets: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -390,26 +411,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     paddingTop: 60,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: colors.border,
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
+    color: colors.textPrimary,
   },
   downloadButton: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 8,
     borderWidth: 1,
-    borderColor: '#eee',
+    borderColor: colors.border,
     borderRadius: 8,
   },
   downloadButtonText: {
     marginRight: 8,
     fontWeight: '600',
     fontSize: 14,
+    color: colors.textPrimary,
   },
   content: {
     flex: 1,
@@ -422,9 +445,10 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 15,
+    color: colors.textPrimary,
   },
   invoiceCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     borderRadius: 12,
     padding: 15,
     marginBottom: 20,
@@ -443,12 +467,12 @@ const styles = StyleSheet.create({
   invoiceNumber: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   invoiceDate: {
     fontSize: 12,
-    color: '#666',
+    color: colors.textSecondary,
   },
   statusBadge: {
     paddingHorizontal: 12,
@@ -466,42 +490,42 @@ const styles = StyleSheet.create({
   },
   amountLabel: {
     fontSize: 14,
-    color: '#666',
+    color: colors.textSecondary,
   },
   amountValue: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#000',
+    color: colors.textPrimary,
   },
   paymentInfo: {
     marginTop: 10,
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: '#eee',
+    borderTopColor: colors.border,
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
   paidText: {
     fontSize: 12,
-    color: '#30D158',
+    color: colors.success,
     fontWeight: '500',
   },
   remainingText: {
     fontSize: 12,
-    color: '#FF3B30',
+    color: colors.error,
     fontWeight: '500',
   },
 
   // Item Styles
   itemsSection: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     borderRadius: 12,
     padding: 15,
   },
   itemRow: {
     marginBottom: 15,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: colors.border,
     paddingBottom: 15,
   },
   itemInfoContainer: {
@@ -515,17 +539,17 @@ const styles = StyleSheet.create({
   itemDescription: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#000',
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   itemDetails: {
     fontSize: 14,
-    color: '#666',
+    color: colors.textSecondary,
   },
 
   // Summary Styles
   summarySection: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     padding: 15,
     borderRadius: 12,
     marginBottom: 20,
@@ -537,28 +561,28 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     fontSize: 14,
-    color: '#666',
+    color: colors.textSecondary,
   },
   summaryValue: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#000',
+    color: colors.textPrimary,
   },
   balanceDue: {
-    color: '#FF3B30',
+    color: colors.error,
     fontSize: 18,
   },
 
   // Pay Button
   payButton: {
-    backgroundColor: '#000',
+    backgroundColor: colors.textPrimary,
     padding: 16,
     borderRadius: 12,
     alignItems: 'center',
     marginBottom: 30,
   },
   payButtonText: {
-    color: '#fff',
+    color: colors.textInverse,
     fontSize: 16,
     fontWeight: 'bold',
   },
@@ -566,13 +590,13 @@ const styles = StyleSheet.create({
   // Modal Styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: colors.overlay,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
   modalContent: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     borderRadius: 20,
     width: '100%',
     maxWidth: 340,
@@ -587,26 +611,27 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
+    color: colors.textPrimary,
   },
   bankDetailsContainer: {
     marginBottom: 20,
   },
   bankLabel: {
     fontSize: 12,
-    color: '#666',
+    color: colors.textSecondary,
     marginBottom: 4,
   },
   bankValue: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#000',
+    color: colors.textPrimary,
     marginBottom: 15,
   },
   accountNumberContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.background,
     padding: 15,
     borderRadius: 10,
     marginBottom: 15,
@@ -615,29 +640,30 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     letterSpacing: 2,
+    color: colors.textPrimary,
   },
   instructionContainer: {
     flexDirection: 'row',
     gap: 10,
-    backgroundColor: '#f0f9ff',
+    backgroundColor: colors.background, // Or a blue tint? Keeping it simple for dark mode safe
     padding: 15,
     borderRadius: 10,
     alignItems: 'flex-start',
   },
   instructionText: {
     fontSize: 12,
-    color: '#007AFF',
+    color: colors.primary,
     flex: 1,
     lineHeight: 18,
   },
   doneButton: {
-    backgroundColor: '#000',
+    backgroundColor: colors.textPrimary,
     padding: 15,
     borderRadius: 10,
     alignItems: 'center',
   },
   doneButtonText: {
-    color: '#fff',
+    color: colors.textInverse,
     fontWeight: '600',
   },
   emptyState: {
@@ -647,7 +673,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    color: '#999',
+    color: colors.textSecondary,
   },
 });
 

@@ -12,6 +12,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
+import { useColors } from '@/constants/design';
 import { useCartStore } from '@/store/cartStore';
 import { firebaseService } from '@/services/firebaseService';
 import { paymentService } from '@/services/paymentService';
@@ -20,6 +21,8 @@ import { Colors } from '@/constants/design';
 
 export default function CheckoutScreen() {
   const router = useRouter();
+  const colors = useColors();
+  const styles = getStyles(colors);
   const { user, isGuest, guestEmail, setGuestEmail } = useAuthStore();
   const { items: cartItems, getTotal, clearCart } = useCartStore();
   const [deliveryMethod, setDeliveryMethod] = useState<'delivery' | 'pickup'>('delivery');
@@ -47,6 +50,11 @@ export default function CheckoutScreen() {
 
     if (!effectiveEmail || !effectiveEmail.includes('@')) {
       Alert.alert('Error', 'Please provide a valid email address');
+      return;
+    }
+
+    if (!phone || phone.trim().length < 10) {
+      Alert.alert('Error', 'Please provide a valid phone number');
       return;
     }
 
@@ -185,19 +193,19 @@ export default function CheckoutScreen() {
           </Text>
 
           <View style={{ backgroundColor: '#fff', padding: 20, borderRadius: 12, width: '100%', alignItems: 'center' }}>
-            <Text style={{ color: '#666', marginBottom: 4 }}>Bank Name</Text>
-            <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 16 }}>{monnifyDetails.bankName}</Text>
+            <Text style={{ color: colors.textSecondary, marginBottom: 4 }}>Bank Name</Text>
+            <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 16, color: colors.textPrimary }}>{monnifyDetails.bankName}</Text>
 
-            <Text style={{ color: '#666', marginBottom: 4 }}>Account Number</Text>
-            <Text style={{ fontSize: 24, fontWeight: 'bold', marginBottom: 16, color: '#000' }}>{monnifyDetails.accountNumber}</Text>
+            <Text style={{ color: colors.textSecondary, marginBottom: 4 }}>Account Number</Text>
+            <Text style={{ fontSize: 24, fontWeight: 'bold', marginBottom: 16, color: colors.textPrimary }}>{monnifyDetails.accountNumber}</Text>
 
-            <Text style={{ color: '#666', marginBottom: 4 }}>Account Name</Text>
-            <Text style={{ fontSize: 16, fontWeight: '600', marginBottom: 0 }}>{monnifyDetails.accountName}</Text>
+            <Text style={{ color: colors.textSecondary, marginBottom: 4 }}>Account Name</Text>
+            <Text style={{ fontSize: 16, fontWeight: '600', marginBottom: 0, color: colors.textPrimary }}>{monnifyDetails.accountName}</Text>
           </View>
 
-          <View style={styles.infoBox}>
-            <Ionicons name="information-circle-outline" size={24} color={Colors.primary} />
-            <Text style={styles.infoText}>
+          <View style={[styles.infoBox, { backgroundColor: colors.primary + '20' }]}>
+            <Ionicons name="information-circle-outline" size={24} color={colors.primary} />
+            <Text style={[styles.infoText, { color: colors.primary }]}>
               Your order will be automatically confirmed once we receive the payment. This usually takes a few minutes.
             </Text>
           </View>
@@ -222,13 +230,44 @@ export default function CheckoutScreen() {
             router.back();
           }
         }}>
-          <Ionicons name="arrow-back" size={24} color="#000" />
+          <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Checkout</Text>
         <View style={{ width: 24 }} />
       </View>
 
       <ScrollView style={styles.content}>
+        {/* Contact Information - FIRST SECTION (Required) */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Contact Information</Text>
+
+          <View style={{ marginBottom: 15 }}>
+            <Text style={[styles.deliveryLabel, { marginBottom: 5 }]}>Email Address *</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="your@email.com"
+              placeholderTextColor={colors.textTertiary}
+              value={user?.email || guestEmailInput}
+              onChangeText={setGuestEmailInput}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              editable={!user?.email}
+            />
+          </View>
+
+          <View>
+            <Text style={[styles.deliveryLabel, { marginBottom: 5 }]}>Phone Number *</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter your phone number"
+              placeholderTextColor={colors.textTertiary}
+              value={phone}
+              onChangeText={setPhone}
+              keyboardType="phone-pad"
+            />
+          </View>
+        </View>
+
         {/* Delivery Method */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Delivery Method</Text>
@@ -242,7 +281,7 @@ export default function CheckoutScreen() {
             <Ionicons
               name={deliveryMethod === 'delivery' ? 'radio-button-on' : 'radio-button-off'}
               size={24}
-              color={deliveryMethod === 'delivery' ? '#000' : '#ccc'}
+              color={deliveryMethod === 'delivery' ? colors.primary : colors.textTertiary}
             />
             <View style={styles.deliveryInfo}>
               <Text style={styles.deliveryLabel}>Home Delivery</Text>
@@ -261,7 +300,7 @@ export default function CheckoutScreen() {
             <Ionicons
               name={deliveryMethod === 'pickup' ? 'radio-button-on' : 'radio-button-off'}
               size={24}
-              color={deliveryMethod === 'pickup' ? '#000' : '#ccc'}
+              color={deliveryMethod === 'pickup' ? colors.primary : colors.textTertiary}
             />
             <View style={styles.deliveryInfo}>
               <Text style={styles.deliveryLabel}>Store Pickup</Text>
@@ -277,6 +316,7 @@ export default function CheckoutScreen() {
             <TextInput
               style={styles.input}
               placeholder="Enter your full address"
+              placeholderTextColor={colors.textTertiary}
               value={shippingAddress}
               onChangeText={setShippingAddress}
               multiline
@@ -285,34 +325,6 @@ export default function CheckoutScreen() {
             />
           </View>
         )}
-
-        {/* Contact Info */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Contact Information</Text>
-
-          {!user && (
-            <View style={{ marginBottom: 15 }}>
-              <Text style={[styles.deliveryLabel, { marginBottom: 5 }]}>Email Address (Required for Order Tracking)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="your@email.com"
-                value={user?.email || guestEmailInput} // Using local state guestEmailInput
-                onChangeText={setGuestEmailInput}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                editable={!user}
-              />
-            </View>
-          )}
-
-          <TextInput
-            style={styles.input}
-            placeholder="Phone Number"
-            value={phone}
-            onChangeText={setPhone}
-            keyboardType="phone-pad"
-          />
-        </View>
 
 
         {/* Payment Method */}
@@ -328,7 +340,7 @@ export default function CheckoutScreen() {
             <Ionicons
               name={paymentMethod === 'card' ? 'radio-button-on' : 'radio-button-off'}
               size={24}
-              color={paymentMethod === 'card' ? '#000' : '#ccc'}
+              color={paymentMethod === 'card' ? colors.primary : colors.textTertiary}
             />
             <View style={styles.deliveryInfo}>
               <Text style={styles.deliveryLabel}>Card Payment</Text>
@@ -345,7 +357,7 @@ export default function CheckoutScreen() {
             <Ionicons
               name={paymentMethod === 'monnify' ? 'radio-button-on' : 'radio-button-off'}
               size={24}
-              color={paymentMethod === 'monnify' ? '#000' : '#ccc'}
+              color={paymentMethod === 'monnify' ? colors.primary : colors.textTertiary}
             />
             <View style={styles.deliveryInfo}>
               <Text style={styles.deliveryLabel}>Bank Transfer</Text>
@@ -384,10 +396,10 @@ export default function CheckoutScreen() {
           disabled={processing}
         >
           {processing ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={colors.textInverse} />
           ) : (
             <>
-              <Ionicons name="lock-closed-outline" size={20} color="#fff" />
+              <Ionicons name="lock-closed-outline" size={20} color={colors.textInverse} />
               <Text style={styles.checkoutButtonText}>
                 Pay ₦{total.toLocaleString()}
               </Text>
@@ -399,10 +411,10 @@ export default function CheckoutScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -410,40 +422,42 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     paddingTop: 60,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: colors.border,
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
+    color: colors.textPrimary,
   },
   content: {
     flex: 1,
   },
   section: {
     padding: 20,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     marginBottom: 10,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 15,
+    color: colors.textPrimary,
   },
   deliveryOption: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 15,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: colors.background,
     borderRadius: 12,
     marginBottom: 10,
     borderWidth: 2,
-    borderColor: '#eee',
+    borderColor: colors.border,
   },
   deliveryOptionActive: {
-    borderColor: '#000',
-    backgroundColor: 'rgba(0,0,0,0.05)',
+    borderColor: colors.primary,
+    backgroundColor: colors.primary + '10',
   },
   deliveryInfo: {
     marginLeft: 12,
@@ -452,24 +466,25 @@ const styles = StyleSheet.create({
   deliveryLabel: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   deliveryDesc: {
     fontSize: 12,
-    color: '#666',
+    color: colors.textSecondary,
   },
   input: {
-    backgroundColor: '#f9f9f9',
+    backgroundColor: colors.background,
     borderRadius: 12,
     padding: 15,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: colors.border,
     minHeight: 50,
+    color: colors.textPrimary,
   },
   summaryCard: {
-    backgroundColor: '#f9f9f9',
+    backgroundColor: colors.background,
     borderRadius: 12,
     padding: 15,
   },
@@ -480,40 +495,40 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     fontSize: 14,
-    color: '#666',
+    color: colors.textSecondary,
   },
   summaryValue: {
     fontSize: 14,
-    color: '#333',
+    color: colors.textPrimary,
     fontWeight: '600',
   },
   totalRow: {
     borderTopWidth: 1,
-    borderTopColor: '#eee',
+    borderTopColor: colors.border,
     paddingTop: 15,
     marginTop: 10,
   },
   totalLabel: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#333',
+    color: colors.textPrimary,
   },
   totalValue: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#000',
+    color: colors.textPrimary,
   },
   footer: {
     padding: 20,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     borderTopWidth: 1,
-    borderTopColor: '#eee',
+    borderTopColor: colors.border,
   },
   checkoutButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#000',
+    backgroundColor: colors.primary,
     padding: 16,
     borderRadius: 12,
     gap: 10,
@@ -522,13 +537,12 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   checkoutButtonText: {
-    color: '#fff',
+    color: colors.textInverse,
     fontSize: 16,
     fontWeight: '600',
   },
   infoBox: {
     flexDirection: 'row',
-    backgroundColor: '#e3f2fd',
     padding: 16,
     borderRadius: 8,
     marginTop: 20,
@@ -537,7 +551,6 @@ const styles = StyleSheet.create({
   infoText: {
     flex: 1,
     fontSize: 14,
-    color: '#0d47a1',
     lineHeight: 20,
   },
 });

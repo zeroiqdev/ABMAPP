@@ -12,9 +12,12 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useCartStore, CartItem } from '@/store/cartStore';
+import { useColors } from '@/constants/design';
 
 export default function CartScreen() {
     const router = useRouter();
+    const colors = useColors();
+    const styles = getStyles(colors);
     const cartItems = useCartStore((state) => state.items);
     const updateQuantity = useCartStore((state) => state.updateQuantity);
     const removeItem = useCartStore((state) => state.removeItem);
@@ -61,14 +64,14 @@ export default function CartScreen() {
                         style={styles.quantityButton}
                         onPress={() => handleUpdateQuantity(item.product.id, item.quantity - 1)}
                     >
-                        <Ionicons name="remove" size={16} color="#000" />
+                        <Ionicons name="remove" size={16} color={colors.textPrimary} />
                     </TouchableOpacity>
                     <Text style={styles.quantityText}>{item.quantity}</Text>
                     <TouchableOpacity
                         style={styles.quantityButton}
                         onPress={() => handleUpdateQuantity(item.product.id, item.quantity + 1)}
                     >
-                        <Ionicons name="add" size={16} color="#000" />
+                        <Ionicons name="add" size={16} color={colors.textPrimary} />
                     </TouchableOpacity>
                 </View>
             </View>
@@ -80,7 +83,7 @@ export default function CartScreen() {
                     onPress={() => handleRemoveItem(item.product.id)}
                     style={styles.removeButton}
                 >
-                    <Ionicons name="trash-outline" size={20} color="#FF3B30" />
+                    <Ionicons name="trash-outline" size={20} color={colors.error} />
                 </TouchableOpacity>
             </View>
         </View>
@@ -90,7 +93,7 @@ export default function CartScreen() {
         <View style={styles.container}>
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => router.back()}>
-                    <Ionicons name="arrow-back" size={24} color="#000" />
+                    <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Shopping Cart</Text>
                 <View style={{ width: 24 }} />
@@ -98,7 +101,7 @@ export default function CartScreen() {
 
             {cartItems.length === 0 ? (
                 <View style={styles.emptyState}>
-                    <Ionicons name="cart-outline" size={64} color="#ccc" />
+                    <Ionicons name="bag-outline" size={64} color={colors.textTertiary} />
                     <Text style={styles.emptyText}>Your cart is empty</Text>
                     <TouchableOpacity
                         style={styles.shopButton}
@@ -148,10 +151,10 @@ export default function CartScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f5f5f5',
+        backgroundColor: colors.background,
     },
     header: {
         flexDirection: 'row',
@@ -159,20 +162,21 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         padding: 20,
         paddingTop: 60,
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        borderBottomColor: colors.border,
     },
     headerTitle: {
         fontSize: 24,
         fontWeight: 'bold',
+        color: colors.textPrimary,
     },
     cartList: {
         padding: 15,
     },
     cartItem: {
         flexDirection: 'row',
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
         borderRadius: 12,
         padding: 15,
         marginBottom: 15,
@@ -186,7 +190,7 @@ const styles = StyleSheet.create({
         width: 80,
         height: 80,
         borderRadius: 8,
-        backgroundColor: '#f0f0f0',
+        backgroundColor: colors.background,
     },
     itemInfo: {
         flex: 1,
@@ -195,12 +199,12 @@ const styles = StyleSheet.create({
     itemName: {
         fontSize: 16,
         fontWeight: '600',
-        color: '#333',
+        color: colors.textPrimary,
         marginBottom: 8,
     },
     itemPrice: {
         fontSize: 14,
-        color: '#666',
+        color: colors.textSecondary,
         marginBottom: 10,
     },
     quantityControls: {
@@ -212,7 +216,7 @@ const styles = StyleSheet.create({
         width: 32,
         height: 32,
         borderRadius: 16,
-        backgroundColor: '#f5f5f5',
+        backgroundColor: colors.background,
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -221,6 +225,7 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         minWidth: 30,
         textAlign: 'center',
+        color: colors.textPrimary,
     },
     itemActions: {
         alignItems: 'flex-end',
@@ -229,17 +234,17 @@ const styles = StyleSheet.create({
     itemTotal: {
         fontSize: 16,
         fontWeight: 'bold',
-        color: '#000',
+        color: colors.textPrimary,
         marginBottom: 10,
     },
     removeButton: {
         padding: 5,
     },
     footer: {
-        backgroundColor: '#fff',
+        backgroundColor: colors.surface,
         padding: 20,
         borderTopWidth: 1,
-        borderTopColor: '#eee',
+        borderTopColor: colors.border,
         paddingBottom: Platform.OS === 'ios' ? 100 : 80,
     },
     summary: {
@@ -252,37 +257,37 @@ const styles = StyleSheet.create({
     },
     summaryLabel: {
         fontSize: 14,
-        color: '#666',
+        color: colors.textSecondary,
     },
     summaryValue: {
         fontSize: 14,
-        color: '#333',
+        color: colors.textPrimary,
         fontWeight: '600',
     },
     totalRow: {
         borderTopWidth: 1,
-        borderTopColor: '#eee',
+        borderTopColor: colors.border,
         paddingTop: 12,
         marginTop: 8,
     },
     totalLabel: {
         fontSize: 18,
         fontWeight: 'bold',
-        color: '#333',
+        color: colors.textPrimary,
     },
     totalValue: {
         fontSize: 20,
         fontWeight: 'bold',
-        color: '#000',
+        color: colors.textPrimary,
     },
     checkoutButton: {
-        backgroundColor: '#000',
+        backgroundColor: colors.primary,
         padding: 16,
         borderRadius: 12,
         alignItems: 'center',
     },
     checkoutButtonText: {
-        color: '#fff',
+        color: colors.textInverse,
         fontSize: 16,
         fontWeight: '600',
     },
@@ -296,17 +301,17 @@ const styles = StyleSheet.create({
         marginTop: 16,
         fontSize: 18,
         fontWeight: '600',
-        color: '#333',
+        color: colors.textSecondary,
     },
     shopButton: {
-        backgroundColor: '#007AFF',
+        backgroundColor: colors.primary,
         paddingHorizontal: 30,
         paddingVertical: 12,
         borderRadius: 8,
         marginTop: 20,
     },
     shopButtonText: {
-        color: '#fff',
+        color: colors.textInverse,
         fontSize: 16,
         fontWeight: '600',
     },

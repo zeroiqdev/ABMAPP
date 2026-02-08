@@ -13,10 +13,12 @@ import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
 import { Invoice } from '@/types';
 import { format } from 'date-fns';
+import { useColors } from '@/constants/design';
 
 export default function WorkshopInvoicesScreen() {
   const { user } = useAuthStore();
   const router = useRouter();
+  const colors = useColors();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [filter, setFilter] = useState<'all' | 'pending' | 'paid'>('all');
   const [refreshing, setRefreshing] = useState(false);
@@ -61,51 +63,57 @@ export default function WorkshopInvoicesScreen() {
 
   const renderInvoice = ({ item }: { item: Invoice }) => (
     <TouchableOpacity
-      style={styles.itemCard}
+      style={[styles.itemCard, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}
       onPress={() => router.push(`/(workshop)/invoice-details?id=${item.id}`)}
     >
-      <View style={[styles.iconBox, { backgroundColor: getPaymentStatusColor(item.paymentStatus) + '20' }]}>
-        <Ionicons name="receipt-outline" size={24} color={getPaymentStatusColor(item.paymentStatus)} />
-      </View>
-      <View style={styles.itemInfo}>
-        <Text style={styles.itemName}>Invoice #{item.id.slice(0, 8)}</Text>
-        <Text style={styles.itemSubtitle}>
-          {format(item.createdAt, 'MMM dd, yyyy')}
-        </Text>
-      </View>
-      <View style={styles.itemRight}>
-        <Text style={styles.amountText}>₦{item.total.toLocaleString()}</Text>
-        <View style={[styles.statusBadge, { backgroundColor: getPaymentStatusColor(item.paymentStatus) + '20' }]}>
-          <Text style={[styles.statusText, { color: getPaymentStatusColor(item.paymentStatus) }]}>
-            {item.paymentStatus.charAt(0).toUpperCase() + item.paymentStatus.slice(1)}
+      <View style={styles.itemLeft}>
+        <View style={[styles.iconBox, { backgroundColor: getPaymentStatusColor(item.paymentStatus) + '20' }]}>
+          <Ionicons name="receipt-outline" size={24} color={getPaymentStatusColor(item.paymentStatus)} />
+        </View>
+        <View style={styles.itemInfo}>
+          <Text style={[styles.itemName, { color: colors.textPrimary }]}>Invoice #{item.id.slice(0, 8)}</Text>
+          <Text style={[styles.itemSubtitle, { color: colors.textSecondary }]}>
+            {format(item.createdAt, 'MMM dd, yyyy')}
           </Text>
         </View>
+      </View>
+      <View style={styles.itemRight}>
+        <View style={{ alignItems: 'flex-end', marginRight: 10 }}>
+          <Text style={[styles.amountText, { color: colors.textPrimary }]}>₦{item.total.toLocaleString()}</Text>
+          <View style={[styles.statusBadge, { backgroundColor: getPaymentStatusColor(item.paymentStatus) + '20' }]}>
+            <Text style={[styles.statusText, { color: getPaymentStatusColor(item.paymentStatus) }]}>
+              {item.paymentStatus.charAt(0).toUpperCase() + item.paymentStatus.slice(1)}
+            </Text>
+          </View>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
       </View>
     </TouchableOpacity>
   );
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#000" />
+          <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Invoices</Text>
+        <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Invoices</Text>
         <TouchableOpacity onPress={() => router.push('/(workshop)/create-invoice')}>
-          <Ionicons name="add-circle-outline" size={24} color="#007AFF" />
+          <Ionicons name="add-circle-outline" size={24} color={colors.primary} />
         </TouchableOpacity>
       </View>
 
       {/* Filter Tabs */}
-      <View style={styles.filterContainer}>
+      <View style={[styles.filterContainer, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
         <TouchableOpacity
-          style={[styles.filterTab, filter === 'all' && styles.filterTabActive]}
+          style={[styles.filterTab, { backgroundColor: colors.background }, filter === 'all' && { backgroundColor: colors.primary }]}
           onPress={() => setFilter('all')}
         >
           <Text
             style={[
               styles.filterText,
-              filter === 'all' && styles.filterTextActive,
+              { color: colors.textSecondary },
+              filter === 'all' && { color: colors.textInverse },
             ]}
           >
             All
@@ -114,14 +122,16 @@ export default function WorkshopInvoicesScreen() {
         <TouchableOpacity
           style={[
             styles.filterTab,
-            filter === 'pending' && styles.filterTabActive,
+            { backgroundColor: colors.background },
+            filter === 'pending' && { backgroundColor: colors.primary },
           ]}
           onPress={() => setFilter('pending')}
         >
           <Text
             style={[
               styles.filterText,
-              filter === 'pending' && styles.filterTextActive,
+              { color: colors.textSecondary },
+              filter === 'pending' && { color: colors.textInverse },
             ]}
           >
             Pending
@@ -130,14 +140,16 @@ export default function WorkshopInvoicesScreen() {
         <TouchableOpacity
           style={[
             styles.filterTab,
-            filter === 'paid' && styles.filterTabActive,
+            { backgroundColor: colors.background },
+            filter === 'paid' && { backgroundColor: colors.primary },
           ]}
           onPress={() => setFilter('paid')}
         >
           <Text
             style={[
               styles.filterText,
-              filter === 'paid' && styles.filterTextActive,
+              { color: colors.textSecondary },
+              filter === 'paid' && { color: colors.textInverse },
             ]}
           >
             Paid
@@ -151,12 +163,12 @@ export default function WorkshopInvoicesScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textPrimary} />
         }
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Ionicons name="receipt-outline" size={64} color="#ccc" />
-            <Text style={styles.emptyText}>No invoices found</Text>
+            <Ionicons name="receipt-outline" size={64} color={colors.textTertiary} />
+            <Text style={[styles.emptyText, { color: colors.textTertiary }]}>No invoices found</Text>
           </View>
         }
       />
@@ -211,24 +223,31 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   listContent: {
-    padding: 15,
+    padding: 0,
   },
   itemCard: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 0,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#f5f5f5',
-    paddingVertical: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  itemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
   },
   iconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 16,
   },
   itemInfo: {
     flex: 1,
@@ -240,12 +259,12 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   itemSubtitle: {
-    fontSize: 13,
+    fontSize: 14,
     color: '#888',
   },
   itemRight: {
-    alignItems: 'flex-end',
-    gap: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   amountText: {
     fontSize: 16,
