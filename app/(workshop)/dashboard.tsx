@@ -68,8 +68,10 @@ export default function WorkshopDashboard() {
 
   useFocusEffect(
     useCallback(() => {
-      loadDashboardData();
-    }, [user, dateRange])
+      if (user?.workshopId) {
+        loadDashboardData();
+      }
+    }, [user?.workshopId, dateRange])
   );
 
   const loadDashboardData = async () => {

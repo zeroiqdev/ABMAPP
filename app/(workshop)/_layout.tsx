@@ -71,7 +71,7 @@ export default function WorkshopLayout() {
       }
     };
     fetchPermissions();
-  }, [user]);
+  }, [user?.role, user?.workshopId]);
 
   // Redirect based on role - must wait for loading to complete to know custom roles
   if (loading) {

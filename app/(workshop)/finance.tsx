@@ -79,7 +79,7 @@ export default function FinanceScreen() {
       // Run reminder check silently in background
       firebaseService.checkAndSendInvoiceReminders(user.id);
     }
-  }, [user]);
+  }, [user?.workshopId]);
 
   const loadQuotes = async () => {
     if (!user?.workshopId) return;

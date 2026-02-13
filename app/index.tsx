@@ -41,9 +41,13 @@ export default function Index() {
     return () => clearTimeout(timer);
   }, []);
 
+  // Prevent multiple routings
+  const hasRouted = React.useRef(false);
+
   useEffect(() => {
     // Only route when auth is initialized and splash is done
-    if (isReady && authInitialized) {
+    if (isReady && authInitialized && !hasRouted.current) {
+      hasRouted.current = true;
       if (user) {
         // Authenticated user - route to their appropriate app
         routeUser(user);
