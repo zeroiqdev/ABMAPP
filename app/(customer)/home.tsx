@@ -62,7 +62,7 @@ export default function CustomerHomeScreen() {
     } catch (error) {
       console.error('Error loading data:', error);
     }
-  }, [user]);
+  }, [user?.id]);
 
   useEffect(() => {
     loadData();

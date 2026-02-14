@@ -49,10 +49,8 @@ export default function Index() {
     if (isReady && authInitialized && !hasRouted.current) {
       hasRouted.current = true;
       if (user) {
-        // Authenticated user - route to their appropriate app
         routeUser(user);
       } else {
-        // No authenticated user - set as guest and go to marketplace
         setGuest(true);
         router.replace('/(marketplace)/home');
       }
