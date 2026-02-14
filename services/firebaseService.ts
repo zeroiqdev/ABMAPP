@@ -167,44 +167,34 @@ export const firebaseService = {
   },
 
   async savePushToken(userId: string, token: string): Promise<void> {
+    // 1. Check if token has changed before writing (prevents infinite onSnapshot loop)
+    const userRef = doc(db, 'users', userId);
+    const userSnap = await getDoc(userRef);
+    if (!userSnap.exists()) return;
+
+    const userData = userSnap.data();
+
+    // Skip write entirely if token hasn't changed
+    if (userData.pushToken === token) {
+      return;
+    }
+
     const batch = writeBatch(db);
 
-    // 1. Save to private user profile (legacy/admin view)
-    const userRef = doc(db, 'users', userId);
+    // Save to user profile — only pushToken, NO updatedAt to avoid triggering onSnapshot
     batch.update(userRef, {
       pushToken: token,
-      updatedAt: Timestamp.now(),
     });
 
-    // 2. Save to public/shared notification_tokens collection
-    // We need to fetch the user's role to store it here for filtering
-    // This optimization prevents needing to join with users collection on read
-    // But since this is called on login, we might not have fresh role if we don't fetch.
-    // However, saving just the token is enough if we trust the client logic, 
-    // BUT getAdminTokens needs to filter by role. 
-    // So we should fetch the user role first or assume it's passed or stored.
-    // Let's just update it.
-
-    // We can't easily get the role inside a batch without a read.
-    // Let's just do a set functionality.
-
+    // 2. Save to notification_tokens collection for admin push filtering
     const tokenRef = doc(db, 'notification_tokens', userId);
-    // We will update the token. Role might be updated separately or we assume it's set.
-    // Actually, to make getAdminTokens work, we MUST store the role here.
-    // Let's fetch the user first to be safe, or just accept that maybe we only update token.
-    // Better strategy: The App should pass the role to savePushToken or we fetch it.
-    // For now, let's fetch the user to get the role.
-    const userSnap = await getDoc(userRef);
-    if (userSnap.exists()) {
-      const userData = userSnap.data();
-      batch.set(tokenRef, {
-        token: token,
-        role: userData.role || 'customer',
-        workshopId: userData.workshopId || null,
-        pushEnabled: userData.pushNotificationsEnabled !== false,
-        updatedAt: Timestamp.now(),
-      });
-    }
+    batch.set(tokenRef, {
+      token: token,
+      role: userData.role || 'customer',
+      workshopId: userData.workshopId || null,
+      pushEnabled: userData.pushNotificationsEnabled !== false,
+      updatedAt: Timestamp.now(),
+    });
 
     await batch.commit();
   },

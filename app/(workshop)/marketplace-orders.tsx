@@ -41,7 +41,7 @@ export default function MarketplaceOrdersScreen() {
         });
 
         return () => unsubscribe();
-    }, [user]);
+    }, [user?.id]);
 
     const onRefresh = async () => {
         setRefreshing(true);

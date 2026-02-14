@@ -47,7 +47,7 @@ export default function JobsScreen() {
     });
 
     return () => unsubscribe();
-  }, [user]);
+  }, [user?.id]);
 
   useEffect(() => {
     filterJobs();

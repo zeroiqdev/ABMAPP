@@ -24,7 +24,7 @@ export default function CustomerQuotesScreen() {
 
     useEffect(() => {
         loadQuotes();
-    }, [user]);
+    }, [user?.id]);
 
     const loadQuotes = async () => {
         if (!user?.id) return;

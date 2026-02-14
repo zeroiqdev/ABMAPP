@@ -66,7 +66,7 @@ export default function TowRequestScreen() {
     useEffect(() => {
         loadVehicles();
         loadWorkshops();
-    }, [user]);
+    }, [user?.id]);
 
     useEffect(() => {
         if (location) {

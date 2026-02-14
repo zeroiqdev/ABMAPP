@@ -63,7 +63,7 @@ export default function ServiceScreen() {
     useCallback(() => {
       loadVehicles();
       loadWorkshops();
-    }, [user])
+    }, [user?.id])
   );
 
   const loadVehicles = async () => {

@@ -25,7 +25,7 @@ export default function NotificationsScreen() {
 
   useEffect(() => {
     loadNotifications();
-  }, [user]);
+  }, [user?.id]);
 
   const loadNotifications = async () => {
     if (!user) return;

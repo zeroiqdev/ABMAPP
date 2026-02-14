@@ -38,7 +38,7 @@ export default function WorkshopSettingsScreen() {
       }
     };
     fetchPermissions();
-  }, [user]);
+  }, [user?.id]);
 
   const handleLogout = async () => {
     Alert.alert(

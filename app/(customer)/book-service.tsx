@@ -47,7 +47,7 @@ export default function BookServiceScreen() {
   React.useEffect(() => {
     loadVehicles();
     loadWorkshops();
-  }, [user]); // Add user dependency
+  }, [user?.id]); // Add user dependency
 
   const loadVehicles = async () => {
     if (!user) return;

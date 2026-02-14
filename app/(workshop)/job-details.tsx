@@ -63,7 +63,7 @@ export default function WorkshopJobDetailsScreen() {
       }
     };
     fetchPermissions();
-  }, [user]);
+  }, [user?.id]);
 
   const getJobTypeLabel = (type: string) => {
     switch (type) {

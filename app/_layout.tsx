@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -11,10 +11,14 @@ import { User } from '@/types';
 import { useThemeStore } from '@/store/themeStore';
 
 export default function RootLayout() {
-  const router = useRouter(); // Use Expo Router
+  const router = useRouter();
   const { setUser, setFirebaseUser } = useAuthStore();
   const { getEffectiveTheme } = useThemeStore();
   const effectiveTheme = getEffectiveTheme();
+
+  // Guards to prevent infinite loops
+  const pushRegisteredForUid = useRef<string | null>(null);
+  const lastUserJSON = useRef<string | null>(null);
 
   useEffect(() => {
     let userUnsubscribe: (() => void) | null = null;
@@ -45,11 +49,19 @@ export default function RootLayout() {
                 createdAt: data.createdAt?.toDate() || new Date(),
                 updatedAt: data.updatedAt?.toDate() || new Date(),
               } as User;
-              setUser(userData);
 
-              // Register for push notifications
-              if (userData.id) {
-                // We import notificationService dynamically or at top level, assuming it's safe
+              // --- SKIP NO-OP UPDATES ---
+              // Compare key fields to avoid triggering re-renders on timestamp-only changes
+              const { updatedAt, createdAt, ...comparableFields } = userData as any;
+              const newJSON = JSON.stringify(comparableFields);
+              if (newJSON !== lastUserJSON.current) {
+                lastUserJSON.current = newJSON;
+                setUser(userData);
+              }
+
+              // --- PUSH REGISTRATION (ONCE PER LOGIN) ---
+              if (userData.id && pushRegisteredForUid.current !== userData.id) {
+                pushRegisteredForUid.current = userData.id;
                 const { notificationService } = require('@/services/notificationService');
                 notificationService.registerAndSavePushToken(userData.id).catch((err: any) =>
                   console.log('Push registration failed silently:', err)
@@ -59,23 +71,19 @@ export default function RootLayout() {
               // *** SUBSCRIPTION GATING START ***
               const gatedRoles = ['admin', 'technician', 'storekeeper', 'accountant', 'service_advisor'];
               if (userData.workshopId && gatedRoles.includes(userData.role)) {
-                // Clean up previous workshop listener if workshopId changed (unlikely but safe)
+                // Clean up previous workshop listener if workshopId changed
                 if (workshopUnsubscribe) workshopUnsubscribe();
 
                 const workshopRef = doc(db, 'workshops', userData.workshopId);
                 workshopUnsubscribe = onSnapshot(workshopRef, (workshopDoc: any) => {
                   if (workshopDoc.exists()) {
                     const wsData = workshopDoc.data();
-                    // Check Status
                     const isActive = wsData.subscriptionStatus === 'active' || wsData.subscriptionStatus === 'trial';
-                    // Check Expiry (if exists)
                     const now = new Date();
-                    // Assuming subscriptionExpiry is a Timestamp
                     const expiry = wsData.subscriptionExpiry?.toDate();
                     const isExpired = expiry && expiry < now;
 
                     if (!isActive || (isActive && isExpired)) {
-                      // Subscription Invalid - Redirect
                       console.log('[Gating] Workshop Subscription Inactive/Expired. Redirecting...');
                       router.replace('/(auth)/subscription-expired');
                     }
@@ -96,6 +104,8 @@ export default function RootLayout() {
       } else {
         setFirebaseUser(null);
         setUser(null);
+        lastUserJSON.current = null;
+        pushRegisteredForUid.current = null;
         if (userUnsubscribe) userUnsubscribe();
         if (workshopUnsubscribe) workshopUnsubscribe();
       }

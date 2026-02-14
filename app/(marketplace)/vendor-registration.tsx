@@ -53,7 +53,7 @@ export default function VendorRegistrationScreen() {
                 `Your previous application was declined.\n\nReason: ${user.rejectionReason || 'Details need verification.'}\n\nPlease update your information and resubmit.`
             );
         }
-    }, [user]);
+    }, [user?.id]);
 
     const pickImage = async (setImage: (uri: string) => void) => {
         const result = await ImagePicker.launchImageLibraryAsync({

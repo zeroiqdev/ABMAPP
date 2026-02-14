@@ -39,7 +39,7 @@ export default function CustomerOrdersScreen() {
         });
 
         return () => unsubscribe();
-    }, [user]);
+    }, [user?.id]);
 
     const onRefresh = async () => {
         setRefreshing(true);

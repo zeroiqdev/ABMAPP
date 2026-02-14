@@ -39,7 +39,7 @@ export default function WorkshopOrdersScreen() {
         });
 
         return () => unsubscribe();
-    }, [user]);
+    }, [user?.id]);
 
     const onRefresh = async () => {
         setRefreshing(true);

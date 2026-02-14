@@ -76,7 +76,7 @@ export default function SettingsScreen() {
             }
         };
         loadPrefs();
-    }, [user]);
+    }, [user?.id]);
 
     const updatePreference = async (key: string, value: boolean) => {
         if (!user?.id) return;

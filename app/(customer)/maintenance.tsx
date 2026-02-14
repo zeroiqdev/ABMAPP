@@ -46,7 +46,7 @@ export default function MaintenanceScreen() {
 
     useEffect(() => {
         loadJobs();
-    }, [user]);
+    }, [user?.id]);
 
     useEffect(() => {
         filterJobs();
