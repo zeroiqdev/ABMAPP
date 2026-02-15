@@ -330,6 +330,14 @@ export default function MemberAuthScreen() {
         setError('');
         try {
             await loginWithApple();
+            setGuest(false);
+            // Get user data from store after login
+            const userData = useAuthStore.getState().user;
+            if (userData) {
+                navigateUser(userData);
+            } else {
+                router.replace('/(marketplace)/home');
+            }
         } catch (err: any) {
             if (err.code !== 'ERR_REQUEST_CANCELED') {
                 setError(err.message || 'Apple Sign In failed');

@@ -137,6 +137,18 @@ export default function SignupScreen() {
   const handleAppleSignIn = async () => {
     try {
       await loginWithApple();
+      // Navigate based on user role after successful login
+      const userData = useAuthStore.getState().user;
+      if (userData) {
+        const workshopRoles = ['admin', 'technician', 'storekeeper', 'accountant', 'service_advisor', 'super_admin'];
+        if (userData.role === 'customer') {
+          router.replace('/(customer)/home');
+        } else if (workshopRoles.includes(userData.role)) {
+          router.replace('/(workshop)/dashboard');
+        } else {
+          router.replace('/(marketplace)/home');
+        }
+      }
     } catch (error: any) {
       Alert.alert('Apple Sign In Failed', error.message || 'Unable to sign in with Apple');
     }
