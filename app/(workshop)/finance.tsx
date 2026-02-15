@@ -1775,10 +1775,9 @@ export default function FinanceScreen() {
               style={styles.successButton}
               onPress={() => {
                 setShowPaymentSuccessModal(false);
-                // Reopen invoice modal
-                setTimeout(() => {
-                  setShowInvoiceModal(true);
-                }, 100);
+                // Close invoice modal and return to list
+                setShowInvoiceModal(false);
+                setSelectedInvoice(null);
               }}
             >
               <Text style={styles.successButtonText}>Done</Text>
