@@ -23,7 +23,7 @@ import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'fire
 import { WorkshopSelectorModal } from '@/components/WorkshopSelectorModal';
 
 // Account flow steps
-type AuthStep = 'email' | 'login' | 'create' | 'createCustomer' | 'selectWorkshops' | 'completeProfile';
+type AuthStep = 'email' | 'login' | 'create' | 'createCustomer' | 'selectWorkshops' | 'completeProfile' | 'appleWorkshopSelect';
 
 // Workshop Roles - for routing after login
 const workshopRoles = ['admin', 'technician', 'storekeeper', 'accountant', 'service_advisor', 'super_admin'];
@@ -62,6 +62,9 @@ export default function MemberAuthScreen() {
 
     // New user ID for profile completion
     const [newUserId, setNewUserId] = useState<string | null>(null);
+
+    // Track if user signed in with Apple (already authenticated, no password needed)
+    const [isAppleUser, setIsAppleUser] = useState(false);
 
     // Step 1: Check email for existing account or invitation
     const handleEmailContinue = async () => {
@@ -264,6 +267,34 @@ export default function MemberAuthScreen() {
         }
     };
 
+    // Handle Apple user workshop selection (already authenticated, just needs workshops)
+    const handleAppleWorkshopSave = async () => {
+        if (selectedWorkshopIds.length === 0) {
+            setError('Please select at least one workshop');
+            return;
+        }
+
+        setLoading(true);
+        setError('');
+
+        try {
+            const uid = newUserId || auth.currentUser?.uid;
+            if (!uid) throw new Error('User ID not found');
+
+            await updateDoc(doc(db, 'users', uid), {
+                workshopIds: selectedWorkshopIds,
+                workshopId: selectedWorkshopIds[0],
+                connectedWorkshopIds: selectedWorkshopIds,
+            });
+
+            setStep('completeProfile');
+        } catch (err: any) {
+            setError(err.message || 'Failed to save workshop selection');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     // Handle profile completion
     const handleCompleteProfile = async () => {
         if (!firstName.trim() || !lastName.trim()) {
@@ -334,7 +365,17 @@ export default function MemberAuthScreen() {
             // Get user data from store after login
             const userData = useAuthStore.getState().user;
             if (userData) {
-                navigateUser(userData);
+                // Check if this is a new user who needs workshop selection & profile setup
+                const hasWorkshop = userData.workshopId || (userData.connectedWorkshopIds && userData.connectedWorkshopIds.length > 0);
+                if (!hasWorkshop && userData.role === 'customer') {
+                    // New Apple user — needs to select workshops and complete profile
+                    setNewUserId(userData.id);
+                    setIsAppleUser(true);
+                    setEmail(userData.email || '');
+                    setStep('appleWorkshopSelect');
+                } else {
+                    navigateUser(userData);
+                }
             } else {
                 router.replace('/(marketplace)/home');
             }
@@ -359,6 +400,7 @@ export default function MemberAuthScreen() {
                     {step === 'login' && 'Welcome Back'}
                     {step === 'create' && 'Create Account'}
                     {step === 'createCustomer' && 'Create Account'}
+                    {step === 'appleWorkshopSelect' && 'Select Workshop'}
                     {step === 'selectWorkshops' && 'Select Workshop'}
                     {step === 'completeProfile' && 'Complete Profile'}
                 </Text>
@@ -588,6 +630,41 @@ export default function MemberAuthScreen() {
                                     <ActivityIndicator color={colors.textInverse} />
                                 ) : (
                                     <Text style={styles.primaryButtonText}>Create Account</Text>
+                                )}
+                            </TouchableOpacity>
+                        </>
+                    )}
+
+                    {/* Apple User Workshop Selection Step */}
+                    {step === 'appleWorkshopSelect' && (
+                        <>
+                            <Text style={styles.subtitle}>Select your workshop to get started</Text>
+
+                            <Text style={[styles.inputLabel, { marginTop: 10, marginBottom: 10 }]}>
+                                Select Workshop(s)
+                            </Text>
+                            <TouchableOpacity
+                                style={styles.workshopButton}
+                                onPress={() => setShowWorkshopSelector(true)}
+                            >
+                                <Text style={{ color: selectedWorkshopIds.length === 0 ? colors.textTertiary : colors.textPrimary }}>
+                                    {selectedWorkshopIds.length === 0
+                                        ? 'Select Workshop'
+                                        : `${selectedWorkshopIds.length} workshop${selectedWorkshopIds.length > 1 ? 's' : ''} selected`}
+                                </Text>
+                                <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
+                            </TouchableOpacity>
+
+                            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+                            <TouchableOpacity
+                                style={[styles.primaryButton, loading && styles.buttonDisabled]}
+                                onPress={handleAppleWorkshopSave}
+                                disabled={loading}
+                            >
+                                {loading ? (
+                                    <ActivityIndicator color={colors.textInverse} />
+                                ) : (
+                                    <Text style={styles.primaryButtonText}>Continue</Text>
                                 )}
                             </TouchableOpacity>
                         </>
