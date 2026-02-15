@@ -22,6 +22,8 @@ import { Quote, Invoice } from '@/types';
 import { format } from 'date-fns';
 import { useColors } from '@/constants/design';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 
 export default function CustomerQuoteDetailsScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
@@ -168,6 +170,101 @@ export default function CustomerQuoteDetailsScreen() {
         }
     };
 
+    const handleDownloadQuote = async () => {
+        if (!quote) return;
+        try {
+            // Use invoice data if converted, otherwise use quote data
+            const sourceData = isConverted && invoice ? invoice : quote;
+            const items = quote.items;
+            const subtotal = items.reduce((sum: number, item: any) => sum + (item.quantity * item.unitPrice), 0);
+            const vatAmount = subtotal * (quote.vatRate || 0) / 100;
+            const discount = quote.discount || 0;
+            const total = subtotal + vatAmount - discount;
+            const docType = isConverted ? 'INVOICE' : 'QUOTATION';
+            const docId = isConverted && invoice ? invoice.id : quote.id;
+
+            const html = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <style>
+                        body { font-family: Arial, sans-serif; padding: 30px; color: #333; }
+                        .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #000; padding-bottom: 15px; }
+                        .header h1 { margin: 0; font-size: 28px; color: #000; }
+                        .header p { margin: 5px 0; color: #666; }
+                        .info-grid { display: flex; justify-content: space-between; margin-bottom: 25px; }
+                        .info-block p { margin: 4px 0; }
+                        .items-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+                        .items-table th { background-color: #f0f0f0; padding: 10px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600; }
+                        .items-table td { padding: 10px; text-align: left; border-bottom: 1px solid #eee; }
+                        .total-section { text-align: right; margin-top: 20px; }
+                        .total-section p { margin: 5px 0; }
+                        .total-section .grand-total { font-size: 18px; font-weight: bold; border-top: 2px solid #000; padding-top: 10px; margin-top: 10px; }
+                        .footer { margin-top: 40px; text-align: center; color: #999; font-size: 12px; border-top: 1px solid #eee; padding-top: 15px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h1>${docType}</h1>
+                        <p>${docType} #${docId.slice(-8).toUpperCase()}</p>
+                    </div>
+                    <div class="info-grid">
+                        <div class="info-block">
+                            <p><strong>Customer:</strong> ${quote.customerName || 'N/A'}</p>
+                            ${quote.customerEmail ? `<p><strong>Email:</strong> ${quote.customerEmail}</p>` : ''}
+                            ${quote.customerPhone ? `<p><strong>Phone:</strong> ${quote.customerPhone}</p>` : ''}
+                        </div>
+                        <div class="info-block">
+                            <p><strong>Date:</strong> ${format(quote.createdAt, 'MMM dd, yyyy')}</p>
+                        </div>
+                    </div>
+                    <table class="items-table">
+                        <thead>
+                            <tr>
+                                <th>Description</th>
+                                <th>Qty</th>
+                                <th>Unit Price</th>
+                                <th>Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${items.map((item: any) => `
+                                <tr>
+                                    <td>${item.description}</td>
+                                    <td>${item.quantity}</td>
+                                    <td>₦${Number(item.unitPrice).toLocaleString()}</td>
+                                    <td>₦${(item.quantity * item.unitPrice).toLocaleString()}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    <div class="total-section">
+                        <p>Subtotal: ₦${subtotal.toLocaleString()}</p>
+                        ${quote.vatRate > 0 ? `<p>VAT (${quote.vatRate}%): ₦${vatAmount.toLocaleString()}</p>` : ''}
+                        ${discount > 0 ? `<p>Discount: -₦${discount.toLocaleString()}</p>` : ''}
+                        <p class="grand-total">Total: ₦${total.toLocaleString()}</p>
+                    </div>
+                    ${isConverted && invoice ? `
+                        <div class="total-section">
+                            <p>Amount Paid: ₦${(invoice.amountPaid || 0).toLocaleString()}</p>
+                            <p class="grand-total" style="color: ${balance > 0 ? '#FF3B30' : '#30D158'}">Balance: ₦${balance.toLocaleString()}</p>
+                        </div>
+                    ` : ''}
+                    <div class="footer">
+                        <p>This is a computer-generated document.</p>
+                    </div>
+                </body>
+                </html>
+            `;
+            const { uri } = await Print.printToFileAsync({ html });
+            await Sharing.shareAsync(uri);
+        } catch (error: any) {
+            Alert.alert('Error', 'Failed to generate PDF');
+            console.error('Error generating PDF:', error);
+        }
+    };
+
     if (loading) {
         return (
             <View style={styles.loadingContainer}>
@@ -197,7 +294,9 @@ export default function CustomerQuoteDetailsScreen() {
                 <Text style={styles.headerTitle}>
                     {isPending ? 'Quote Approval' : 'Invoice'}
                 </Text>
-                <View style={{ width: 24 }} />
+                <TouchableOpacity onPress={handleDownloadQuote}>
+                    <Ionicons name="download-outline" size={24} color={colors.textPrimary} />
+                </TouchableOpacity>
             </View>
 
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
