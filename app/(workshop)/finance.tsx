@@ -509,7 +509,16 @@ export default function FinanceScreen() {
       });
 
       setRecordedPaymentAmount(amount);
-      setShowPaymentSuccessModal(true);
+
+      // Close invoice modal first to prevent modal stacking issues
+      setShowInvoiceModal(false);
+      setActiveDatePicker(null);
+
+      // Show success modal after invoice modal closes
+      setTimeout(() => {
+        setShowPaymentSuccessModal(true);
+      }, 300);
+
       setShowPaymentModal(false);
       setPaymentAmount('');
       await loadInvoices();
@@ -1775,9 +1784,6 @@ export default function FinanceScreen() {
               style={styles.successButton}
               onPress={() => {
                 setShowPaymentSuccessModal(false);
-                // Close invoice modal and return to list
-                setShowInvoiceModal(false);
-                setSelectedInvoice(null);
               }}
             >
               <Text style={styles.successButtonText}>Done</Text>
