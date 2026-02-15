@@ -38,7 +38,7 @@ export default {
   expo: {
     name: "ABM Workshop & Marketplace",
     slug: "abmapp",
-    version: "1.0.14",
+    version: "1.0.15",
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "automatic",
@@ -54,7 +54,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.abmtek.abmapp",
-      buildNumber: "15",
+      buildNumber: "16",
       backgroundColor: "#000000",
       usesAppleSignIn: true,
       googleServicesFile: './GoogleService-Info.plist',
@@ -69,7 +69,7 @@ export default {
         backgroundColor: "#000000"
       },
       package: "com.abmtek.abmapp",
-      versionCode: 15,
+      versionCode: 16,
       googleServicesFile: './google-services.json',
       config: {
         googleMaps: {

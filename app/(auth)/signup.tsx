@@ -12,6 +12,7 @@ import {
   Modal,
   FlatList,
   ActivityIndicator,
+  useColorScheme,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
@@ -37,6 +38,7 @@ export default function SignupScreen() {
   const [searchQuery, setSearchQuery] = useState('');
 
   const { registerCustomerAccount, loginWithApple, loading, user } = useAuthStore();
+  const colorScheme = useColorScheme();
 
   useEffect(() => {
     if (initialEmail) {
@@ -247,7 +249,11 @@ export default function SignupScreen() {
 
                 <AppleAuthentication.AppleAuthenticationButton
                   buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-                  buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                  buttonStyle={
+                    colorScheme === 'dark'
+                      ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
+                      : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
+                  }
                   cornerRadius={8}
                   style={styles.appleButton}
                   onPress={handleAppleSignIn}

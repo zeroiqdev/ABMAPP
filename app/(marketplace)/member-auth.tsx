@@ -10,6 +10,7 @@ import {
     ActivityIndicator,
     KeyboardAvoidingView,
     Platform,
+    useColorScheme,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -32,6 +33,7 @@ export default function MemberAuthScreen() {
     const colors = useColors();
     const styles = getStyles(colors);
     const { setGuest, acceptStaffInvite, registerCustomerAccount, loginWithApple } = useAuthStore();
+    const colorScheme = useColorScheme();
 
     // Auth state
     const [step, setStep] = useState<AuthStep>('email');
@@ -406,7 +408,11 @@ export default function MemberAuthScreen() {
 
                                     <AppleAuthentication.AppleAuthenticationButton
                                         buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-                                        buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                                        buttonStyle={
+                                            colorScheme === 'dark'
+                                                ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
+                                                : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
+                                        }
                                         cornerRadius={12}
                                         style={styles.appleButton}
                                         onPress={handleAppleSignIn}
