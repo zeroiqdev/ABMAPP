@@ -15,6 +15,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { useColors } from '@/constants/design';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { collection, query, where, getDocs, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { db, auth } from '@/config/firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
@@ -30,7 +31,7 @@ export default function MemberAuthScreen() {
     const router = useRouter();
     const colors = useColors();
     const styles = getStyles(colors);
-    const { setGuest, acceptStaffInvite, registerCustomerAccount } = useAuthStore();
+    const { setGuest, acceptStaffInvite, registerCustomerAccount, loginWithApple } = useAuthStore();
 
     // Auth state
     const [step, setStep] = useState<AuthStep>('email');
@@ -322,6 +323,20 @@ export default function MemberAuthScreen() {
         }
     };
 
+    const handleAppleSignIn = async () => {
+        setLoading(true);
+        setError('');
+        try {
+            await loginWithApple();
+        } catch (err: any) {
+            if (err.code !== 'ERR_REQUEST_CANCELED') {
+                setError(err.message || 'Apple Sign In failed');
+            }
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return (
         <View style={styles.container}>
             {/* Header */}
@@ -380,6 +395,24 @@ export default function MemberAuthScreen() {
                                     <Text style={styles.primaryButtonText}>Continue</Text>
                                 )}
                             </TouchableOpacity>
+
+                            {Platform.OS === 'ios' && (
+                                <>
+                                    <View style={styles.orDivider}>
+                                        <View style={styles.orDividerLine} />
+                                        <Text style={styles.orDividerText}>or</Text>
+                                        <View style={styles.orDividerLine} />
+                                    </View>
+
+                                    <AppleAuthentication.AppleAuthenticationButton
+                                        buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                                        buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                                        cornerRadius={12}
+                                        style={styles.appleButton}
+                                        onPress={handleAppleSignIn}
+                                    />
+                                </>
+                            )}
                         </>
                     )}
 
@@ -738,5 +771,24 @@ const getStyles = (colors: any) => StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
+    },
+    orDivider: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginVertical: 20,
+    },
+    orDividerLine: {
+        flex: 1,
+        height: 1,
+        backgroundColor: colors.border,
+    },
+    orDividerText: {
+        marginHorizontal: 12,
+        color: colors.textTertiary,
+        fontSize: 14,
+    },
+    appleButton: {
+        width: '100%',
+        height: 50,
     },
 });
