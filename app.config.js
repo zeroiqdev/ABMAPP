@@ -48,9 +48,6 @@ export default {
       resizeMode: "contain",
       backgroundColor: "#000000"
     },
-    _internal: {
-      isDebug: true
-    },
     assetBundlePatterns: [
       "**/*"
     ],
@@ -59,6 +56,7 @@ export default {
       bundleIdentifier: "com.abmtek.abmapp",
       buildNumber: "14",
       backgroundColor: "#000000",
+      usesAppleSignIn: true,
       googleServicesFile: './GoogleService-Info.plist',
       config: {
         googleMapsApiKey: getEnv('EXPO_PUBLIC_GOOGLE_MAPS_API_KEY'),

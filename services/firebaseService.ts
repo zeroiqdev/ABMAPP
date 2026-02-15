@@ -83,6 +83,10 @@ export const firebaseService = {
 
   // DEBUG ONLY: Fetch all users to diagnose missing customer issues
   async debugGetAllUsers(): Promise<{ id: string; name: string; email: string; role: string; workshopId: string | undefined }[]> {
+    if (!__DEV__) {
+      console.warn('debugGetAllUsers is only available in development');
+      return [];
+    }
     console.log('[DEBUG] Fetching ALL users from Firestore...');
     const snapshot = await getDocs(collection(db, 'users'));
     const users = snapshot.docs.map((doc) => {
@@ -104,6 +108,10 @@ export const firebaseService = {
 
   // Find user by email (without workshopId filter) and optionally fix their workshopId
   async findAndFixUserByEmail(email: string, correctWorkshopId: string): Promise<{ found: boolean; fixed: boolean; user?: any }> {
+    if (!__DEV__) {
+      console.warn('findAndFixUserByEmail is only available in development');
+      return { found: false, fixed: false };
+    }
     console.log('[DEBUG] Searching for user with email:', email);
     const q = query(collection(db, 'users'), where('email', '==', email.toLowerCase().trim()));
     const snapshot = await getDocs(q);

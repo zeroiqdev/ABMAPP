@@ -7,11 +7,15 @@ import {
   createUserWithEmailAndPassword,
   signOut,
   sendPasswordResetEmail,
+  OAuthProvider,
+  signInWithCredential,
   User as FirebaseUser
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, deleteDoc, collection, query, where, getDocs, limit } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, collection, query, where, getDocs, limit, Timestamp } from 'firebase/firestore';
 import { auth, db } from '@/config/firebase';
 import { firebaseService } from '@/services/firebaseService';
+import * as AppleAuthentication from 'expo-apple-authentication';
+import * as Crypto from 'expo-crypto';
 
 interface AuthState {
   user: User | null;
@@ -20,6 +24,7 @@ interface AuthState {
   isGuest: boolean;
   guestEmail: string | null;
   login: (email: string, password: string) => Promise<void>;
+  loginWithApple: () => Promise<void>;
   registerCustomerAccount: (email: string, password: string, name?: string, phone?: string, workshopId?: string) => Promise<void>;
   acceptStaffInvite: (email: string, password: string, invitationCode: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -63,6 +68,89 @@ export const useAuthStore = create<AuthState>()(
           }
         } catch (error: any) {
           set({ loading: false });
+          throw error;
+        }
+      },
+
+      loginWithApple: async () => {
+        set({ loading: true });
+        try {
+          // Generate a nonce for security
+          const nonce = Math.random().toString(36).substring(2, 10);
+          const hashedNonce = await Crypto.digestStringAsync(
+            Crypto.CryptoDigestAlgorithm.SHA256,
+            nonce
+          );
+
+          // Request Apple credentials
+          const appleCredential = await AppleAuthentication.signInAsync({
+            requestedScopes: [
+              AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+              AppleAuthentication.AppleAuthenticationScope.EMAIL,
+            ],
+            nonce: hashedNonce,
+          });
+
+          const { identityToken } = appleCredential;
+          if (!identityToken) {
+            throw new Error('No identity token received from Apple');
+          }
+
+          // Build Firebase credential
+          const provider = new OAuthProvider('apple.com');
+          const credential = provider.credential({
+            idToken: identityToken,
+            rawNonce: nonce,
+          });
+
+          // Sign in to Firebase
+          const userCredential = await signInWithCredential(auth, credential);
+          const firebaseUser = userCredential.user;
+
+          // Check if user doc exists
+          const userDocRef = doc(db, 'users', firebaseUser.uid);
+          const userDoc = await getDoc(userDocRef);
+
+          let userData: User;
+          if (userDoc.exists()) {
+            // Existing user — load their data
+            const data = userDoc.data();
+            userData = {
+              ...data,
+              id: userDoc.id,
+              createdAt: data.createdAt?.toDate() || new Date(),
+              updatedAt: data.updatedAt?.toDate() || new Date(),
+            } as User;
+          } else {
+            // New user — create their profile
+            const appleName = appleCredential.fullName
+              ? `${appleCredential.fullName.givenName || ''} ${appleCredential.fullName.familyName || ''}`.trim()
+              : '';
+            const newUserData = {
+              id: firebaseUser.uid,
+              name: appleName || firebaseUser.displayName || 'Apple User',
+              email: appleCredential.email || firebaseUser.email || '',
+              phone: '',
+              role: 'customer',
+              workshopId: '',
+              createdAt: Timestamp.now(),
+              updatedAt: Timestamp.now(),
+            };
+            await setDoc(userDocRef, newUserData);
+            userData = {
+              ...newUserData,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            } as User;
+          }
+
+          set({ user: userData, firebaseUser, loading: false, isGuest: false, guestEmail: null });
+        } catch (error: any) {
+          set({ loading: false });
+          // User cancelled Apple sign-in — don't re-throw
+          if (error.code === 'ERR_REQUEST_CANCELED') {
+            return;
+          }
           throw error;
         }
       },

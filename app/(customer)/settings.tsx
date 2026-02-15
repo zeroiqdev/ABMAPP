@@ -88,6 +88,17 @@ export default function CustomerSettingsScreen() {
                         Deleting your account will remove all your data, including vehicle history and jobs.
                     </Text>
                 </View>
+
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Legal</Text>
+                    <TouchableOpacity
+                        style={styles.deleteButton}
+                        onPress={() => router.push('/(auth)/privacy-policy')}
+                    >
+                        <Ionicons name="document-text-outline" size={20} color={colors.textPrimary} />
+                        <Text style={[styles.deleteButtonText, { color: colors.textPrimary }]}>Privacy Policy</Text>
+                    </TouchableOpacity>
+                </View>
             </ScrollView>
         </View>
     );

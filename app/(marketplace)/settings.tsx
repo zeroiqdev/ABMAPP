@@ -834,6 +834,23 @@ export default function SettingsScreen() {
                         </View>
                     )}
 
+                    {/* Privacy Policy for Guests */}
+                    <View style={styles.section}>
+                        <TouchableOpacity
+                            style={styles.toggleRow}
+                            onPress={() => router.push('/(auth)/privacy-policy')}
+                        >
+                            <View style={styles.toggleInfo}>
+                                <Ionicons name="document-text-outline" size={22} color={colors.textPrimary} />
+                                <View style={styles.toggleText}>
+                                    <Text style={styles.toggleLabel}>Privacy Policy</Text>
+                                    <Text style={styles.toggleDesc}>How we handle your data</Text>
+                                </View>
+                            </View>
+                            <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+                        </TouchableOpacity>
+                    </View>
+
                     {/* Appearance - Theme Toggle for Guests */}
                     <AppearanceSection styles={styles} appearanceStyles={appearanceStyles} />
 
@@ -1020,6 +1037,22 @@ export default function SettingsScreen() {
                     >
                         <Ionicons name="trash-outline" size={22} color={colors.error} />
                         <Text style={styles.deleteText}>Delete Account</Text>
+                    </TouchableOpacity>
+                </View>
+
+                <View style={styles.section}>
+                    <TouchableOpacity
+                        style={styles.toggleRow}
+                        onPress={() => router.push('/(auth)/privacy-policy')}
+                    >
+                        <View style={styles.toggleInfo}>
+                            <Ionicons name="document-text-outline" size={22} color={colors.textPrimary} />
+                            <View style={styles.toggleText}>
+                                <Text style={styles.toggleLabel}>Privacy Policy</Text>
+                                <Text style={styles.toggleDesc}>How we handle your data</Text>
+                            </View>
+                        </View>
+                        <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
                     </TouchableOpacity>
                 </View>
 

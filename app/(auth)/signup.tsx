@@ -18,6 +18,7 @@ import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
 import { Workshop } from '@/types';
 import { Ionicons } from '@expo/vector-icons';
+import * as AppleAuthentication from 'expo-apple-authentication';
 
 export default function SignupScreen() {
   const router = useRouter();
@@ -35,7 +36,7 @@ export default function SignupScreen() {
   const [loadingWorkshops, setLoadingWorkshops] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const { registerCustomerAccount, loading, user } = useAuthStore();
+  const { registerCustomerAccount, loginWithApple, loading, user } = useAuthStore();
 
   useEffect(() => {
     if (initialEmail) {
@@ -128,6 +129,14 @@ export default function SignupScreen() {
         errorMessage = error.message;
       }
       Alert.alert('Signup Failed', errorMessage);
+    }
+  };
+
+  const handleAppleSignIn = async () => {
+    try {
+      await loginWithApple();
+    } catch (error: any) {
+      Alert.alert('Apple Sign In Failed', error.message || 'Unable to sign in with Apple');
     }
   };
 
@@ -228,12 +237,40 @@ export default function SignupScreen() {
               </TouchableOpacity>
             </View>
 
+            {Platform.OS === 'ios' && (
+              <>
+                <View style={styles.divider}>
+                  <View style={styles.dividerLine} />
+                  <Text style={styles.dividerText}>or</Text>
+                  <View style={styles.dividerLine} />
+                </View>
+
+                <AppleAuthentication.AppleAuthenticationButton
+                  buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                  buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                  cornerRadius={8}
+                  style={styles.appleButton}
+                  onPress={handleAppleSignIn}
+                />
+              </>
+            )}
+
             <TouchableOpacity
               style={styles.staffLinkContainer}
               onPress={() => router.push('/(auth)/staff-invite')}
             >
               <Text style={styles.staffLinkText}>Are you a Vendor or Staff? Register here</Text>
             </TouchableOpacity>
+
+            <Text style={styles.policyText}>
+              By signing up, you agree to our{' '}
+              <Text
+                style={styles.policyLink}
+                onPress={() => router.push('/(auth)/privacy-policy')}
+              >
+                Privacy Policy
+              </Text>
+            </Text>
           </View>
         </View>
       </ScrollView>
@@ -388,6 +425,26 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textDecorationLine: 'underline',
   },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#ddd',
+  },
+  dividerText: {
+    marginHorizontal: 12,
+    color: '#999',
+    fontSize: 14,
+  },
+  appleButton: {
+    width: '100%',
+    height: 50,
+    marginBottom: 10,
+  },
   // Workshop selector styles
   workshopSelector: {
     flexDirection: 'row',
@@ -468,6 +525,16 @@ const styles = StyleSheet.create({
   clearButtonText: {
     color: '#666',
     fontSize: 16,
+  },
+  policyText: {
+    marginTop: 16,
+    fontSize: 12,
+    color: '#999',
+    textAlign: 'center',
+  },
+  policyLink: {
+    color: '#007AFF',
+    textDecorationLine: 'underline' as const,
   },
 });
 

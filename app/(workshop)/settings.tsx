@@ -218,6 +218,24 @@ export default function WorkshopSettingsScreen() {
           </View>
         )}
 
+        {/* Legal */}
+        <View style={[styles.section, { marginTop: 40 }]}>
+          <Text style={styles.sectionTitle}>Legal</Text>
+          <TouchableOpacity
+            style={styles.settingRow}
+            onPress={() => router.push('/(auth)/privacy-policy')}
+          >
+            <View style={styles.iconContainer}>
+              <Ionicons name="document-text" size={22} color={colors.textPrimary} />
+            </View>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Privacy Policy</Text>
+              <Text style={styles.settingDesc}>How we handle your data</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+          </TouchableOpacity>
+        </View>
+
         {/* Appearance */}
         <AppearanceSection styles={styles} appearanceStyles={appearanceStyles} />
 

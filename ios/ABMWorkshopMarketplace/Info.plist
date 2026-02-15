@@ -51,14 +51,8 @@
     </dict>
     <key>NSCameraUsageDescription</key>
     <string>The app accesses your camera to capture service images.</string>
-    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-    <string>Allow $(PRODUCT_NAME) to access your location</string>
-    <key>NSLocationAlwaysUsageDescription</key>
-    <string>Allow $(PRODUCT_NAME) to access your location</string>
     <key>NSLocationWhenInUseUsageDescription</key>
-    <string>Allow $(PRODUCT_NAME) to access your location</string>
-    <key>NSMicrophoneUsageDescription</key>
-    <string>Allow $(PRODUCT_NAME) to access your microphone</string>
+    <string>ABM Workshop uses your location to calculate tow truck distances and provide accurate pricing for tow services.</string>
     <key>NSPhotoLibraryUsageDescription</key>
     <string>The app accesses your photos to upload service images.</string>
     <key>NSUserActivityTypes</key>
