@@ -209,6 +209,9 @@ export const firebaseService = {
 
   async getAdminTokens(): Promise<string[]> {
     try {
+      // Guests are not authenticated and cannot read notification_tokens
+      if (!auth.currentUser) return [];
+
       const q = query(
         collection(db, 'notification_tokens'),
         where('role', 'in', ['admin', 'manager', 'super_admin'])
