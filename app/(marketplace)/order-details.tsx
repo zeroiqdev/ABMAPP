@@ -146,7 +146,7 @@ export default function OrderDetailsScreen() {
                             <View style={[styles.statusDot, { backgroundColor: getStatusColor(order.status) }]} />
                             <Text style={styles.statusPillText}>{order.status.toUpperCase()}</Text>
                         </View>
-                        {(!isVendor || (isVendor && !['delivered', 'cancelled'].includes(order.status))) && (
+                        {(user?.role === 'admin' || user?.role === 'super_admin' || (isVendor && !['delivered', 'cancelled'].includes(order.status))) && (
                             <TouchableOpacity
                                 style={styles.updateStatusButton}
                                 onPress={() => setShowStatusModal(true)}
