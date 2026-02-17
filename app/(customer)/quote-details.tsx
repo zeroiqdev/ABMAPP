@@ -327,7 +327,7 @@ export default function CustomerQuoteDetailsScreen() {
                                     { color: invoice.paymentStatus === 'paid' ? colors.success : colors.warning }
                                 ]}>
                                     {invoice.paymentStatus === 'paid' ? 'Paid' :
-                                        invoice.paymentStatus === 'partially_paid' ? 'Partial' : 'Pending'}
+                                        invoice.paymentStatus === 'partially_paid' ? 'Partial' : 'Unpaid'}
                                 </Text>
                             </View>
                         </View>

@@ -239,7 +239,7 @@ export default function InvoiceDetailsScreen() {
               borderColor: getPaymentStatusColor(invoice.paymentStatus) + '30'
             }]}>
               <Text style={[styles.statusText, { color: getPaymentStatusColor(invoice.paymentStatus) }]}>
-                {invoice.paymentStatus.replace('_', ' ').toUpperCase()}
+                {invoice.paymentStatus === 'pending' ? 'UNPAID' : invoice.paymentStatus.replace('_', ' ').toUpperCase()}
               </Text>
             </View>
           </View>

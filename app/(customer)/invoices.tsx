@@ -163,7 +163,8 @@ export default function InvoicesScreen() {
               <Text style={[styles.statusText, { color: statusColor }]}>
                 {item.paymentStatus === 'partially_paid'
                   ? 'Partial'
-                  : item.paymentStatus.charAt(0).toUpperCase() + item.paymentStatus.slice(1)}
+                  : item.paymentStatus === 'pending' ? 'Unpaid'
+                    : item.paymentStatus.charAt(0).toUpperCase() + item.paymentStatus.slice(1)}
               </Text>
             </View>
           </View>
