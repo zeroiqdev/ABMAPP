@@ -17,6 +17,7 @@ import { firebaseService } from '@/services/firebaseService';
 import { MarketplaceProduct } from '@/types';
 import { useAuthStore } from '@/store/authStore';
 import { useCartStore } from '@/store/cartStore';
+import { useColors } from '@/constants/design';
 
 const { width } = Dimensions.get('window');
 
@@ -30,6 +31,7 @@ export default function ProductDetailsScreen() {
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
     const [showToast, setShowToast] = useState(false);
     const toastOpacity = useState(new Animated.Value(0))[0];
+    const colors = useColors();
 
     const handleBack = () => {
         if (from === 'marketplace') {
@@ -93,8 +95,8 @@ export default function ProductDetailsScreen() {
 
     if (loading) {
         return (
-            <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#000" />
+            <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+                <ActivityIndicator size="large" color={colors.primary} />
             </View>
         );
     }
@@ -115,15 +117,15 @@ export default function ProductDetailsScreen() {
     }
 
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
             {/* Header */}
-            <View style={styles.header}>
-                <TouchableOpacity style={styles.iconButton} onPress={handleBack}>
-                    <Ionicons name="arrow-back" size={24} color="#000" />
+            <View style={[styles.header, { backgroundColor: colors.surface }]}>
+                <TouchableOpacity style={[styles.iconButton, { backgroundColor: colors.background }]} onPress={handleBack}>
+                    <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle} numberOfLines={1}>Product Details</Text>
-                <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/(customer)/cart')}>
-                    <Ionicons name="bag-outline" size={24} color="#000" />
+                <Text style={[styles.headerTitle, { color: colors.textPrimary }]} numberOfLines={1}>Product Details</Text>
+                <TouchableOpacity style={[styles.iconButton, { backgroundColor: colors.background }]} onPress={() => router.push('/(customer)/cart')}>
+                    <Ionicons name="bag-outline" size={24} color={colors.textPrimary} />
                 </TouchableOpacity>
             </View>
 

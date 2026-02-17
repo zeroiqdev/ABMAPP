@@ -160,8 +160,10 @@ service cloud.firestore {
         (isStaff() && request.resource.data.workshopId == getUserWorkshopId()) || 
         (isAuthenticated() && request.resource.data.userId == request.auth.uid);
       
+      
       allow update: if isSuperAdmin() || 
-        (isStaff() && resource.data.workshopId == getUserWorkshopId());
+        (isStaff() && resource.data.workshopId == getUserWorkshopId()) ||
+        (isAuthenticated() && resource.data.userId == request.auth.uid);
     }
 
     match /quotes/{quoteId} {

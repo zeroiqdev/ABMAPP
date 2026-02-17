@@ -826,7 +826,7 @@ const getStyles = (colors: any, insets: any) => StyleSheet.create({
         backgroundColor: colors.primary,
     },
     confirmButtonText: {
-        color: '#fff',
+        color: colors.textInverse,
         fontSize: 16,
         fontWeight: '600',
     },

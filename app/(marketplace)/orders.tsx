@@ -105,13 +105,12 @@ export default function OrdersScreen() {
   };
 
   const getFilteredOrders = () => {
-    if (!isVendor) return orders;
     switch (activeTab) {
       case 'New Orders': return orders.filter(o => o.status === 'pending');
       case 'Processing': return orders.filter(o => o.status === 'confirmed');
       case 'Shipped': return orders.filter(o => o.status === 'shipped');
       case 'Cancelled': return orders.filter(o => o.status === 'cancelled');
-      default: return orders;
+      default: return orders; // 'All Orders' tab
     }
   };
 

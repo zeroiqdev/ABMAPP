@@ -35,6 +35,7 @@ const ISSUE_OPTIONS = [
   'Noise / Vibration',
   'Overheating',
   'Performance Loss',
+  'Others',
 ];
 
 export default function ServiceScreen() {
@@ -236,7 +237,7 @@ export default function ServiceScreen() {
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView style={styles.content}>
+      <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 100 }}>
 
         {/* Vehicle Selection */}
         <View style={styles.section}>
@@ -290,7 +291,7 @@ export default function ServiceScreen() {
                 style={[
                   styles.dropdownTrigger,
                   selectedWorkshopId === workshop.id && { backgroundColor: colors.surface, borderColor: colors.primary, borderWidth: 2 },
-                  { padding: 15, width: 140, height: 80, flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center' }
+                  { padding: 15, width: 140, height: 80, flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }
                 ]}
                 onPress={() => setSelectedWorkshopId(workshop.id)}
               >
