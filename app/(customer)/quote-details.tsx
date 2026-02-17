@@ -158,7 +158,7 @@ export default function CustomerQuoteDetailsScreen() {
                 method: 'bank_transfer',
                 recordedBy: user.id,
                 recordedByName: user.name,
-            });
+            }, true); // isCustomerPayment - staff must independently confirm
             Alert.alert('Success', 'Payment recorded successfully');
             setShowPaymentModal(false);
             setPaymentAmount('');

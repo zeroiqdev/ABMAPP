@@ -1816,7 +1816,7 @@ export const firebaseService = {
     });
   },
 
-  async recordPayment(invoiceId: string, payment: Omit<PaymentRecord, 'date'>): Promise<void> {
+  async recordPayment(invoiceId: string, payment: Omit<PaymentRecord, 'date'>, isCustomerPayment: boolean = false): Promise<void> {
     const invoice = await this.getInvoice(invoiceId);
     if (!invoice) throw new Error('Invoice not found');
     if (invoice.invoiceStatus === 'settled') throw new Error('Invoice is already settled');
@@ -1832,7 +1832,8 @@ export const firebaseService = {
     const paymentHistory = [...(invoice.paymentHistory || []), paymentEntry];
 
     let newPaymentStatus = invoice.paymentStatus;
-    if (newAmountPaid >= invoice.total) {
+    if (newAmountPaid >= invoice.total && !isCustomerPayment) {
+      // Only staff/admin can mark as fully paid
       newPaymentStatus = 'paid';
     } else if (newAmountPaid > 0) {
       newPaymentStatus = 'partially_paid';
