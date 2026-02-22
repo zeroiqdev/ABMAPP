@@ -149,7 +149,7 @@ export default function WorkshopLayout() {
         name="dashboard"
         options={{
           href: canViewDashboard ? undefined : null,
-          title: 'Home',
+          title: 'Overview',
           tabBarIcon: ({ focused, color, size }) => (
             focused ? <HomeIconSolid size={size || 24} color={color} /> : <HomeIconOutline size={size || 24} color={color} />
           ),

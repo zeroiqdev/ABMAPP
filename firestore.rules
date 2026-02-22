@@ -47,6 +47,8 @@ service cloud.firestore {
       // 4. Super Admin
       allow read: if resource == null || (isAuthenticated() && request.auth.uid == userId);
       allow read: if resource != null && isStaff() && getUserWorkshopId() == resource.data.workshopId;
+      // Allow staff to read member-mode customers (workshopId in selectedWorkshopIds array)
+      allow read: if resource != null && isStaff() && resource.data.keys().hasAny(['selectedWorkshopIds']) && getUserWorkshopId() in resource.data.selectedWorkshopIds;
       allow read: if resource != null && isAuthenticated() && resource.data.email != null && resource.data.email == request.auth.token.email;
       allow read: if isSuperAdmin(); // Super Admin Access
 
@@ -162,7 +164,7 @@ service cloud.firestore {
       
       
       allow update: if isSuperAdmin() || 
-        (isStaff() && resource.data.workshopId == getUserWorkshopId()) ||
+        (isStaff() && (resource.data.workshopId == getUserWorkshopId() || resource.data.workshopId == null)) ||
         (isAuthenticated() && resource.data.userId == request.auth.uid);
     }
 

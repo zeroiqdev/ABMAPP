@@ -18,7 +18,7 @@ import { Order } from '@/types';
 import { useColors, Typography, Spacing } from '@/constants/design';
 import { format } from 'date-fns';
 
-const TABS = ['All Orders', 'New Orders', 'Processing', 'Shipped', 'Cancelled'];
+const TABS = ['All Orders', 'New Orders', 'Processing', 'Shipped', 'Delivered', 'Ready for Payout', 'Cancelled'];
 
 export default function OrdersScreen() {
   const router = useRouter();
@@ -109,6 +109,8 @@ export default function OrdersScreen() {
       case 'New Orders': return orders.filter(o => o.status === 'pending');
       case 'Processing': return orders.filter(o => o.status === 'confirmed');
       case 'Shipped': return orders.filter(o => o.status === 'shipped');
+      case 'Delivered': return orders.filter(o => o.status === 'delivered');
+      case 'Ready for Payout': return orders.filter(o => o.status === 'delivered' && o.payoutStatus !== 'paid');
       case 'Cancelled': return orders.filter(o => o.status === 'cancelled');
       default: return orders; // 'All Orders' tab
     }

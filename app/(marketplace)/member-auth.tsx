@@ -12,6 +12,8 @@ import {
     Platform,
     useColorScheme,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { format } from 'date-fns';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
@@ -56,9 +58,17 @@ export default function MemberAuthScreen() {
         id: string;
     } | null>(null);
 
+    // Existing customer detection
+    const [isExistingCustomer, setIsExistingCustomer] = useState(false);
+    const [existingWorkshops, setExistingWorkshops] = useState<string[]>([]);
+
     // Workshop selection
     const [selectedWorkshopIds, setSelectedWorkshopIds] = useState<string[]>([]);
     const [showWorkshopSelector, setShowWorkshopSelector] = useState(false);
+
+    // Birthday field
+    const [birthday, setBirthday] = useState<Date | null>(null);
+    const [showDatePicker, setShowDatePicker] = useState(false);
 
     // New user ID for profile completion
     const [newUserId, setNewUserId] = useState<string | null>(null);
@@ -91,56 +101,17 @@ export default function MemberAuthScreen() {
                 const staffDoc = staffSnap.docs[0];
                 const data = staffDoc.data();
                 setInvitation({
-                    type: 'staff',
-                    role: data.role || 'Staff',
+                    type: data.role === 'customer' ? 'customer' : 'staff',
+                    role: data.role === 'customer' ? 'Customer' : (data.role || 'Staff'),
                     code: data.invitationCode,
                     id: staffDoc.id
                 });
-                setStep('create');
-                setLoading(false);
-                return;
-            }
 
-            // Check for customer registration
-            const customerQ = query(
-                collection(db, 'customerRegistrations'),
-                where('email', '==', trimmedEmail),
-                where('used', '==', false)
-            );
-            const customerSnap = await getDocs(customerQ);
+                if (data.role === 'customer') {
+                    setIsExistingCustomer(true);
+                    setExistingWorkshops([data.workshopId]);
+                }
 
-            if (!customerSnap.empty) {
-                const customerDoc = customerSnap.docs[0];
-                const data = customerDoc.data();
-                setInvitation({
-                    type: 'customer',
-                    role: 'Customer',
-                    code: data.registrationCode,
-                    id: customerDoc.id
-                });
-                setStep('create');
-                setLoading(false);
-                return;
-            }
-
-            // Check for vendor invitation
-            const vendorQ = query(
-                collection(db, 'staffInvitations'),
-                where('email', '==', trimmedEmail),
-                where('role', '==', 'vendor'),
-                where('used', '==', false)
-            );
-            const vendorSnap = await getDocs(vendorQ);
-
-            if (!vendorSnap.empty) {
-                const vendorDoc = vendorSnap.docs[0];
-                const data = vendorDoc.data();
-                setInvitation({
-                    type: 'staff',
-                    role: 'Vendor',
-                    code: data.invitationCode,
-                    id: vendorDoc.id
-                });
                 setStep('create');
                 setLoading(false);
                 return;
@@ -192,8 +163,8 @@ export default function MemberAuthScreen() {
         }
     };
 
-    // Handle invited user account creation
-    const handleCreateInvitedAccount = async () => {
+    // Handle invited or existing user account creation
+    const handleCreateAccount = async () => {
         if (!password || password.length < 6) {
             setError('Password must be at least 6 characters');
             return;
@@ -204,16 +175,35 @@ export default function MemberAuthScreen() {
             return;
         }
 
+        if (!birthday) {
+            setError('Please enter your birthday');
+            return;
+        }
+
         setLoading(true);
         setError('');
 
         try {
             if (invitation?.type === 'staff') {
-                await acceptStaffInvite(email.trim(), password, invitation.code);
-            } else if (invitation?.type === 'customer') {
-                await registerCustomerAccount(email.trim(), password, invitation.code);
+                await acceptStaffInvite(email.trim(), password, invitation.code, birthday ? format(birthday, 'yyyy-MM-dd') : undefined);
+            } else {
+                // For existing customers or general signup
+                await registerCustomerAccount(email.trim(), password, undefined, undefined, undefined, birthday ? format(birthday, 'yyyy-MM-dd') : undefined);
             }
             setGuest(false);
+
+            // Navigate user after successful creation
+            const userData = useAuthStore.getState().user;
+            if (userData) {
+                if (userData.needsProfileCompletion || !userData.name) {
+                    setNewUserId(userData.id);
+                    setStep('completeProfile');
+                } else {
+                    navigateUser(userData);
+                }
+            } else {
+                router.replace('/(marketplace)/home');
+            }
         } catch (err: any) {
             setError(err.message || 'Account creation failed');
         } finally {
@@ -249,7 +239,9 @@ export default function MemberAuthScreen() {
                 email: email.trim().toLowerCase(),
                 role: 'customer',
                 workshopIds: selectedWorkshopIds,
+                birthday: birthday ? format(birthday, 'yyyy-MM-dd') : '',
                 createdAt: new Date(),
+                updatedAt: new Date(),
                 needsProfileCompletion: true,
             });
 
@@ -553,11 +545,39 @@ export default function MemberAuthScreen() {
                                         secureTextEntry
                                     />
                                 </View>
+                                <View style={styles.divider} />
+                                <View style={styles.inputGroup}>
+                                    <Text style={styles.inputLabel}>Birthday (Optional)</Text>
+                                    <TouchableOpacity
+                                        style={styles.dateSelector}
+                                        onPress={() => setShowDatePicker(true)}
+                                    >
+                                        <Text style={[styles.dateText, !birthday && { color: colors.textTertiary }]}>
+                                            {birthday ? format(birthday, 'MMM dd, yyyy') : 'Select Birthday'}
+                                        </Text>
+                                        <Ionicons name="calendar-outline" size={20} color={colors.textTertiary} />
+                                    </TouchableOpacity>
+                                </View>
+
+                                {showDatePicker && (
+                                    <DateTimePicker
+                                        value={birthday || new Date()}
+                                        mode="date"
+                                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                                        maximumDate={new Date()}
+                                        onChange={(event, selectedDate) => {
+                                            setShowDatePicker(Platform.OS === 'ios');
+                                            if (selectedDate) {
+                                                setBirthday(selectedDate);
+                                            }
+                                        }}
+                                    />
+                                )}
                             </View>
                             {error ? <Text style={styles.errorText}>{error}</Text> : null}
                             <TouchableOpacity
                                 style={[styles.primaryButton, loading && styles.buttonDisabled]}
-                                onPress={handleCreateInvitedAccount}
+                                onPress={handleCreateAccount}
                                 disabled={loading}
                             >
                                 {loading ? (
@@ -578,7 +598,7 @@ export default function MemberAuthScreen() {
                                     <Text style={styles.inputLabel}>Email</Text>
                                     <Text style={styles.emailDisplayText}>{email}</Text>
                                 </View>
-                                <View style={styles.divider} />
+
                                 <View style={styles.inputGroup}>
                                     <Text style={styles.inputLabel}>Password</Text>
                                     <TextInput
@@ -590,7 +610,7 @@ export default function MemberAuthScreen() {
                                         secureTextEntry
                                     />
                                 </View>
-                                <View style={styles.divider} />
+
                                 <View style={styles.inputGroup}>
                                     <Text style={styles.inputLabel}>Confirm Password</Text>
                                     <TextInput
@@ -602,6 +622,34 @@ export default function MemberAuthScreen() {
                                         secureTextEntry
                                     />
                                 </View>
+
+                                <View style={styles.inputGroup}>
+                                    <Text style={styles.inputLabel}>Birthday (YYYY-MM-DD)</Text>
+                                    <TouchableOpacity
+                                        style={styles.dateSelector}
+                                        onPress={() => setShowDatePicker(true)}
+                                    >
+                                        <Text style={[styles.dateText, !birthday && { color: colors.textTertiary }]}>
+                                            {birthday ? format(birthday, 'MMM dd, yyyy') : 'Select Birthday'}
+                                        </Text>
+                                        <Ionicons name="calendar-outline" size={20} color={colors.textTertiary} />
+                                    </TouchableOpacity>
+                                </View>
+
+                                {showDatePicker && (
+                                    <DateTimePicker
+                                        value={birthday || new Date()}
+                                        mode="date"
+                                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                                        maximumDate={new Date()}
+                                        onChange={(event, selectedDate) => {
+                                            setShowDatePicker(Platform.OS === 'ios');
+                                            if (selectedDate) {
+                                                setBirthday(selectedDate);
+                                            }
+                                        }}
+                                    />
+                                )}
                             </View>
 
                             {/* Workshop Selector */}
@@ -881,5 +929,16 @@ const getStyles = (colors: any) => StyleSheet.create({
     appleButton: {
         width: '100%',
         height: 50,
+    },
+    dateSelector: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingVertical: 10,
+        backgroundColor: 'transparent',
+    },
+    dateText: {
+        fontSize: 16,
+        color: colors.textPrimary,
     },
 });

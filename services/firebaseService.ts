@@ -1,4 +1,3 @@
-
 import {
   collection,
   doc,
@@ -24,6 +23,7 @@ import { sendPasswordResetEmail } from 'firebase/auth'; // Added
 import * as FileSystem from 'expo-file-system';
 import { db, storage, auth } from '@/config/firebase'; // Added auth
 import { uploadImageToCloudinary, uploadMultipleImagesToCloudinary } from './cloudinaryService';
+import { emailService } from './emailService';
 import {
   User,
   Vehicle,
@@ -48,6 +48,24 @@ import {
 export const firebaseService = {
   async sendPasswordResetEmail(email: string): Promise<void> {
     await sendPasswordResetEmail(auth, email);
+  },
+
+  // Helper to remove undefined fields before sending to Firestore
+  sanitizeData(data: any): any {
+    if (typeof data !== 'object' || data === null || data instanceof Date || data instanceof Timestamp) {
+      return data;
+    }
+
+    if (Array.isArray(data)) {
+      return data.map(item => this.sanitizeData(item));
+    }
+
+    return Object.entries(data).reduce((acc, [key, value]) => {
+      if (value !== undefined) {
+        acc[key] = this.sanitizeData(value);
+      }
+      return acc;
+    }, {} as any);
   },
 
   async getUser(userId: string): Promise<User | null> {
@@ -128,11 +146,11 @@ export const firebaseService = {
     // Check if workshopId needs fixing
     if (userData.workshopId !== correctWorkshopId) {
       console.log('[DEBUG] Fixing workshopId from', userData.workshopId, 'to', correctWorkshopId);
-      await updateDoc(doc(db, 'users', userDoc.id), {
+      await updateDoc(doc(db, 'users', userDoc.id), this.sanitizeData({
         workshopId: correctWorkshopId,
         role: 'customer', // Ensure role is set correctly too
         updatedAt: Timestamp.now(),
-      });
+      }));
       return { found: true, fixed: true, user: { id: userDoc.id, ...userData } };
     }
 
@@ -142,7 +160,7 @@ export const firebaseService = {
   async updateUser(userId: string, data: Partial<User>): Promise<void> {
     const docRef = doc(db, 'users', userId);
     await updateDoc(docRef, {
-      ...data,
+      ...this.sanitizeData(data),
       updatedAt: Timestamp.now(),
     });
   },
@@ -248,12 +266,32 @@ export const firebaseService = {
   },
 
   async createCustomer(customer: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
-    const docRef = await addDoc(collection(db, 'users'), {
+    const customerData = this.sanitizeData({
       ...customer,
-      role: 'customer',
+      role: 'customer' as const,
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
     });
+
+    const docRef = await addDoc(collection(db, 'users'), customerData);
+
+    // Mirror to staffInvitations for unauthenticated lookup during member-mode signup
+    try {
+      await addDoc(collection(db, 'staffInvitations'), this.sanitizeData({
+        email: customer.email.toLowerCase().trim(),
+        name: customer.name || '',
+        phone: customer.phone || '',
+        role: 'customer',
+        invitationCode: `CUST-${Math.random().toString(36).substring(2, 7).toUpperCase()}`, // Not strictly needed but keeps schema consistent
+        invitedBy: customer.workshopId, // Or whoever created it, workshopId is a good proxy for origin
+        workshopId: customer.workshopId,
+        used: false,
+        createdAt: Timestamp.now(),
+      }));
+    } catch (err) {
+      console.error('Failed to create mirrored staff invitation for customer:', err);
+    }
+
     return docRef.id;
   },
 
@@ -426,18 +464,18 @@ export const firebaseService = {
   },
 
   async addVehicle(vehicle: Omit<Vehicle, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
-    const docRef = await addDoc(collection(db, 'vehicles'), {
+    const docRef = await addDoc(collection(db, 'vehicles'), this.sanitizeData({
       ...vehicle,
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
-    });
+    }));
     return docRef.id;
   },
 
   async updateVehicle(vehicleId: string, data: Partial<Vehicle>): Promise<void> {
     const docRef = doc(db, 'vehicles', vehicleId);
     await updateDoc(docRef, {
-      ...data,
+      ...this.sanitizeData(data),
       updatedAt: Timestamp.now(),
     });
   },
@@ -493,11 +531,11 @@ export const firebaseService = {
   },
 
   async createJob(job: Omit<Job, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
-    const docRef = await addDoc(collection(db, 'jobs'), {
+    const docRef = await addDoc(collection(db, 'jobs'), this.sanitizeData({
       ...job,
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
-    });
+    }));
 
     // Send Push Notification to Admins
     const { notificationService } = require('./notificationService');
@@ -513,7 +551,7 @@ export const firebaseService = {
   async updateJob(jobId: string, data: Partial<Job>): Promise<void> {
     const docRef = doc(db, 'jobs', jobId);
     await updateDoc(docRef, {
-      ...data,
+      ...this.sanitizeData(data),
       updatedAt: Timestamp.now(),
     });
   },
@@ -589,12 +627,7 @@ export const firebaseService = {
     const invoiceId = `INV-${customerIdentifier}-${lastFour}`;
 
     // Sanitize invoice object to remove undefined values which Firestore setDoc doesn't accept
-    const cleanInvoice = Object.entries(invoice).reduce((acc, [key, value]) => {
-      if (value !== undefined) {
-        acc[key] = value;
-      }
-      return acc;
-    }, {} as any);
+    const cleanInvoice = this.sanitizeData(invoice);
 
     // Use setDoc with custom ID instead of setDoc
     const docRef = doc(db, 'invoices', invoiceId);
@@ -636,10 +669,10 @@ export const firebaseService = {
         date: Timestamp.fromDate(record.date),
       }));
     }
-    await updateDoc(doc(db, 'invoices', invoiceId), updateData);
+    await updateDoc(doc(db, 'invoices', invoiceId), this.sanitizeData(updateData));
   },
 
-  async approveInvoice(invoiceId: string, approvedBy: string, explicitDueDate?: Date): Promise<void> {
+  async approveInvoice(invoiceId: string, approvedBy: string, explicitDueDate?: Date, isOfflineOverride: boolean = false): Promise<void> {
     const now = new Date();
     let dueDate = explicitDueDate;
 
@@ -650,9 +683,11 @@ export const firebaseService = {
 
     await this.updateInvoice(invoiceId, {
       status: 'approved',
+      invoiceStatus: 'approved',
       approvedBy,
       approvedAt: now,
       dueDate: dueDate,
+      wasUpdated: isOfflineOverride,
     });
   },
 
@@ -719,7 +754,7 @@ export const firebaseService = {
                 type: 'invoice_reminder'
               }
             };
-            await addDoc(collection(db, 'notifications'), notificationData);
+            await addDoc(collection(db, 'notifications'), this.sanitizeData(notificationData));
             console.log(`Sent reminder for invoice ${invoice.id}`);
           }
         }
@@ -780,18 +815,18 @@ export const firebaseService = {
   async createInventoryItem(
     item: Omit<InventoryItem, 'id' | 'createdAt' | 'updatedAt'>
   ): Promise<string> {
-    const docRef = await addDoc(collection(db, 'inventory'), {
+    const docRef = await addDoc(collection(db, 'inventory'), this.sanitizeData({
       ...item,
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
-    });
+    }));
     return docRef.id;
   },
 
   async updateInventoryItem(itemId: string, data: Partial<InventoryItem>): Promise<void> {
     const docRef = doc(db, 'inventory', itemId);
     await updateDoc(docRef, {
-      ...data,
+      ...this.sanitizeData(data),
       updatedAt: Timestamp.now(),
     });
   },
@@ -799,10 +834,10 @@ export const firebaseService = {
   async createStockTransaction(
     transaction: Omit<StockTransaction, 'id' | 'createdAt'>
   ): Promise<string> {
-    const docRef = await addDoc(collection(db, 'stockTransactions'), {
+    const docRef = await addDoc(collection(db, 'stockTransactions'), this.sanitizeData({
       ...transaction,
       createdAt: Timestamp.now(),
-    });
+    }));
     return docRef.id;
   },
 
@@ -871,10 +906,10 @@ export const firebaseService = {
   async createMarketplaceProduct(
     product: Omit<MarketplaceProduct, 'id' | 'createdAt'>
   ): Promise<string> {
-    const docRef = await addDoc(collection(db, 'marketplaceProducts'), {
+    const docRef = await addDoc(collection(db, 'marketplaceProducts'), this.sanitizeData({
       ...product,
       createdAt: Timestamp.now(),
-    });
+    }));
     return docRef.id;
   },
 
@@ -882,7 +917,7 @@ export const firebaseService = {
     productId: string,
     data: Partial<MarketplaceProduct>
   ): Promise<void> {
-    await updateDoc(doc(db, 'marketplaceProducts', productId), data);
+    await updateDoc(doc(db, 'marketplaceProducts', productId), this.sanitizeData(data));
   },
 
   async uploadMarketplaceImage(imageUri: string, vendorId?: string): Promise<string> {
@@ -902,10 +937,10 @@ export const firebaseService = {
   },
 
   async createOrder(order: Omit<Order, 'id' | 'createdAt'>): Promise<string> {
-    const docRef = await addDoc(collection(db, 'orders'), {
+    const docRef = await addDoc(collection(db, 'orders'), this.sanitizeData({
       ...order,
       createdAt: Timestamp.now(),
-    });
+    }));
 
     // Send Push Notification to Admins
     const { notificationService } = require('./notificationService');
@@ -972,7 +1007,7 @@ export const firebaseService = {
   },
 
   async updateOrder(orderId: string, data: Partial<Order>): Promise<void> {
-    await updateDoc(doc(db, 'orders', orderId), data);
+    await updateDoc(doc(db, 'orders', orderId), this.sanitizeData(data));
   },
 
   subscribeToOrders(userId: string, callback: (orders: Order[]) => void): () => void {
@@ -1064,7 +1099,7 @@ export const firebaseService = {
   },
 
   async updateWorkshop(workshopId: string, data: Partial<Workshop>): Promise<void> {
-    await updateDoc(doc(db, 'workshops', workshopId), data);
+    await updateDoc(doc(db, 'workshops', workshopId), this.sanitizeData(data));
   },
 
   async getWorkshopPermissions(workshopId: string): Promise<Record<string, RolePermissions['permissions']>> {
@@ -1095,10 +1130,10 @@ export const firebaseService = {
   async createNotification(
     notification: Omit<Notification, 'id' | 'createdAt'>
   ): Promise<string> {
-    const docRef = await addDoc(collection(db, 'notifications'), {
+    const docRef = await addDoc(collection(db, 'notifications'), this.sanitizeData({
       ...notification,
       createdAt: Timestamp.now(),
-    });
+    }));
     return docRef.id;
   },
 
@@ -1247,10 +1282,10 @@ export const firebaseService = {
       used: false,
     };
 
-    const docRef = await addDoc(collection(db, 'customerRegistrations'), {
+    const docRef = await addDoc(collection(db, 'customerRegistrations'), this.sanitizeData({
       ...registrationData,
       createdAt: Timestamp.now(),
-    });
+    }));
 
     return { id: docRef.id, registrationCode };
   },
@@ -1337,10 +1372,24 @@ export const firebaseService = {
       used: false,
     };
 
-    const docRef = await addDoc(collection(db, 'staffInvitations'), {
+    const docRef = await addDoc(collection(db, 'staffInvitations'), this.sanitizeData({
       ...invitationData,
       createdAt: Timestamp.now(),
-    });
+    }));
+
+    // Send invitation email in background
+    (async () => {
+      try {
+        let workshopName = '';
+        const wsDoc = await getDoc(doc(db, 'workshops', workshopId));
+        if (wsDoc.exists()) {
+          workshopName = wsDoc.data().name || '';
+        }
+        await emailService.sendStaffInvite(email, name, invitationCode, role, workshopName);
+      } catch (err) {
+        console.error('Failed to send invitation email:', err);
+      }
+    })();
 
     return { id: docRef.id, invitationCode };
   },
@@ -1398,11 +1447,11 @@ export const firebaseService = {
   },
 
   async sendJobMessage(jobId: string, message: Omit<ChatMessage, 'id' | 'jobId' | 'createdAt'>): Promise<string> {
-    const docRef = await addDoc(collection(db, 'jobs', jobId, 'messages'), {
+    const docRef = await addDoc(collection(db, 'jobs', jobId, 'messages'), this.sanitizeData({
       ...message,
       jobId,
       createdAt: Timestamp.now(),
-    });
+    }));
     return docRef.id;
   },
 
@@ -1492,26 +1541,26 @@ export const firebaseService = {
     if (adminNotes) {
       updateData.adminNotes = adminNotes;
     }
-    await updateDoc(docRef, updateData);
+    await updateDoc(docRef, this.sanitizeData(updateData));
   },
 
   async updateOrderStatus(orderId: string, status: Order['status']): Promise<void> {
     const docRef = doc(db, 'orders', orderId);
-    await updateDoc(docRef, {
+    await updateDoc(docRef, this.sanitizeData({
       status,
       updatedAt: Timestamp.now(),
-    });
+    }));
   },
 
   // ============ QUOTE FUNCTIONS ============
 
   async createQuote(quote: Omit<Quote, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
-    const docRef = await addDoc(collection(db, 'quotes'), {
+    const docRef = await addDoc(collection(db, 'quotes'), this.sanitizeData({
       ...quote,
       status: 'draft',
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
-    });
+    }));
     return docRef.id;
   },
 
@@ -1576,18 +1625,18 @@ export const firebaseService = {
   async updateQuote(quoteId: string, data: Partial<Quote>): Promise<void> {
     const docRef = doc(db, 'quotes', quoteId);
     await updateDoc(docRef, {
-      ...data,
+      ...this.sanitizeData(data),
       updatedAt: Timestamp.now(),
     });
   },
 
   async sendQuoteForApproval(quoteId: string, userId: string, userName: string): Promise<void> {
     const docRef = doc(db, 'quotes', quoteId);
-    await updateDoc(docRef, {
+    await updateDoc(docRef, this.sanitizeData({
       status: 'pending_approval',
       sentAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
-    });
+    }));
 
     await this.addQuoteLog(quoteId, {
       action: 'send',
@@ -1666,7 +1715,7 @@ export const firebaseService = {
     if (reason) {
       updateData.rejectionReason = reason;
     }
-    await updateDoc(docRef, updateData);
+    await updateDoc(docRef, this.sanitizeData(updateData));
 
     await this.addQuoteLog(quoteId, {
       action: 'reject',
@@ -1678,13 +1727,13 @@ export const firebaseService = {
 
   async addQuoteLog(quoteId: string, log: { action: string; description: string; userId: string; userName: string }): Promise<void> {
     const docRef = doc(db, 'quotes', quoteId);
-    await updateDoc(docRef, {
+    await updateDoc(docRef, this.sanitizeData({
       history: arrayUnion({
         ...log,
         timestamp: Timestamp.now(),
       }),
       updatedAt: Timestamp.now(),
-    });
+    }));
   },
 
   async approveQuote(quoteId: string, approverId: string, approverName: string, expectedTotal?: number): Promise<string> {
@@ -1705,7 +1754,7 @@ export const firebaseService = {
     // Create invoice from quote
     const invoiceId = await this.createInvoice({
       jobId: quote.jobId,
-      userId: approverId, // Use approver's ID (Customer) to ensure invoice belongs to the authenticated user
+      userId: quote.userId || approverId, // Use quote's userId (Customer) if available, fallback to approver
       customerName: quote.customerName,
       customerPhone: quote.customerPhone,
       customerEmail: quote.customerEmail,
@@ -1821,19 +1870,77 @@ export const firebaseService = {
     if (!invoice) throw new Error('Invoice not found');
     if (invoice.invoiceStatus === 'settled') throw new Error('Invoice is already settled');
 
+    if (isCustomerPayment) {
+      // Customer payment: store as pending, staff must confirm
+      const pendingPayment = {
+        id: `pp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        amount: payment.amount,
+        method: payment.method || 'bank_transfer',
+        recordedBy: payment.recordedBy || '',
+        recordedByName: payment.recordedByName || '',
+        date: new Date(),
+        status: 'pending' as const,
+      };
+
+      const pendingPayments = [...(invoice.pendingPayments || []), pendingPayment];
+      await this.updateInvoice(invoiceId, { pendingPayments });
+    } else {
+      // Staff payment: update immediately
+      const paymentEntry: PaymentRecord = {
+        ...payment,
+        date: new Date(),
+        entityType: 'invoice',
+        entityId: invoiceId,
+      };
+
+      const newAmountPaid = (invoice.amountPaid || 0) + payment.amount;
+      const paymentHistory = [...(invoice.paymentHistory || []), paymentEntry];
+
+      let newPaymentStatus = invoice.paymentStatus;
+      if (newAmountPaid >= invoice.total) {
+        newPaymentStatus = 'paid';
+      } else if (newAmountPaid > 0) {
+        newPaymentStatus = 'partially_paid';
+      }
+
+      await this.updateInvoice(invoiceId, {
+        amountPaid: newAmountPaid,
+        paymentHistory,
+        paymentStatus: newPaymentStatus,
+      });
+    }
+  },
+
+  async confirmPendingPayment(invoiceId: string, pendingPaymentId: string, confirmedBy: string, confirmedByName: string): Promise<void> {
+    const invoice = await this.getInvoice(invoiceId);
+    if (!invoice) throw new Error('Invoice not found');
+
+    const pendingPayments = invoice.pendingPayments || [];
+    const pendingIndex = pendingPayments.findIndex(p => p.id === pendingPaymentId);
+    if (pendingIndex === -1) throw new Error('Pending payment not found');
+
+    const pending = pendingPayments[pendingIndex];
+
+    // Move to payment history
     const paymentEntry: PaymentRecord = {
-      ...payment,
-      date: new Date(),
+      amount: pending.amount,
+      date: pending.date,
+      method: pending.method,
+      recordedBy: pending.recordedBy,
+      recordedByName: pending.recordedByName,
+      note: `Confirmed by ${confirmedByName}`,
       entityType: 'invoice',
       entityId: invoiceId,
     };
 
-    const newAmountPaid = (invoice.amountPaid || 0) + payment.amount;
+    const newAmountPaid = (invoice.amountPaid || 0) + pending.amount;
     const paymentHistory = [...(invoice.paymentHistory || []), paymentEntry];
 
+    // Remove from pending
+    const updatedPending = pendingPayments.filter(p => p.id !== pendingPaymentId);
+
     let newPaymentStatus = invoice.paymentStatus;
-    if (newAmountPaid >= invoice.total && !isCustomerPayment) {
-      // Only staff/admin can mark as fully paid
+    if (newAmountPaid >= invoice.total) {
       newPaymentStatus = 'paid';
     } else if (newAmountPaid > 0) {
       newPaymentStatus = 'partially_paid';
@@ -1843,7 +1950,16 @@ export const firebaseService = {
       amountPaid: newAmountPaid,
       paymentHistory,
       paymentStatus: newPaymentStatus,
+      pendingPayments: updatedPending,
     });
+  },
+
+  async rejectPendingPayment(invoiceId: string, pendingPaymentId: string): Promise<void> {
+    const invoice = await this.getInvoice(invoiceId);
+    if (!invoice) throw new Error('Invoice not found');
+
+    const pendingPayments = (invoice.pendingPayments || []).filter(p => p.id !== pendingPaymentId);
+    await this.updateInvoice(invoiceId, { pendingPayments });
   },
 
   subscribeToQuotes(

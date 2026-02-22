@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import {
     View,
     Text,
@@ -43,10 +43,13 @@ export default function CustomerQuoteDetailsScreen() {
     const [showRejectModal, setShowRejectModal] = useState(false);
     const [rejectionReason, setRejectionReason] = useState('');
     const [rejecting, setRejecting] = useState(false);
+    const navigatingAway = useRef(false);
 
     useFocusEffect(
         useCallback(() => {
-            loadQuote();
+            if (!navigatingAway.current) {
+                loadQuote();
+            }
         }, [id])
     );
 
@@ -57,10 +60,10 @@ export default function CustomerQuoteDetailsScreen() {
             const quoteData = await firebaseService.getQuote(id);
             setQuote(quoteData);
 
-            // If quote is converted, load the invoice
-            if (quoteData?.convertedToInvoiceId) {
+            // If quote is converted, load the invoice (but not if we're navigating away)
+            if (quoteData?.convertedToInvoiceId && !navigatingAway.current) {
                 const invoiceData = await firebaseService.getInvoice(quoteData.convertedToInvoiceId);
-                setInvoice(invoiceData);
+                if (!navigatingAway.current) setInvoice(invoiceData);
             }
         } catch (error) {
             console.error('Error loading quote:', error);
@@ -89,9 +92,12 @@ export default function CustomerQuoteDetailsScreen() {
                                 user.name,
                                 (quote.total) // Pass the expected total
                             );
+                            // Prevent any re-render from loading/showing the invoice view
+                            navigatingAway.current = true;
+                            setApproving(false);
+                            router.replace('/(customer)/invoices');
                             Alert.alert('Success', 'Quote approved! Invoice has been created.');
-                            loadQuote();
-                            // router.replace(`/(customer)/invoice-details?id=${invoiceId}`);
+                            return; // Exit early, skip finally block
                         } catch (error: any) {
                             if (error.message.includes('Price Mismatch')) {
                                 Alert.alert(
@@ -159,7 +165,7 @@ export default function CustomerQuoteDetailsScreen() {
                 recordedBy: user.id,
                 recordedByName: user.name,
             }, true); // isCustomerPayment - staff must independently confirm
-            Alert.alert('Success', 'Payment recorded successfully');
+            Alert.alert('Payment Submitted', 'Your payment is pending confirmation by the workshop. You will be notified once it is confirmed.');
             setShowPaymentModal(false);
             setPaymentAmount('');
             loadQuote(); // Reload to get updated invoice
@@ -336,6 +342,18 @@ export default function CustomerQuoteDetailsScreen() {
                                 ₦{(invoice.amountPaid || 0).toLocaleString()} paid of ₦{invoice.total.toLocaleString()}
                             </Text>
                         )}
+                        {invoice.pendingPayments && invoice.pendingPayments.length > 0 && (
+                            <View style={{ marginTop: 10, padding: 10, backgroundColor: colors.warning + '15', borderRadius: 8 }}>
+                                <Text style={{ fontSize: 13, fontWeight: '600', color: colors.warning, marginBottom: 4 }}>
+                                    ⏳ Pending Confirmation
+                                </Text>
+                                {invoice.pendingPayments.map((pp: any, i: number) => (
+                                    <Text key={i} style={{ fontSize: 12, color: colors.textSecondary }}>
+                                        ₦{pp.amount.toLocaleString()} — awaiting workshop confirmation
+                                    </Text>
+                                ))}
+                            </View>
+                        )}
                     </View>
                 )}
 
@@ -382,10 +400,18 @@ export default function CustomerQuoteDetailsScreen() {
                         <Text style={styles.summaryLabel}>Subtotal</Text>
                         <Text style={styles.summaryValue}>₦{quote.subtotal.toLocaleString()}</Text>
                     </View>
-                    <View style={styles.summaryRow}>
-                        <Text style={styles.summaryLabel}>VAT ({quote.vatRate}%)</Text>
-                        <Text style={styles.summaryValue}>₦{quote.vat.toLocaleString()}</Text>
-                    </View>
+                    {(quote.vatRate || 0) > 0 && (
+                        <View style={styles.summaryRow}>
+                            <Text style={styles.summaryLabel}>VAT ({quote.vatRate}%)</Text>
+                            <Text style={styles.summaryValue}>₦{(quote.vat || 0).toLocaleString()}</Text>
+                        </View>
+                    )}
+                    {(quote.discount || 0) > 0 && (
+                        <View style={styles.summaryRow}>
+                            <Text style={styles.summaryLabel}>Discount</Text>
+                            <Text style={[styles.summaryValue, { color: colors.error }]}>-₦{(quote.discount || 0).toLocaleString()}</Text>
+                        </View>
+                    )}
                     <View style={[styles.summaryRow, styles.totalRow]}>
                         <Text style={styles.totalLabel}>Total</Text>
                         <Text style={styles.totalValue}>₦{quote.total.toLocaleString()}</Text>

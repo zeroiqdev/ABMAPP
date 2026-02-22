@@ -65,7 +65,9 @@ export interface User {
 
   createdAt: Date;
   updatedAt: Date;
+  birthday?: string; // Format: YYYY-MM-DD
 }
+
 
 export interface Vehicle {
   id: string;
@@ -130,6 +132,16 @@ export interface PaymentRecord {
   note?: string;
   entityType?: 'quote' | 'invoice';
   entityId?: string;
+}
+
+export interface PendingPayment {
+  id: string;
+  amount: number;
+  method: string;
+  recordedBy: string;
+  recordedByName: string;
+  date: Date;
+  status: 'pending' | 'confirmed' | 'rejected';
 }
 
 export interface ApprovalEntry {
@@ -212,6 +224,7 @@ export interface Invoice {
   dueDate?: Date;
   amountPaid?: number;
   paymentHistory?: PaymentRecord[];
+  pendingPayments?: PendingPayment[];
   status: 'draft' | 'approved' | 'void';  // Backwards compat
   invoiceStatus?: InvoiceStatus;          // New workflow status
   approvedAt?: Date;
@@ -224,6 +237,7 @@ export interface Invoice {
 }
 
 export interface InvoiceItem {
+  id?: string;
   description: string;
   quantity: number;
   unitPrice: number;
@@ -345,6 +359,7 @@ export interface CustomerRegistration {
   registrationCode: string;
   registeredBy: string;
   workshopId: string;
+  birthday?: string;
   used: boolean;
   createdAt: Date;
   usedAt?: Date;
@@ -359,6 +374,7 @@ export interface StaffInvitation {
   invitationCode: string;
   invitedBy: string;
   workshopId: string;
+  birthday?: string;
   used: boolean;
   createdAt: Date;
   usedAt?: Date;

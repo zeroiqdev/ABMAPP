@@ -14,13 +14,16 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
+import { useColors, Spacing, Typography, BorderRadius } from '@/constants/design';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
+import * as ImagePicker from 'expo-image-picker';
 
 export default function VendorRegistrationScreen() {
     const router = useRouter();
     const { user, setUser } = useAuthStore();
+    const colors = useColors();
+    const styles = getStyles(colors);
     const [loading, setLoading] = useState(false);
 
     // Business Details - Initialize from existing data if available
@@ -190,16 +193,17 @@ export default function VendorRegistrationScreen() {
                         onChangeText={setRcNumber}
                         placeholderTextColor="#666"
                     />
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Certificate of Incorporation (Optional)"
-                        editable={false} selectTextOnFocus={false}
-                        value={certificateImage ? "Image Selected" : ""}
-                        placeholderTextColor="#666"
-                    />
+                    {certificateImage && (
+                        <View style={styles.previewWrapper}>
+                            <Image source={{ uri: certificateImage }} style={styles.previewImage} />
+                            <TouchableOpacity style={styles.removePreview} onPress={() => setCertificateImage(null)}>
+                                <Ionicons name="close-circle" size={24} color="#ef4444" />
+                            </TouchableOpacity>
+                        </View>
+                    )}
                     <TouchableOpacity style={styles.uploadBtn} onPress={() => pickImage(setCertificateImage)}>
                         <Ionicons name="cloud-upload-outline" size={20} color="#000" />
-                        <Text style={styles.uploadBtnText}>{certificateImage ? 'Change Certificate Image' : 'Upload Certificate'}</Text>
+                        <Text style={styles.uploadBtnText}>{certificateImage ? 'Change Certificate' : 'Upload Certificate'}</Text>
                     </TouchableOpacity>
 
                     <TextInput
@@ -233,6 +237,14 @@ export default function VendorRegistrationScreen() {
                         onChangeText={setCountry}
                         placeholderTextColor="#666"
                     />
+                    {proofAddressImage && (
+                        <View style={styles.previewWrapper}>
+                            <Image source={{ uri: proofAddressImage }} style={styles.previewImage} />
+                            <TouchableOpacity style={styles.removePreview} onPress={() => setProofAddressImage(null)}>
+                                <Ionicons name="close-circle" size={24} color="#ef4444" />
+                            </TouchableOpacity>
+                        </View>
+                    )}
                     <TouchableOpacity style={styles.uploadBtn} onPress={() => pickImage(setProofAddressImage)}>
                         <Ionicons name="cloud-upload-outline" size={20} color="#000" />
                         <Text style={styles.uploadBtnText}>{proofAddressImage ? 'Change Proof of Address' : 'Upload Proof of Address'}</Text>
@@ -265,6 +277,14 @@ export default function VendorRegistrationScreen() {
                         keyboardType="numeric"
                         placeholderTextColor="#666"
                     />
+                    {ninImage && (
+                        <View style={styles.previewWrapper}>
+                            <Image source={{ uri: ninImage }} style={styles.previewImage} />
+                            <TouchableOpacity style={styles.removePreview} onPress={() => setNinImage(null)}>
+                                <Ionicons name="close-circle" size={24} color="#ef4444" />
+                            </TouchableOpacity>
+                        </View>
+                    )}
                     <TouchableOpacity style={styles.uploadBtn} onPress={() => pickImage(setNinImage)}>
                         <Ionicons name="cloud-upload-outline" size={20} color="#000" />
                         <Text style={styles.uploadBtnText}>{ninImage ? 'Change NIN Image' : 'Upload NIN Image (Required)'}</Text>
@@ -279,7 +299,7 @@ export default function VendorRegistrationScreen() {
                         placeholder="Bank Name"
                         value={bankName}
                         onChangeText={setBankName}
-                        placeholderTextColor="#666"
+                        placeholderTextColor={colors.textSecondary}
                     />
                     <TextInput
                         style={styles.input}
@@ -287,14 +307,14 @@ export default function VendorRegistrationScreen() {
                         value={accountNumber}
                         onChangeText={setAccountNumber}
                         keyboardType="numeric"
-                        placeholderTextColor="#666"
+                        placeholderTextColor={colors.textSecondary}
                     />
                     <TextInput
                         style={styles.input}
                         placeholder="Account Name"
                         value={accountName}
                         onChangeText={setAccountName}
-                        placeholderTextColor="#666"
+                        placeholderTextColor={colors.textSecondary}
                     />
                 </View>
 
@@ -316,44 +336,46 @@ export default function VendorRegistrationScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#fff',
+        backgroundColor: colors.background,
     },
     header: {
         paddingTop: 60,
         paddingHorizontal: 20,
         paddingBottom: 20,
         borderBottomWidth: 1,
-        borderBottomColor: '#f0f0f0',
+        borderBottomColor: colors.border,
+        backgroundColor: colors.surface,
     },
     headerTitle: {
         fontSize: 24,
         fontWeight: 'bold',
+        color: colors.textPrimary,
     },
     content: {
         padding: 20,
     },
     subtitle: {
         fontSize: 16,
-        color: '#666',
+        color: colors.textSecondary,
         marginBottom: 30,
         lineHeight: 24,
     },
     alertBox: {
         flexDirection: 'row',
-        backgroundColor: '#fef2f2',
+        backgroundColor: colors.error + '10',
         padding: 15,
         borderRadius: 8,
         marginBottom: 20,
         alignItems: 'center',
         gap: 10,
         borderWidth: 1,
-        borderColor: '#fee2e2',
+        borderColor: colors.error + '30',
     },
     alertText: {
-        color: '#b91c1c',
+        color: colors.error,
         flex: 1,
         fontSize: 14,
     },
@@ -364,17 +386,17 @@ const styles = StyleSheet.create({
         fontSize: 18,
         fontWeight: '700',
         marginBottom: 15,
-        color: '#111',
+        color: colors.textPrimary,
     },
     input: {
         borderWidth: 1,
-        borderColor: '#ddd',
+        borderColor: colors.border,
         borderRadius: 8,
         padding: 15,
         marginBottom: 15,
         fontSize: 16,
-        backgroundColor: '#fff',
-        color: '#000',
+        backgroundColor: colors.surface,
+        color: colors.textPrimary,
     },
     textArea: {
         height: 100,
@@ -394,7 +416,7 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         padding: 15,
         borderWidth: 1,
-        borderColor: '#000',
+        borderColor: colors.textPrimary,
         borderStyle: 'dashed',
         borderRadius: 8,
         marginBottom: 15,
@@ -403,10 +425,10 @@ const styles = StyleSheet.create({
     uploadBtnText: {
         fontSize: 14,
         fontWeight: '600',
-        color: '#000',
+        color: colors.textPrimary,
     },
     submitButton: {
-        backgroundColor: '#000',
+        backgroundColor: colors.textPrimary,
         padding: 18,
         borderRadius: 8,
         alignItems: 'center',
@@ -416,8 +438,31 @@ const styles = StyleSheet.create({
         opacity: 0.7,
     },
     submitButtonText: {
-        color: '#fff',
+        color: colors.textInverse,
         fontSize: 16,
         fontWeight: 'bold',
+    },
+    previewWrapper: {
+        width: '100%',
+        height: 200,
+        borderRadius: 8,
+        overflow: 'hidden',
+        marginBottom: 10,
+        position: 'relative',
+        backgroundColor: colors.background,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    previewImage: {
+        width: '100%',
+        height: '100%',
+        resizeMode: 'cover',
+    },
+    removePreview: {
+        position: 'absolute',
+        top: 10,
+        right: 10,
+        backgroundColor: 'rgba(255, 255, 255, 0.8)',
+        borderRadius: 15,
     },
 });

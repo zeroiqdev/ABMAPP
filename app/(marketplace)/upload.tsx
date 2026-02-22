@@ -60,7 +60,32 @@ export default function VendorUploadScreen() {
     const [stock, setStock] = useState('1');
     const [compatibility, setCompatibility] = useState('');
     const [condition, setCondition] = useState<'new' | 'used'>('new');
+    const [editingProductId, setEditingProductId] = useState<string | null>(null);
     const [images, setImages] = useState<{ uri: string }[]>([]);
+
+    const handleEditProduct = (product: MarketplaceProduct) => {
+        setEditingProductId(product.id);
+        setName(product.name);
+        setDescription(product.description || '');
+        setPrice(product.price.toString());
+        setCategory(product.category || CATEGORIES[0]);
+        setStock((product.stock || 1).toString());
+        setCompatibility(product.compatibility ? product.compatibility.join(', ') : '');
+        setCondition(product.condition === 'used' ? 'used' : 'new');
+        setImages(product.images ? product.images.map(url => ({ uri: url })) : []);
+        setView('form');
+    };
+
+    const handleResetForm = () => {
+        setEditingProductId(null);
+        setName('');
+        setDescription('');
+        setPrice('');
+        setStock('1');
+        setCompatibility('');
+        setImages([]);
+        setView('list');
+    };
 
     const loadProducts = async () => {
         if (!user || user.role !== 'vendor') return;
@@ -126,13 +151,15 @@ export default function VendorUploadScreen() {
 
         setLoading(true);
         try {
+            const isRemote = (uri: string) => uri.startsWith('http');
             const uploadedImageUrls = await Promise.all(
                 images.map(async (img) => {
+                    if (isRemote(img.uri)) return img.uri;
                     return await firebaseService.uploadMarketplaceImage(img.uri, user.id);
                 })
             );
 
-            await firebaseService.createMarketplaceProduct({
+            const productData: any = {
                 vendorId: user.id,
                 userId: user.id,
                 name,
@@ -143,40 +170,35 @@ export default function VendorUploadScreen() {
                 compatibility: compatibility.split(',').map(s => s.trim()).filter(s => s),
                 images: uploadedImageUrls,
                 condition,
-                approved: true, // Auto-approve for now, or depending on business logic
+                approved: true,
                 brand: 'Generic',
-                soldCount: 0,
-                rating: 0,
-                reviews: 0,
-            });
+                updatedAt: new Date(),
+            };
 
-            Alert.alert('Success', 'Product listed successfully', [
-                {
-                    text: 'OK', onPress: () => {
-                        // Reset form
-                        setName('');
-                        setDescription('');
-                        setPrice('');
-                        setStock('1');
-                        setCompatibility('');
-                        setImages([]);
-                        // Switch back to list view
-                        setView('list');
-                    }
-                }
-            ]);
+            if (editingProductId) {
+                await firebaseService.updateMarketplaceProduct(editingProductId, productData);
+                Alert.alert('Success', 'Product updated successfully', [{ text: 'OK', onPress: handleResetForm }]);
+            } else {
+                await firebaseService.createMarketplaceProduct({
+                    ...productData,
+                    soldCount: 0,
+                    rating: 0,
+                    reviews: 0,
+                });
+                Alert.alert('Success', 'Product listed successfully', [{ text: 'OK', onPress: handleResetForm }]);
+            }
         } catch (error) {
             console.error(error);
-            Alert.alert('Error', 'Failed to list product');
+            Alert.alert('Error', editingProductId ? 'Failed to update product' : 'Failed to list product');
         } finally {
             setLoading(false);
         }
-    }, [user, name, price, description, images, category, stock, compatibility, condition]);
+    }, [user, name, price, description, images, category, stock, compatibility, condition, editingProductId]);
 
     const renderProduct = ({ item }: { item: MarketplaceProduct }) => (
         <TouchableOpacity
             style={styles.productCard}
-            onPress={() => router.push(`/(marketplace)/product-details?id=${item.id}`)}
+            onPress={() => handleEditProduct(item)}
             activeOpacity={0.9}
         >
             <View style={styles.imageContainer}>
@@ -266,10 +288,10 @@ export default function VendorUploadScreen() {
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => setView('list')} style={styles.backIcon}>
+                <TouchableOpacity onPress={handleResetForm} style={styles.backIcon}>
                     <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>List New Part</Text>
+                <Text style={styles.headerTitle}>{editingProductId ? 'Edit Part' : 'List New Part'}</Text>
                 <TouchableOpacity onPress={handleSubmit} disabled={loading} style={{ marginLeft: 'auto' }}>
                     {loading ? (
                         <ActivityIndicator color={colors.textPrimary} />

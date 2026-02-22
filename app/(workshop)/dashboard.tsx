@@ -63,6 +63,7 @@ export default function WorkshopDashboard() {
   });
   const [recentJobs, setRecentJobs] = useState<Job[]>([]);
   const [recentJobVehicles, setRecentJobVehicles] = useState<Record<string, any>>({});
+  const [birthdaysToday, setBirthdaysToday] = useState<User[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [monthPickerVisible, setMonthPickerVisible] = useState(false);
 
@@ -79,9 +80,10 @@ export default function WorkshopDashboard() {
     setRefreshing(true);
 
     try {
-      const [jobs, invoices] = await Promise.all([
+      const [jobs, invoices, allUsers] = await Promise.all([
         firebaseService.getJobs(undefined, user.workshopId),
         firebaseService.getInvoices(undefined, user.workshopId),
+        firebaseService.getUsersByWorkshop(user.workshopId),
       ]);
 
       // Ensure arrays are defined
@@ -259,6 +261,15 @@ export default function WorkshopDashboard() {
         })
       );
       setRecentJobVehicles(vehicleMap);
+
+      // --- Birthdays Today ---
+      const today = format(new Date(), 'MM-dd');
+      const celebratingToday = allUsers.filter(u => {
+        if (!u.birthday) return false;
+        // birthday format: YYYY-MM-DD or MM-DD
+        return u.birthday.includes(today);
+      });
+      setBirthdaysToday(celebratingToday);
     } catch (error) {
       console.error('Error loading dashboard data:', error);
     } finally {
@@ -288,7 +299,7 @@ export default function WorkshopDashboard() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textPrimary} />
         }
       >
-        {getRoleDashboard({ user, stats, recentJobs, recentJobVehicles, onOpenMonthPicker: () => setMonthPickerVisible(true) })}
+        {getRoleDashboard({ user, stats, recentJobs, recentJobVehicles, birthdaysToday, onOpenMonthPicker: () => setMonthPickerVisible(true) })}
       </ScrollView>
 
       <MonthPickerModal
@@ -301,13 +312,13 @@ export default function WorkshopDashboard() {
   );
 }
 
-function getRoleDashboard({ user, stats, recentJobs, recentJobVehicles, onOpenMonthPicker }: { user: any, stats: any, recentJobs: Job[], recentJobVehicles: Record<string, any>, onOpenMonthPicker: () => void }) {
+function getRoleDashboard({ user, stats, recentJobs, recentJobVehicles, birthdaysToday, onOpenMonthPicker }: { user: any, stats: any, recentJobs: Job[], recentJobVehicles: Record<string, any>, birthdaysToday: User[], onOpenMonthPicker: () => void }) {
   const router = useRouter();
 
   switch (user?.role) {
     case 'admin':
     case 'super_admin':
-      return <AdminDashboard user={user} stats={stats} recentJobs={recentJobs} recentJobVehicles={recentJobVehicles} onOpenMonthPicker={onOpenMonthPicker} />;
+      return <AdminDashboard user={user} stats={stats} recentJobs={recentJobs} recentJobVehicles={recentJobVehicles} birthdaysToday={birthdaysToday} onOpenMonthPicker={onOpenMonthPicker} />;
     case 'technician':
       return <TechnicianDashboard stats={stats} recentJobs={recentJobs} recentJobVehicles={recentJobVehicles} onOpenMonthPicker={onOpenMonthPicker} />;
     default:
@@ -443,12 +454,14 @@ function AdminDashboard({
   stats,
   recentJobs,
   recentJobVehicles,
+  birthdaysToday,
   onOpenMonthPicker,
 }: {
   user: any;
   stats: any;
   recentJobs: Job[];
   recentJobVehicles: Record<string, any>;
+  birthdaysToday: User[];
   onOpenMonthPicker: () => void;
 }) {
   const router = useRouter();
@@ -537,10 +550,17 @@ function AdminDashboard({
               onPressIcon={onOpenMonthPicker}
             />
           </View>
+
+          {/* Birthdays Today */}
+          {birthdaysToday.length > 0 && (
+            <View style={styles.slideContainer}>
+              <BirthdayCard users={birthdaysToday} />
+            </View>
+          )}
         </ScrollView>
 
         <View style={styles.pagination}>
-          {[0, 1, 2, 3, 4].map((_, index) => (
+          {[0, 1, 2, 3, 4, ...(birthdaysToday.length > 0 ? [5] : [])].map((_, index) => (
             <View
               key={index}
               style={[
@@ -846,6 +866,36 @@ function RecentJobItem({ job, vehicle }: { job: Job, vehicle?: any }) {
 }
 
 
+
+function BirthdayCard({ users }: { users: User[] }) {
+  const colors = useColors();
+  const styles = useMemo(() => getStyles(colors), [colors]);
+
+  return (
+    <View style={[styles.blackCard, { backgroundColor: colors.secondary }]}>
+      <View style={styles.metricHeader}>
+        <Text style={[styles.metricTitle, { color: colors.textInverse, opacity: 0.7 }]}>Birthdays Today 🎂</Text>
+        <View style={[styles.metricIconCircle, { backgroundColor: colors.surface }]}>
+          <Ionicons name="gift" size={16} color={colors.textPrimary} />
+        </View>
+      </View>
+
+      <ScrollView style={{ flex: 1, marginTop: 10 }}>
+        {users.map((u) => (
+          <View key={u.id} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 10 }}>
+            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.success }} />
+            <Text style={{ color: colors.textInverse, fontSize: 16, fontWeight: '600' }} numberOfLines={1}>{u.name}</Text>
+            <Text style={{ color: colors.textInverse, opacity: 0.7, fontSize: 12 }}>({u.role === 'customer' ? 'Member' : 'Staff'})</Text>
+          </View>
+        ))}
+      </ScrollView>
+
+      <View style={styles.metricFooter}>
+        <Text style={{ color: colors.textInverse, opacity: 0.7, fontSize: 12 }}>Don't forget to send a wish!</Text>
+      </View>
+    </View>
+  );
+}
 
 const getStyles = (colors: any) => StyleSheet.create({
   container: {

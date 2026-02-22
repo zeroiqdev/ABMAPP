@@ -166,8 +166,8 @@ export default function WorkshopJobDetailsScreen() {
         assignedTechnicianIds: selectedTechnicians.length > 0 ? selectedTechnicians : job.assignedTechnicianIds,
         technicianNames: techNames.length > 0 ? techNames : job.technicianNames,
         // Keep legacy fields for backwards compatibility
-        assignedTechnicianId: selectedTechnicians[0] || job.assignedTechnicianId,
-        technicianName: techNames[0] || job.technicianName,
+        assignedTechnicianId: selectedTechnicians[0] || (job.assignedTechnicianId ?? undefined),
+        technicianName: techNames[0] || (job.technicianName ?? undefined),
         // Append status history entry
         statusHistory: [...(job.statusHistory || []), statusHistoryEntry],
         ...(newStatus === 'completed' ? { completedAt: new Date() } : {}),

@@ -14,7 +14,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
-import { Order, OrderItem } from '@/types';
+import { Order, OrderItem, User } from '@/types';
 import { useColors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/design'; // Import useColors
 import { format } from 'date-fns';
 
@@ -28,6 +28,7 @@ export default function MarketplaceOrderDetailsScreen() {
     const [order, setOrder] = useState<Order | null>(null);
     const [loading, setLoading] = useState(true);
     const [processing, setProcessing] = useState(false);
+    const [vendors, setVendors] = useState<Record<string, User>>({});
 
     useEffect(() => {
         if (!id || (user?.role !== 'admin' && user?.role !== 'super_admin')) {
@@ -41,6 +42,20 @@ export default function MarketplaceOrderDetailsScreen() {
         try {
             const orderData = await firebaseService.getOrder(id);
             setOrder(orderData);
+
+            if (orderData?.products) {
+                const uniqueVendorIds = [...new Set(orderData.products.map(p => p.vendorId).filter(Boolean))];
+                const vendorData: Record<string, User> = {};
+                for (const vId of uniqueVendorIds as string[]) {
+                    try {
+                        const vProf = await firebaseService.getUser(vId);
+                        if (vProf) vendorData[vId] = vProf;
+                    } catch (e) {
+                        console.warn(`Could not load vendor ${vId}`, e);
+                    }
+                }
+                setVendors(vendorData);
+            }
         } catch (error) {
             console.error('Error loading order:', error);
             Alert.alert('Error', 'Failed to load order details');
@@ -54,10 +69,14 @@ export default function MarketplaceOrderDetailsScreen() {
         if (!order) return;
         setProcessing(true);
         try {
-            await firebaseService.updateOrderStatus(order.id, status);
-            setOrder({ ...order, status });
+            const updates: any = { status };
+            if (status === 'delivered') {
+                updates.payoutStatus = 'pending';
+            }
+            await firebaseService.updateOrder(order.id, updates);
+            setOrder({ ...order, ...updates });
             Alert.alert('Success', `Order marked as ${status}`);
-            router.back();
+            if (status !== 'delivered') router.back();
         } catch (error) {
             console.error('Error updating status:', error);
             Alert.alert('Error', 'Failed to update order status');
@@ -111,6 +130,20 @@ export default function MarketplaceOrderDetailsScreen() {
                         disabled={processing}
                     >
                         <Text style={styles.acceptButtonText}>Accept Order</Text>
+                    </TouchableOpacity>
+                </View>
+            );
+        }
+
+        if (order.status === 'confirmed') {
+            return (
+                <View style={styles.actionsContainer}>
+                    <TouchableOpacity
+                        style={[styles.actionButton, styles.payoutButton]}
+                        onPress={() => handleUpdateStatus('delivered')}
+                        disabled={processing}
+                    >
+                        <Text style={styles.payoutButtonText}>Mark as Delivered</Text>
                     </TouchableOpacity>
                 </View>
             );
@@ -297,6 +330,23 @@ export default function MarketplaceOrderDetailsScreen() {
                     </View>
                 </View>
 
+                {/* Vendor Payout Details */}
+                {order.status === 'delivered' && order.payoutStatus !== 'paid' && Object.keys(vendors).length > 0 && (
+                    <View style={styles.section}>
+                        <Text style={styles.sectionTitle}>Vendor Payout Details</Text>
+                        {Object.values(vendors).map((vendor) => (
+                            <View key={vendor.id} style={styles.vendorCard}>
+                                <Text style={styles.vendorName}>{vendor.businessDetails?.businessName || vendor.name}</Text>
+                                <View style={styles.bankInfo}>
+                                    <Text style={styles.bankText}>Bank: {vendor.businessDetails?.bankName || 'N/A'}</Text>
+                                    <Text style={styles.bankText}>A/C No: {vendor.businessDetails?.accountNumber || 'N/A'}</Text>
+                                    <Text style={styles.bankText}>A/C Name: {vendor.businessDetails?.accountName || 'N/A'}</Text>
+                                </View>
+                            </View>
+                        ))}
+                    </View>
+                )}
+
                 {/* Action Buttons */}
                 {renderActionButtons()}
             </ScrollView>
@@ -473,5 +523,26 @@ const getStyles = (colors: any) => StyleSheet.create({
         color: '#fff',
         fontWeight: 'bold',
         fontSize: 16,
+    },
+    vendorCard: {
+        backgroundColor: colors.background,
+        padding: 15,
+        borderRadius: 12,
+        marginBottom: 10,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    vendorName: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: colors.textPrimary,
+        marginBottom: 8,
+    },
+    bankInfo: {
+        gap: 4,
+    },
+    bankText: {
+        fontSize: 14,
+        color: colors.textSecondary,
     },
 });

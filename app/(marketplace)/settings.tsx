@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Switch, TextInput, ActivityIndicator, Modal } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Switch, TextInput, ActivityIndicator, Modal, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
@@ -10,6 +10,8 @@ import { db, auth } from '@/config/firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { useColors } from '@/constants/design';
 import { WorkshopSelectorModal } from '@/components/WorkshopSelectorModal';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { format } from 'date-fns';
 
 // Workshop Roles - for routing after login
 const workshopRoles = ['admin', 'technician', 'storekeeper', 'accountant', 'service_advisor', 'super_admin'];
@@ -48,9 +50,17 @@ export default function SettingsScreen() {
     // Track if we are in the member flow (vs guest flow)
     const [isMemberModeFlow, setIsMemberModeFlow] = useState(false);
 
+    // Existing customer detection
+    const [isExistingCustomer, setIsExistingCustomer] = useState(false);
+    const [existingWorkshops, setExistingWorkshops] = useState<string[]>([]);
+
     // Workshop selection for new customers
     const [selectedWorkshopIds, setSelectedWorkshopIds] = useState<string[]>([]);
     const [showWorkshopSelector, setShowWorkshopSelector] = useState(false);
+
+    // Birthday field
+    const [birthday, setBirthday] = useState<Date | null>(null);
+    const [showDatePicker, setShowDatePicker] = useState(false);
 
     // Profile completion state (for member mode registration)
     const [profileName, setProfileName] = useState('');
@@ -154,63 +164,23 @@ export default function SettingsScreen() {
                 const staffDoc = staffSnap.docs[0];
                 const data = staffDoc.data();
                 setInvitation({
-                    type: 'staff',
-                    role: data.role || 'Staff',
+                    type: data.role === 'customer' ? 'customer' : 'staff',
+                    role: data.role === 'customer' ? 'Customer' : (data.role || 'Staff'),
                     code: data.invitationCode,
                     id: staffDoc.id
                 });
-                setStep('create');
-                setLoading(false);
-                return;
-            }
 
-            // Check for customer registration
-            const customerQ = query(
-                collection(db, 'customerRegistrations'),
-                where('email', '==', trimmedEmail),
-                where('used', '==', false)
-            );
-            const customerSnap = await getDocs(customerQ);
+                if (data.role === 'customer') {
+                    setIsExistingCustomer(true);
+                    setExistingWorkshops([data.workshopId]);
+                }
 
-            if (!customerSnap.empty) {
-                const customerDoc = customerSnap.docs[0];
-                const data = customerDoc.data();
-                setInvitation({
-                    type: 'customer',
-                    role: 'Customer',
-                    code: data.registrationCode,
-                    id: customerDoc.id
-                });
-                setStep('create');
-                setLoading(false);
-                return;
-            }
-
-            // Check for vendor invitation
-            const vendorQ = query(
-                collection(db, 'staffInvitations'),
-                where('email', '==', trimmedEmail),
-                where('role', '==', 'vendor'),
-                where('used', '==', false)
-            );
-            const vendorSnap = await getDocs(vendorQ);
-
-            if (!vendorSnap.empty) {
-                const vendorDoc = vendorSnap.docs[0];
-                const data = vendorDoc.data();
-                setInvitation({
-                    type: 'staff',
-                    role: 'Vendor',
-                    code: data.invitationCode,
-                    id: vendorDoc.id
-                });
                 setStep('create');
                 setLoading(false);
                 return;
             }
 
             // No invitation found -> Proceed to Unified Auth (Login/Signup)
-            // This allows the user to enter their password.
             setStep('login');
 
         } catch (err) {
@@ -360,12 +330,12 @@ export default function SettingsScreen() {
         setLoading(true);
         setError('');
         try {
-            if (invitation.type === 'staff') {
+            if (invitation && invitation.type === 'staff') {
                 // Use staff invite flow
-                await acceptStaffInvite(email.trim().toLowerCase(), password, invitation.code);
+                await acceptStaffInvite(email.trim().toLowerCase(), password, invitation.code, birthday ? format(birthday, 'yyyy-MM-dd') : undefined);
             } else {
-                // Use customer registration flow
-                await registerCustomerAccount(email.trim().toLowerCase(), password, invitation.code);
+                // Use customer registration flow (merging or fresh)
+                await registerCustomerAccount(email.trim().toLowerCase(), password, undefined, undefined, undefined, birthday ? format(birthday, 'yyyy-MM-dd') : undefined);
             }
 
             setGuest(false);
@@ -432,6 +402,15 @@ export default function SettingsScreen() {
             // Check for existing customer records with this email (created by staff)
             let existingName = '';
             let existingPhone = '';
+            // Create Firebase auth account
+            const userCredential = await createUserWithEmailAndPassword(
+                auth,
+                normalizedEmail,
+                password
+            );
+            const uid = userCredential.user.uid;
+
+            // Now authenticated, we can safely search for existing customer records to merge
             try {
                 const usersQuery = query(
                     collection(db, 'users'),
@@ -446,25 +425,19 @@ export default function SettingsScreen() {
                     existingPhone = existingDoc.phone || '';
                 }
             } catch (err) {
-                console.log('Could not query existing customers:', err);
+                console.log('Could not query existing customers after auth:', err);
             }
-
-            // Create Firebase auth account
-            const userCredential = await createUserWithEmailAndPassword(
-                auth,
-                normalizedEmail,
-                password
-            );
 
             // Create user document as customer with selected workshops
             // Also set workshopId to first selected for backward compatibility with staff queries
-            await setDoc(doc(db, 'users', userCredential.user.uid), {
+            await setDoc(doc(db, 'users', uid), {
                 email: normalizedEmail,
                 name: existingName, // Preserve any existing name from staff-created record
                 phone: existingPhone, // Preserve any existing phone from staff-created record
                 role: 'customer',
                 workshopId: selectedWorkshopIds[0], // For backward compatibility with staff queries
                 selectedWorkshopIds: selectedWorkshopIds,
+                birthday: birthday ? format(birthday, 'yyyy-MM-dd') : '',
                 createdAt: new Date(),
                 updatedAt: new Date(),
             });
@@ -474,7 +447,7 @@ export default function SettingsScreen() {
             setProfilePhone(existingPhone);
 
             // Save user ID and go to profile completion step
-            setNewUserId(userCredential.user.uid);
+            setNewUserId(uid);
             setStep('completeProfile');
         } catch (error: any) {
             let msg = 'Failed to create account.';
@@ -722,6 +695,30 @@ export default function SettingsScreen() {
                                             onChangeText={setConfirmPassword}
                                             secureTextEntry
                                         />
+                                        <TouchableOpacity
+                                            style={styles.dateSelector}
+                                            onPress={() => setShowDatePicker(true)}
+                                        >
+                                            <Text style={[styles.dateText, !birthday && { color: colors.textTertiary }]}>
+                                                {birthday ? format(birthday, 'MMM dd, yyyy') : 'Birthday (Optional)'}
+                                            </Text>
+                                            <Ionicons name="calendar-outline" size={20} color={colors.textTertiary} />
+                                        </TouchableOpacity>
+
+                                        {showDatePicker && (
+                                            <DateTimePicker
+                                                value={birthday || new Date()}
+                                                mode="date"
+                                                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                                                maximumDate={new Date()}
+                                                onChange={(event, selectedDate) => {
+                                                    setShowDatePicker(Platform.OS === 'ios');
+                                                    if (selectedDate) {
+                                                        setBirthday(selectedDate);
+                                                    }
+                                                }}
+                                            />
+                                        )}
                                         {error ? <Text style={styles.errorText}>{error}</Text> : null}
                                         <TouchableOpacity
                                             style={[styles.loginButtonSecondary, loading && { opacity: 0.7 }]}
@@ -763,6 +760,30 @@ export default function SettingsScreen() {
                                             onChangeText={setConfirmPassword}
                                             secureTextEntry
                                         />
+                                        <TouchableOpacity
+                                            style={styles.dateSelector}
+                                            onPress={() => setShowDatePicker(true)}
+                                        >
+                                            <Text style={[styles.dateText, !birthday && { color: colors.textTertiary }]}>
+                                                {birthday ? format(birthday, 'MMM dd, yyyy') : 'Birthday (Optional)'}
+                                            </Text>
+                                            <Ionicons name="calendar-outline" size={20} color={colors.textTertiary} />
+                                        </TouchableOpacity>
+
+                                        {showDatePicker && (
+                                            <DateTimePicker
+                                                value={birthday || new Date()}
+                                                mode="date"
+                                                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                                                maximumDate={new Date()}
+                                                onChange={(event, selectedDate) => {
+                                                    setShowDatePicker(Platform.OS === 'ios');
+                                                    if (selectedDate) {
+                                                        setBirthday(selectedDate);
+                                                    }
+                                                }}
+                                            />
+                                        )}
 
                                         {/* Workshop Selector (After Passwords) */}
                                         <TouchableOpacity
@@ -1484,5 +1505,16 @@ const getStyles = (colors: any) => StyleSheet.create({
     selectWorkshopsButtonText: {
         color: colors.textPrimary,
         fontWeight: '600',
+    },
+    dateSelector: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingVertical: 10,
+        backgroundColor: 'transparent',
+    },
+    dateText: {
+        fontSize: 16,
+        color: colors.textPrimary,
     },
 });

@@ -36,6 +36,8 @@ export default function QuoteDetailsScreen() {
     // Editing State
     const [isEditing, setIsEditing] = useState(false);
     const [editingItems, setEditingItems] = useState<any[]>([]);
+    const [editingVatRate, setEditingVatRate] = useState('');
+    const [editingDiscount, setEditingDiscount] = useState('');
     const [saving, setSaving] = useState(false);
 
     // Add Item State
@@ -61,6 +63,8 @@ export default function QuoteDetailsScreen() {
             setQuote(quoteData);
             if (quoteData) {
                 setEditingItems(JSON.parse(JSON.stringify(quoteData.items)));
+                setEditingVatRate((quoteData.vatRate || 0).toString());
+                setEditingDiscount((quoteData.discount || 0).toString());
             }
         } catch (error) {
             console.error('Error loading quote:', error);
@@ -111,9 +115,41 @@ export default function QuoteDetailsScreen() {
         );
     };
 
+    const handleApproveOnBehalf = async () => {
+        if (!quote) return;
+
+        Alert.alert(
+            'Approve on Behalf',
+            'Are you sure you want to approve this quote on behalf of the customer? This will convert it into an invoice.',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Approve',
+                    onPress: async () => {
+                        setSending(true);
+                        try {
+                            const invoiceId = await firebaseService.approveQuote(
+                                quote.id,
+                                user?.id || '',
+                                user?.name || 'Staff',
+                                quote.total
+                            );
+                            Alert.alert('Success', 'Quote approved and converted to invoice');
+                            router.push(`/(workshop)/finance?invoiceId=${invoiceId}`);
+                        } catch (error: any) {
+                            Alert.alert('Error', error.message || 'Failed to approve quote');
+                        } finally {
+                            setSending(false);
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
     const handleViewInvoice = () => {
         if (quote?.convertedToInvoiceId) {
-            router.push(`/(workshop)/invoice-details?id=${quote.convertedToInvoiceId}`);
+            router.push(`/(workshop)/finance?invoiceId=${quote.convertedToInvoiceId}`);
         }
     };
 
@@ -169,10 +205,12 @@ export default function QuoteDetailsScreen() {
         if (!quote) return;
         setSaving(true);
         try {
-            // Recalculate totals
+            // Recalculate totals with edited VAT and discount
             const subtotal = editingItems.reduce((sum, item) => sum + (item.total || 0), 0);
-            const vat = subtotal * ((quote.vatRate || 0) / 100);
-            const total = subtotal + vat - (quote.discount || 0);
+            const vatRate = parseFloat(editingVatRate) || 0;
+            const discount = parseFloat(editingDiscount) || 0;
+            const vat = subtotal * (vatRate / 100);
+            const total = subtotal + vat - discount;
 
             const updatedQuote = {
                 items: editingItems.map(item => ({
@@ -181,7 +219,9 @@ export default function QuoteDetailsScreen() {
                     unitPrice: parseFloat(item.unitPrice) || 0,
                 })),
                 subtotal,
+                vatRate,
                 vat,
+                discount,
                 total,
             };
 
@@ -195,6 +235,29 @@ export default function QuoteDetailsScreen() {
             Alert.alert('Error', 'Failed to update quote');
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleSaveVatDiscount = async () => {
+        if (!quote) return;
+        try {
+            const vatRate = parseFloat(editingVatRate) || 0;
+            const discount = parseFloat(editingDiscount) || 0;
+            const subtotal = quote.subtotal || 0;
+            const vat = subtotal * (vatRate / 100);
+            const total = subtotal + vat - discount;
+
+            await firebaseService.updateQuote(quote.id, {
+                vatRate,
+                vat,
+                discount,
+                total,
+            });
+            // Silently reload quote data
+            const updated = await firebaseService.getQuote(quote.id);
+            if (updated) setQuote(updated);
+        } catch (error) {
+            console.error('Error saving VAT/discount:', error);
         }
     };
 
@@ -598,34 +661,98 @@ export default function QuoteDetailsScreen() {
                             }
                         </Text>
                     </View>
-                    <View style={styles.summaryRow}>
-                        <Text style={styles.summaryLabel}>VAT ({quote.vatRate}%)</Text>
-                        <Text style={styles.summaryValue}>
-                            ₦{isEditing
-                                ? (editingItems.reduce((sum, item) => sum + (item.total || 0), 0) * ((quote.vatRate || 0) / 100)).toLocaleString()
-                                : (quote.vat || 0).toLocaleString()
-                            }
-                        </Text>
-                    </View>
-                    {quote.discount > 0 && (
-                        <View style={styles.summaryRow}>
-                            <Text style={styles.summaryLabel}>Discount</Text>
-                            <Text style={[styles.summaryValue, { color: colors.error }]}>
-                                -₦{(quote.discount || 0).toLocaleString()}
-                            </Text>
-                        </View>
+
+                    {(quote.status === 'draft' || quote.status === 'rejected' || quote.status === 'pending_approval') ? (
+                        <>
+                            <View style={[styles.summaryRow, { alignItems: 'center' }]}>
+                                <Text style={styles.summaryLabel}>VAT Rate (%):</Text>
+                                <TextInput
+                                    style={{
+                                        borderWidth: 1,
+                                        borderColor: colors.border,
+                                        borderRadius: 4,
+                                        width: 60,
+                                        height: 35,
+                                        textAlign: 'right',
+                                        paddingHorizontal: 8,
+                                        fontSize: 14,
+                                        backgroundColor: colors.surface,
+                                        color: colors.textPrimary,
+                                    }}
+                                    value={editingVatRate}
+                                    onChangeText={(text) => {
+                                        setEditingVatRate(text);
+                                    }}
+                                    onBlur={() => handleSaveVatDiscount()}
+                                    keyboardType="numeric"
+                                    placeholder="0"
+                                />
+                            </View>
+                            {(parseFloat(editingVatRate) || 0) > 0 && (
+                                <View style={styles.summaryRow}>
+                                    <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>VAT ({editingVatRate}%):</Text>
+                                    <Text style={styles.summaryValue}>
+                                        ₦{(() => {
+                                            const sub = isEditing
+                                                ? editingItems.reduce((sum, item) => sum + (item.total || 0), 0)
+                                                : (quote.subtotal || 0);
+                                            return (sub * ((parseFloat(editingVatRate) || 0) / 100)).toLocaleString();
+                                        })()}
+                                    </Text>
+                                </View>
+                            )}
+                            <View style={[styles.summaryRow, { alignItems: 'center' }]}>
+                                <Text style={styles.summaryLabel}>Discount (Amount):</Text>
+                                <TextInput
+                                    style={{
+                                        borderWidth: 1,
+                                        borderColor: colors.border,
+                                        borderRadius: 4,
+                                        width: 60,
+                                        height: 35,
+                                        textAlign: 'right',
+                                        paddingHorizontal: 8,
+                                        fontSize: 14,
+                                        backgroundColor: colors.surface,
+                                        color: colors.textPrimary,
+                                    }}
+                                    value={editingDiscount}
+                                    onChangeText={(text) => {
+                                        setEditingDiscount(text);
+                                    }}
+                                    onBlur={() => handleSaveVatDiscount()}
+                                    keyboardType="numeric"
+                                    placeholder="0"
+                                />
+                            </View>
+                        </>
+                    ) : (
+                        <>
+                            {(quote.vatRate || 0) > 0 && (
+                                <View style={styles.summaryRow}>
+                                    <Text style={styles.summaryLabel}>VAT ({quote.vatRate}%)</Text>
+                                    <Text style={styles.summaryValue}>₦{(quote.vat || 0).toLocaleString()}</Text>
+                                </View>
+                            )}
+                            {(quote.discount || 0) > 0 && (
+                                <View style={styles.summaryRow}>
+                                    <Text style={styles.summaryLabel}>Discount</Text>
+                                    <Text style={[styles.summaryValue, { color: colors.error }]}>-₦{(quote.discount || 0).toLocaleString()}</Text>
+                                </View>
+                            )}
+                        </>
                     )}
                     <View style={[styles.summaryRow, styles.totalRow]}>
                         <Text style={styles.totalLabel}>Total</Text>
                         <Text style={styles.totalValue}>
-                            ₦{isEditing
-                                ? (
-                                    editingItems.reduce((sum, item) => sum + (item.total || 0), 0) +
-                                    (editingItems.reduce((sum, item) => sum + (item.total || 0), 0) * ((quote.vatRate || 0) / 100)) -
-                                    (quote.discount || 0)
-                                ).toLocaleString()
-                                : (quote.total || 0).toLocaleString()
-                            }
+                            ₦{(() => {
+                                const sub = isEditing
+                                    ? editingItems.reduce((sum, item) => sum + (item.total || 0), 0)
+                                    : (quote.subtotal || 0);
+                                const vr = parseFloat(editingVatRate) || 0;
+                                const disc = parseFloat(editingDiscount) || 0;
+                                return (sub + (sub * vr / 100) - disc).toLocaleString();
+                            })()}
                         </Text>
                     </View>
                 </View>
@@ -660,7 +787,10 @@ export default function QuoteDetailsScreen() {
                                 </View>
                             ))
                     ) : (
-                        <Text style={styles.emptyLogText}>No approvals or rejections recorded yet.</Text>
+                        <View style={{ alignItems: 'center', padding: 20 }}>
+                            <Ionicons name="clipboard-outline" size={48} color={colors.textTertiary} />
+                            <Text style={{ marginTop: 10, color: colors.textSecondary }}>No history recorded yet</Text>
+                        </View>
                     )}
                 </View>
 
@@ -697,10 +827,20 @@ export default function QuoteDetailsScreen() {
                         ) : (
                             <>
                                 {quote.status === 'pending_approval' && (
-                                    <View style={styles.pendingPill}>
-                                        <Ionicons name="hourglass-outline" size={14} color={colors.warning} />
-                                        <Text style={styles.pendingPillText}>Pending</Text>
-                                    </View>
+                                    <TouchableOpacity
+                                        style={[styles.button, { backgroundColor: colors.success, flex: 2 }]}
+                                        onPress={handleApproveOnBehalf}
+                                        disabled={sending}
+                                    >
+                                        {sending ? (
+                                            <ActivityIndicator color="#fff" />
+                                        ) : (
+                                            <>
+                                                <Ionicons name="checkmark-done-outline" size={20} color="#fff" />
+                                                <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>Approve on Behalf</Text>
+                                            </>
+                                        )}
+                                    </TouchableOpacity>
                                 )}
                                 <TouchableOpacity
                                     style={[styles.button, styles.editButton]}

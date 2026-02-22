@@ -5,6 +5,7 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
+  Pressable,
   RefreshControl,
   TextInput,
   Modal,
@@ -12,7 +13,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
@@ -69,6 +70,8 @@ export default function FinanceScreen() {
   const [quoteFilter, setQuoteFilter] = useState<'all' | 'draft' | 'pending' | 'converted'>('all');
   const [showCreateOptionsModal, setShowCreateOptionsModal] = useState(false);
 
+  const { invoiceId: deepLinkInvoiceId } = useLocalSearchParams<{ invoiceId?: string }>();
+
   useEffect(() => {
     loadInvoices();
     loadQuotes();
@@ -80,6 +83,27 @@ export default function FinanceScreen() {
       firebaseService.checkAndSendInvoiceReminders(user.id);
     }
   }, [user?.workshopId]);
+
+  // Auto-open invoice modal when navigating from quote's "View Invoice" button
+  useEffect(() => {
+    if (deepLinkInvoiceId && invoices.length > 0) {
+      const target = invoices.find(inv => inv.id === deepLinkInvoiceId);
+      if (target) {
+        setSelectedInvoice(target);
+        setShowInvoiceModal(true);
+        setMainSection('invoices');
+      } else {
+        // Invoice might not be in current list, fetch directly
+        firebaseService.getInvoice(deepLinkInvoiceId).then(inv => {
+          if (inv) {
+            setSelectedInvoice(inv);
+            setShowInvoiceModal(true);
+            setMainSection('invoices');
+          }
+        });
+      }
+    }
+  }, [deepLinkInvoiceId, invoices]);
 
   const loadQuotes = async () => {
     if (!user?.workshopId) return;
@@ -271,9 +295,7 @@ export default function FinanceScreen() {
   };
 
   const canEditInvoice = () => {
-    if (!selectedInvoice) return false;
-    // Allow editing if no payment has been made yet, regardless of status
-    return (selectedInvoice.amountPaid || 0) === 0;
+    return selectedInvoice && (selectedInvoice.amountPaid || 0) < (selectedInvoice.total || 0);
   };
 
   const handleApproveInvoice = async () => {
@@ -348,27 +370,31 @@ export default function FinanceScreen() {
     await saveInvoiceItems(updatedItems);
   };
 
-  const handleAddItem = async () => {
-    if (!canEditInvoice()) return;
-    if (!newItem.description || !newItem.quantity || !newItem.unitPrice) {
-      Alert.alert('Error', 'Please fill in all fields');
+  const handleAddItem = () => {
+    if (!newItem.description || !newItem.unitPrice) {
+      Alert.alert('Error', 'Please enter description and price');
       return;
     }
 
+    const qty = parseFloat(newItem.quantity) || 1;
+    const price = parseFloat(newItem.unitPrice) || 0;
+
     const item: InvoiceItem = {
+      id: Date.now().toString(),
       description: newItem.description,
-      quantity: parseFloat(newItem.quantity) || 1,
-      unitPrice: parseFloat(newItem.unitPrice) || 0,
-      total: (parseFloat(newItem.quantity) || 1) * (parseFloat(newItem.unitPrice) || 0),
+      quantity: qty,
+      unitPrice: price,
+      total: qty * price,
     };
 
-    const updatedItems = [...editingItems, item];
-    setEditingItems(updatedItems);
+    // Use functional updater to always get latest state
+    setEditingItems(prev => {
+      const updated = [...prev, item];
+      saveInvoiceItems(updated);
+      return updated;
+    });
 
-    // Save immediately
-    await saveInvoiceItems(updatedItems);
-
-    // Clear form but keep it open for adding more items
+    // Clear form
     setNewItem({ description: '', quantity: '1', unitPrice: '' });
   };
 
@@ -376,6 +402,7 @@ export default function FinanceScreen() {
     if (!canEditInvoice()) return;
 
     const item: InvoiceItem = {
+      id: Date.now().toString(),
       description: inventoryItem.name,
       quantity: quantity,
       unitPrice: inventoryItem.unitPrice,
@@ -403,7 +430,15 @@ export default function FinanceScreen() {
         items: items,
         subtotal,
         total,
+        vat: vatAmount,
+        vatRate,
+        discount,
       };
+
+      // Ensure workshop ownership is set if available
+      if (user?.workshopId) {
+        updateData.workshopId = user.workshopId;
+      }
 
       // Only update due date if it's being edited and has a value
       if (editingDueDate) {
@@ -412,18 +447,17 @@ export default function FinanceScreen() {
 
       await firebaseService.updateInvoice(selectedInvoice.id, updateData);
 
-      // Reload the invoice to get updated data
-      const updatedInvoices = await firebaseService.getInvoices(undefined, user?.workshopId);
-      const updatedInvoice = updatedInvoices.find(inv => inv.id === selectedInvoice.id);
-      if (updatedInvoice) {
-        setSelectedInvoice(updatedInvoice);
-      }
+      // Optimistic local update — update selectedInvoice in place
+      const updatedInvoice = { ...selectedInvoice, ...updateData };
+      setSelectedInvoice(updatedInvoice);
 
-      // Reload all invoices to update the list
-      await loadInvoices();
-    } catch (error) {
+      // Update the invoice in the list so the list view reflects changes
+      setInvoices(prev => prev.map(inv =>
+        inv.id === selectedInvoice.id ? updatedInvoice : inv
+      ));
+    } catch (error: any) {
       console.error('Error saving invoice items:', error);
-      Alert.alert('Error', 'Failed to save item');
+      Alert.alert('Error', `Failed to save item: ${error.message}`);
     }
   };
 
@@ -549,7 +583,7 @@ export default function FinanceScreen() {
       const vatAmount = subtotal * (vatRate / 100);
       const total = subtotal + vatAmount - discount;
 
-      await firebaseService.updateInvoice(selectedInvoice.id, {
+      const updateData: any = {
         items: editingItems,
         subtotal,
         total,
@@ -557,7 +591,13 @@ export default function FinanceScreen() {
         vatRate,
         discount,
         dueDate: editingDueDate || undefined,
-      });
+      };
+
+      if (user?.workshopId) {
+        updateData.workshopId = user.workshopId;
+      }
+
+      await firebaseService.updateInvoice(selectedInvoice.id, updateData);
 
       if (showAlert) {
         Alert.alert('Success', 'Invoice updated successfully');
@@ -565,22 +605,20 @@ export default function FinanceScreen() {
       await loadInvoices();
 
       // Reload the invoice to get updated data
-      const updatedInvoices = await firebaseService.getInvoices(undefined, user?.workshopId);
-      const updatedInvoice = updatedInvoices.find(inv => inv.id === selectedInvoice.id);
-      if (updatedInvoice) {
-        setSelectedInvoice(updatedInvoice);
-        setEditingItems([...updatedInvoice.items]);
-      }
+      // Trust local state for immediate feedback
+      // const updatedInvoice = await firebaseService.getInvoice(selectedInvoice.id);
+      // if (updatedInvoice) {
+      //   setSelectedInvoice(updatedInvoice);
+      //   setEditingItems([...updatedInvoice.items]);
+      // }
 
       if (closeModal) {
         setShowInvoiceModal(false);
         setActiveDatePicker(null);
       }
-    } catch (error) {
-      if (showAlert) {
-        Alert.alert('Error', 'Failed to update invoice');
-      }
-      console.error('Error updating invoice:', error);
+    } catch (error: any) {
+      console.error('Error saving invoice:', error);
+      Alert.alert('Error', `Failed to update invoice: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -1127,7 +1165,7 @@ export default function FinanceScreen() {
                 </View>
 
                 {editingItems.map((item, index) => (
-                  <View key={index} style={[styles.itemRow, { backgroundColor: 'transparent', borderBottomWidth: 1, borderBottomColor: colors.border, paddingVertical: 12, marginBottom: 0 }]}>
+                  <View key={item.id || index} style={[styles.itemRow, { backgroundColor: 'transparent', borderBottomWidth: 1, borderBottomColor: colors.border, paddingVertical: 12, marginBottom: 0 }]}>
                     {canEditInvoice() && editingItemIndex === index ? (
                       <View style={styles.itemEditForm}>
                         <TextInput
@@ -1274,14 +1312,18 @@ export default function FinanceScreen() {
                             />
                           </View>
                         </View>
-                        <View style={styles.itemEditActions}>
-                          <TouchableOpacity
-                            onPress={handleAddItem}
-                            style={[styles.itemEditButton, styles.addButton]}
-                          >
-                            <Text style={styles.itemEditButtonText}>Add Item</Text>
-                          </TouchableOpacity>
-                        </View>
+                        <Pressable
+                          onPress={() => handleAddItem()}
+                          style={({ pressed }) => [{
+                            backgroundColor: pressed ? colors.primary : colors.secondary,
+                            padding: 14,
+                            borderRadius: 10,
+                            alignItems: 'center',
+                            marginTop: 8,
+                          }]}
+                        >
+                          <Text style={{ color: colors.textInverse, fontWeight: '700', fontSize: 16 }}>Add Item</Text>
+                        </Pressable>
                       </>
                     ) : (
                       <View style={styles.inventorySelectionContainer}>
@@ -1312,12 +1354,30 @@ export default function FinanceScreen() {
                   </View>
                 )}
 
-                {/* Done Button - Appears for both manual and inventory modes */}
                 {canEditInvoice() && showAddItem && (
                   <TouchableOpacity
                     onPress={() => {
+                      // If in manual mode and form has data, add the item inline
+                      if (addItemMode === 'manual' && newItem.description && newItem.unitPrice) {
+                        const qty = parseFloat(newItem.quantity) || 1;
+                        const price = parseFloat(newItem.unitPrice) || 0;
+                        const item: InvoiceItem = {
+                          id: Date.now().toString(),
+                          description: newItem.description,
+                          quantity: qty,
+                          unitPrice: price,
+                          total: qty * price,
+                        };
+                        // Use functional updater to get latest state
+                        setEditingItems(prev => {
+                          const updated = [...prev, item];
+                          // Save in background with the updated array
+                          saveInvoiceItems(updated);
+                          return updated;
+                        });
+                        setNewItem({ description: '', quantity: '1', unitPrice: '' });
+                      }
                       setShowAddItem(false);
-                      setNewItem({ description: '', quantity: '1', unitPrice: '' });
                       setAddItemMode('manual');
                     }}
                     style={styles.doneButton}
@@ -1342,19 +1402,22 @@ export default function FinanceScreen() {
                       <TextInput
                         style={{
                           borderWidth: 1,
-                          borderColor: '#ddd',
+                          borderColor: colors.border,
                           borderRadius: 4,
                           width: 60,
                           height: 35,
                           textAlign: 'right',
                           paddingHorizontal: 8,
                           fontSize: 14,
-                          backgroundColor: '#fff'
+                          backgroundColor: colors.surface,
+                          color: colors.textPrimary,
                         }}
                         value={editingVatRate}
                         onChangeText={setEditingVatRate}
+                        onBlur={() => handleSaveInvoice(false, false)}
                         keyboardType="numeric"
                         placeholder="0"
+                        placeholderTextColor={colors.textTertiary}
                       />
                     </View>
                     <View style={[styles.summaryRow, { alignItems: 'center' }]}>
@@ -1362,19 +1425,22 @@ export default function FinanceScreen() {
                       <TextInput
                         style={{
                           borderWidth: 1,
-                          borderColor: '#ddd',
+                          borderColor: colors.border,
                           borderRadius: 4,
                           width: 60,
                           height: 35,
                           textAlign: 'right',
                           paddingHorizontal: 8,
                           fontSize: 14,
-                          backgroundColor: '#fff'
+                          backgroundColor: colors.surface,
+                          color: colors.error,
                         }}
                         value={editingDiscount}
                         onChangeText={setEditingDiscount}
+                        onBlur={() => handleSaveInvoice(false, false)}
                         keyboardType="numeric"
                         placeholder="0"
+                        placeholderTextColor={colors.textTertiary}
                       />
                     </View>
                   </>
@@ -1454,6 +1520,78 @@ export default function FinanceScreen() {
                         />
                       </View>
                     )}
+                  </View>
+                )
+              }
+
+              {/* Pending Customer Payments */}
+              {
+                selectedInvoice.pendingPayments &&
+                selectedInvoice.pendingPayments.length > 0 && (
+                  <View style={[styles.paymentHistorySection, { borderColor: Colors.warning, borderWidth: 1, borderRadius: 12, padding: 12 }]}>
+                    <Text style={[styles.sectionTitle, { color: Colors.warning }]}>⏳ Pending Customer Payments</Text>
+                    {selectedInvoice.pendingPayments.map((pp: any, index: number) => {
+                      const ppDate = pp.date instanceof Date ? pp.date : new Date(pp.date);
+                      return (
+                        <View key={pp.id || index} style={[styles.paymentHistoryItem, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.paymentAmount, { color: colors.textPrimary }]}>
+                              ₦{pp.amount.toLocaleString()}
+                            </Text>
+                            <Text style={[styles.paymentDate, { color: colors.textSecondary }]}>
+                              {format(ppDate, 'MMM dd, yyyy')} — by {pp.recordedByName || 'Customer'}
+                            </Text>
+                          </View>
+                          <View style={{ flexDirection: 'row', gap: 8 }}>
+                            <TouchableOpacity
+                              style={{ backgroundColor: Colors.success, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }}
+                              onPress={async () => {
+                                try {
+                                  await firebaseService.confirmPendingPayment(
+                                    selectedInvoice.id,
+                                    pp.id,
+                                    user?.id || '',
+                                    user?.name || ''
+                                  );
+                                  Alert.alert('Confirmed', `Payment of ₦${pp.amount.toLocaleString()} confirmed.`);
+                                  // Reload invoice
+                                  const updated = await firebaseService.getInvoice(selectedInvoice.id);
+                                  if (updated) setSelectedInvoice(updated);
+                                } catch (err: any) {
+                                  Alert.alert('Error', err.message);
+                                }
+                              }}
+                            >
+                              <Text style={{ color: '#fff', fontWeight: '600', fontSize: 13 }}>Confirm</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={{ backgroundColor: Colors.error, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }}
+                              onPress={() => {
+                                Alert.alert('Reject Payment', `Reject ₦${pp.amount.toLocaleString()} from ${pp.recordedByName}?`, [
+                                  { text: 'Cancel', style: 'cancel' },
+                                  {
+                                    text: 'Reject',
+                                    style: 'destructive',
+                                    onPress: async () => {
+                                      try {
+                                        await firebaseService.rejectPendingPayment(selectedInvoice.id, pp.id);
+                                        Alert.alert('Rejected', 'Payment has been rejected.');
+                                        const updated = await firebaseService.getInvoice(selectedInvoice.id);
+                                        if (updated) setSelectedInvoice(updated);
+                                      } catch (err: any) {
+                                        Alert.alert('Error', err.message);
+                                      }
+                                    },
+                                  },
+                                ]);
+                              }}
+                            >
+                              <Text style={{ color: '#fff', fontWeight: '600', fontSize: 13 }}>Reject</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      );
+                    })}
                   </View>
                 )
               }
@@ -1898,7 +2036,7 @@ function InventoryItemRow({ item, onAdd }: { item: InventoryItem; onAdd: (qty: n
           onPress={handleAdd}
           disabled={item.quantity === 0}
         >
-          <Ionicons name="add" size={20} color="#fff" />
+          <Ionicons name="add" size={20} color={colors.textInverse} />
         </TouchableOpacity>
       </View>
     </View>

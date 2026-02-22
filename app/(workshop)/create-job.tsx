@@ -528,6 +528,9 @@ export default function CreateJobScreen() {
                 description,
                 assignedTechnicianIds: selectedTechnicians.map(t => t.id),
                 technicianNames: selectedTechnicians.map(t => t.name),
+                // Keep legacy fields for backwards compatibility
+                assignedTechnicianId: selectedTechnicians[0]?.id || undefined,
+                technicianName: selectedTechnicians[0]?.name || undefined,
                 partsUsed: parts,
                 serviceCharge: parseFloat(serviceCharge),
                 // Only set status to 'received' if we are creating, 
@@ -619,6 +622,7 @@ export default function CreateJobScreen() {
             const quoteData: any = {
                 jobId,
                 customerId: selectedCustomer.id,
+                userId: selectedCustomer.id, // Add userId for customer app visibility
                 customerName: selectedCustomer.name,
                 workshopId: user.workshopId,
                 items: quoteItems,

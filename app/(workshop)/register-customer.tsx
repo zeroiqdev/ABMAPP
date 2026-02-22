@@ -1,4 +1,6 @@
 import React, { useState, useMemo } from 'react';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { format } from 'date-fns';
 import {
   View,
   Text,
@@ -24,6 +26,8 @@ export default function RegisterCustomerScreen() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [birthday, setBirthday] = useState<Date | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleRegister = async () => {
@@ -69,6 +73,7 @@ export default function RegisterCustomerScreen() {
         phone,
         role: 'customer',
         workshopId: user.workshopId,
+        birthday: birthday ? format(birthday, 'yyyy-MM-dd') : undefined,
       } as any);
 
       Alert.alert(
@@ -81,6 +86,7 @@ export default function RegisterCustomerScreen() {
               setName('');
               setEmail('');
               setPhone('');
+              setBirthday(null);
             },
           },
           {
@@ -89,6 +95,7 @@ export default function RegisterCustomerScreen() {
               setName('');
               setEmail('');
               setPhone('');
+              setBirthday(null);
               router.push('/(workshop)/customers');
             },
           },
@@ -117,7 +124,7 @@ export default function RegisterCustomerScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.content}>
           <Text style={styles.subtitle}>
-            Enter customer details to generate a registration code
+            Enter customer details to register them
           </Text>
 
           <View style={styles.form}>
@@ -151,6 +158,42 @@ export default function RegisterCustomerScreen() {
             />
 
             <TouchableOpacity
+              style={styles.dateSelector}
+              onPress={() => setShowDatePicker(true)}
+            >
+              <Text style={[styles.dateText, !birthday && { color: colors.textTertiary }]}>
+                {birthday ? format(birthday, 'MMM dd, yyyy') : 'Birthday (Optional)'}
+              </Text>
+              <Ionicons name="calendar-outline" size={20} color={colors.textTertiary} />
+            </TouchableOpacity>
+
+            {showDatePicker && (
+              <DateTimePicker
+                value={birthday || new Date()}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                maximumDate={new Date()}
+                onChange={(event, selectedDate) => {
+                  setShowDatePicker(Platform.OS === 'ios');
+                  if (selectedDate) {
+                    setBirthday(selectedDate);
+                  }
+                }}
+              />
+            )}
+
+            {Platform.OS === 'ios' && showDatePicker && (
+              <View style={styles.iosDatePickerToolbar}>
+                <TouchableOpacity
+                  style={styles.iosDatePickerButton}
+                  onPress={() => setShowDatePicker(false)}
+                >
+                  <Text style={styles.iosDatePickerButtonText}>Done</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <TouchableOpacity
               style={[styles.button, loading && styles.buttonDisabled]}
               onPress={handleRegister}
               disabled={loading}
@@ -165,6 +208,7 @@ export default function RegisterCustomerScreen() {
     </KeyboardAvoidingView>
   );
 }
+
 
 const getStyles = (colors: any) => StyleSheet.create({
   container: {
@@ -224,6 +268,38 @@ const getStyles = (colors: any) => StyleSheet.create({
   },
   buttonText: {
     color: colors.textInverse,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  dateSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 15,
+    marginBottom: 15,
+    height: 50,
+  },
+  dateText: {
+    fontSize: 16,
+    color: colors.textPrimary,
+  },
+  iosDatePickerToolbar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    padding: 10,
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderColor: colors.border,
+  },
+  iosDatePickerButton: {
+    padding: 5,
+  },
+  iosDatePickerButtonText: {
+    color: colors.primary,
     fontSize: 16,
     fontWeight: '600',
   },

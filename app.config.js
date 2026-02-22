@@ -38,7 +38,7 @@ export default {
   expo: {
     name: "ABM Workshop & Marketplace",
     slug: "abmapp",
-    version: "1.0.17",
+    version: "1.0.18",
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "automatic",
@@ -54,7 +54,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.abmtek.abmapp",
-      buildNumber: "18",
+      buildNumber: "19",
       backgroundColor: "#000000",
       usesAppleSignIn: true,
       googleServicesFile: './GoogleService-Info.plist',
@@ -69,7 +69,7 @@ export default {
         backgroundColor: "#000000"
       },
       package: "com.abmtek.abmapp",
-      versionCode: 18,
+      versionCode: 19,
       googleServicesFile: './google-services.json',
       config: {
         googleMaps: {
@@ -133,7 +133,8 @@ export default {
       firebaseAppId: getEnv('EXPO_PUBLIC_FIREBASE_APP_ID'),
       cloudinaryCloudName: getEnv('EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME'),
       cloudinaryUploadPreset: getEnv('EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET'),
-      apiBaseUrl: getEnv('EXPO_PUBLIC_API_BASE_URL')
+      apiBaseUrl: getEnv('EXPO_PUBLIC_API_BASE_URL'),
+      resendApiKey: getEnv('EXPO_PUBLIC_RESEND_API_KEY')
     }
   }
 };

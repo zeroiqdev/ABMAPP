@@ -12,8 +12,9 @@ import {
   User as FirebaseUser
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, deleteDoc, collection, query, where, getDocs, limit, Timestamp } from 'firebase/firestore';
-import { auth, db } from '@/config/firebase';
+import { db, storage, auth } from '@/config/firebase';
 import { firebaseService } from '@/services/firebaseService';
+import { emailService } from '@/services/emailService';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto';
 
@@ -25,8 +26,8 @@ interface AuthState {
   guestEmail: string | null;
   login: (email: string, password: string) => Promise<void>;
   loginWithApple: () => Promise<void>;
-  registerCustomerAccount: (email: string, password: string, name?: string, phone?: string, workshopId?: string) => Promise<void>;
-  acceptStaffInvite: (email: string, password: string, invitationCode: string) => Promise<void>;
+  registerCustomerAccount: (email: string, password: string, name?: string, phone?: string, workshopId?: string, birthday?: string) => Promise<void>;
+  acceptStaffInvite: (email: string, password: string, invitationCode: string, birthday?: string) => Promise<void>;
   logout: () => Promise<void>;
   deleteAccount: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
@@ -157,56 +158,81 @@ export const useAuthStore = create<AuthState>()(
 
       // Customer signup - accepts name, phone, workshopId from signup form
       // Also looks up existing customer records by email to auto-link additional workshops
-      registerCustomerAccount: async (email: string, password: string, name?: string, phone?: string, selectedWorkshopId?: string) => {
+      registerCustomerAccount: async (email: string, password: string, name?: string, phone?: string, selectedWorkshopId?: string, birthday?: string) => {
         set({ loading: true });
         try {
           const normalizedEmail = email.toLowerCase().trim();
 
-          // Find ALL existing customer records with this email (across all workshops)
-          let existingCustomers: { id: string; workshopId: string; name?: string; phone?: string }[] = [];
-          try {
-            const usersQuery = query(
-              collection(db, 'users'),
-              where('email', '==', normalizedEmail),
-              where('role', '==', 'customer')
-            );
-            const usersSnapshot = await getDocs(usersQuery);
-            existingCustomers = usersSnapshot.docs.map(d => ({
-              id: d.id,
-              workshopId: d.data().workshopId,
-              name: d.data().name,
-              phone: d.data().phone,
-            }));
-            console.log('[Signup] Found', existingCustomers.length, 'existing customer records for:', normalizedEmail);
-          } catch (error) {
-            console.log('[Signup] Could not query existing customers:', error);
-          }
-
-          // Collect all workshopIds: start with user-selected workshop, then add from existing records
+          // Workshop migration/merging will be handled via user document merging if account exists
+          // or via the invitation acceptance flow if invited.
           const workshopIds: string[] = [];
           if (selectedWorkshopId) {
             workshopIds.push(selectedWorkshopId);
           }
-          for (const c of existingCustomers) {
-            if (c.workshopId && !workshopIds.includes(c.workshopId)) {
-              workshopIds.push(c.workshopId);
-            }
-          }
 
-          // Use provided name/phone, fallback to existing record if not provided
-          const finalName = name || existingCustomers.find(c => c.name)?.name || '';
-          const finalPhone = phone || existingCustomers.find(c => c.phone)?.phone || '';
+          let existingCustomers: { id: string; workshopId: string; name?: string; phone?: string; birthday?: string }[] = [];
+          let finalName = name || '';
+          let finalPhone = phone || '';
 
           let firebaseUser;
           try {
             const userCredential = await createUserWithEmailAndPassword(auth, email, password);
             firebaseUser = userCredential.user;
+
+            // Now authenticated, we can safely search for existing customer records to merge
+            try {
+              const usersQuery = query(
+                collection(db, 'users'),
+                where('email', '==', normalizedEmail),
+                where('role', '==', 'customer')
+              );
+              const usersSnapshot = await getDocs(usersQuery);
+              existingCustomers = usersSnapshot.docs.map(d => ({
+                id: d.id,
+                workshopId: d.data().workshopId,
+                name: d.data().name,
+                phone: d.data().phone,
+                birthday: d.data().birthday,
+              }));
+
+              // Update workshops and fallbacks now that we have data
+              for (const c of existingCustomers) {
+                if (c.workshopId && !workshopIds.includes(c.workshopId)) {
+                  workshopIds.push(c.workshopId);
+                }
+              }
+              if (!finalName) finalName = existingCustomers.find(c => c.name)?.name || '';
+              if (!finalPhone) finalPhone = existingCustomers.find(c => c.phone)?.phone || '';
+
+            } catch (queryError) {
+              console.log('[Signup] Could not query existing customers after auth:', queryError);
+            }
+
           } catch (createError: any) {
             if (createError.code === 'auth/email-already-in-use') {
               // Account exists. Try to sign in to link workshops.
               try {
                 const userCredential = await signInWithEmailAndPassword(auth, email, password);
                 firebaseUser = userCredential.user;
+
+                // For existing accounts, we can also look for other workshop records to link
+                try {
+                  const usersQuery = query(
+                    collection(db, 'users'),
+                    where('email', '==', normalizedEmail),
+                    where('role', '==', 'customer')
+                  );
+                  const usersSnapshot = await getDocs(usersQuery);
+                  existingCustomers = usersSnapshot.docs.map(d => ({
+                    id: d.id,
+                    workshopId: d.data().workshopId,
+                    name: d.data().name,
+                    phone: d.data().phone,
+                    birthday: d.data().birthday,
+                  }));
+                } catch (queryErr) {
+                  console.log('[Signup] Could not query existing customers after sign-in:', queryErr);
+                }
 
                 // Check if user data document exists
                 const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
@@ -221,12 +247,18 @@ export const useAuthStore = create<AuthState>()(
                       currentConnected.push(wsId);
                     }
                   }
+                  // Also add from existingCustomers found post-sign-in
+                  for (const c of existingCustomers) {
+                    if (c.workshopId && !currentConnected.includes(c.workshopId)) {
+                      currentConnected.push(c.workshopId);
+                    }
+                  }
 
                   // Update user with all connected workshops and new name/phone if provided
                   await setDoc(doc(db, 'users', firebaseUser.uid), {
                     ...existingUserData,
-                    name: finalName || existingUserData.name,
-                    phone: finalPhone || existingUserData.phone,
+                    name: name || existingUserData.name, // Use provided name or keep existing
+                    phone: phone || existingUserData.phone, // Use provided phone or keep existing
                     connectedWorkshopIds: currentConnected.filter(Boolean),
                     workshopId: currentConnected[0] || existingUserData.workshopId,
                     updatedAt: new Date(),
@@ -235,8 +267,8 @@ export const useAuthStore = create<AuthState>()(
                   // Update local state
                   const updatedUser = {
                     ...existingUserData,
-                    name: finalName || existingUserData.name,
-                    phone: finalPhone || existingUserData.phone,
+                    name: name || existingUserData.name,
+                    phone: phone || existingUserData.phone,
                     connectedWorkshopIds: currentConnected.filter(Boolean),
                     workshopId: currentConnected[0] || existingUserData.workshopId,
                   };
@@ -263,6 +295,7 @@ export const useAuthStore = create<AuthState>()(
             role: 'customer',
             workshopId: workshopIds[0] || '', // First workshop as active, or empty if none
             connectedWorkshopIds: workshopIds.length > 0 ? workshopIds : [],
+            birthday: birthday || existingCustomers.find(c => c.birthday)?.birthday || '',
             createdAt: new Date(),
             updatedAt: new Date(),
           };
@@ -286,12 +319,14 @@ export const useAuthStore = create<AuthState>()(
             }
           }
 
-          // Create user document with Firebase Auth UID
           await setDoc(doc(db, 'users', firebaseUser.uid), {
             ...userData,
             createdAt: userData.createdAt,
             updatedAt: new Date(),
           });
+
+          // Send welcome email
+          await emailService.sendWelcomeEmail(normalizedEmail, finalName, 'customer');
 
           set({ user: userData, firebaseUser, loading: false, isGuest: false, guestEmail: null });
         } catch (error: any) {
@@ -300,7 +335,7 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      acceptStaffInvite: async (email: string, password: string, invitationCode: string) => {
+      acceptStaffInvite: async (email: string, password: string, invitationCode: string, birthday?: string) => {
         set({ loading: true });
         try {
           const invitation = await firebaseService.getStaffInvitationByCode(invitationCode);
@@ -327,6 +362,7 @@ export const useAuthStore = create<AuthState>()(
             phone: invitation.phone || '',
             role: invitation.role,
             workshopId: invitation.workshopId,
+            birthday: birthday || invitation.birthday || '',
             ...(invitation.role === 'vendor' ? { vendorStatus: 'pending_details' } : {}),
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -339,6 +375,9 @@ export const useAuthStore = create<AuthState>()(
           });
 
           await firebaseService.markStaffInvitationAsUsed(invitation.id);
+
+          // Send welcome email
+          await emailService.sendWelcomeEmail(invitation.email, invitation.name, invitation.role);
 
           set({ user: userData, firebaseUser, loading: false, isGuest: false, guestEmail: null });
         } catch (error: any) {
@@ -414,6 +453,7 @@ export const useAuthStore = create<AuthState>()(
       name: 'auth-storage',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
+        user: state.user,
         isGuest: state.isGuest,
         guestEmail: state.guestEmail
       }),

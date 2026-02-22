@@ -47,6 +47,22 @@ export default function Index() {
   useEffect(() => {
     // Only route when auth is initialized and splash is done
     if (isReady && authInitialized && !hasRouted.current) {
+      // If we have a Firebase Auth user but no store user yet, wait a bit longer for RootLayout's onSnapshot to fire
+      if (auth.currentUser && !user) {
+        // We wait for RootLayout to fetch user profile. 
+        // Increase timeout to 5s to give more time for cold Firestore starts
+        const timeout = setTimeout(() => {
+          if (!hasRouted.current && auth.currentUser && !user) {
+            // Still no user after 5s, maybe doc doesn't exist? Try to determine role or fallback.
+            hasRouted.current = true;
+            console.log('[Routing] Timeout waiting for user profile. Falling back to marketplace.');
+            setGuest(true);
+            router.replace('/(marketplace)/home');
+          }
+        }, 5000);
+        return () => clearTimeout(timeout);
+      }
+
       hasRouted.current = true;
       if (user) {
         routeUser(user);

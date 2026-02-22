@@ -16,6 +16,7 @@ import { firebaseService } from '@/services/firebaseService';
 import { paymentService } from '@/services/paymentService';
 import { Invoice } from '@/types';
 import * as ClipboardExpo from 'expo-clipboard';
+import { useColors } from '@/constants/design';
 
 export default function PaymentScreen() {
   const router = useRouter();
@@ -24,6 +25,8 @@ export default function PaymentScreen() {
     reference: string;
   }>();
   const { user } = useAuthStore();
+  const colors = useColors();
+  const styles = getStyles(colors);
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -78,7 +81,7 @@ export default function PaymentScreen() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#000" />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -88,7 +91,7 @@ export default function PaymentScreen() {
       <View style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={24} color="#000" />
+            <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Payment</Text>
           <View style={{ width: 24 }} />
@@ -104,7 +107,7 @@ export default function PaymentScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#000" />
+          <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Make Payment</Text>
         <View style={{ width: 24 }} />
@@ -154,7 +157,7 @@ export default function PaymentScreen() {
                   <Text style={styles.accountLabel}>Account Number</Text>
                   <Text style={styles.accountNumberValue}>{accountDetails.accountNumber}</Text>
                 </View>
-                <Ionicons name="copy-outline" size={24} color="#000" />
+                <Ionicons name="copy-outline" size={24} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
 
@@ -174,10 +177,10 @@ export default function PaymentScreen() {
               disabled={processing}
             >
               {processing ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={colors.textInverse} />
               ) : (
                 <>
-                  <Ionicons name="lock-closed-outline" size={20} color="#fff" />
+                  <Ionicons name="lock-closed-outline" size={20} color={colors.textInverse} />
                   <Text style={styles.payButtonText}>
                     Pay with Monnify
                   </Text>
@@ -185,7 +188,7 @@ export default function PaymentScreen() {
               )}
             </TouchableOpacity>
             <Text style={styles.securityNote}>
-              <Ionicons name="shield-checkmark-outline" size={16} color="#666" />{' '}
+              <Ionicons name="shield-checkmark-outline" size={16} color={colors.textSecondary} />{' '}
               Your payment is secure and encrypted
             </Text>
           </View>
@@ -195,15 +198,16 @@ export default function PaymentScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -211,29 +215,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     paddingTop: 60,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: colors.border,
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
+    color: colors.textPrimary,
   },
   content: {
     flex: 1,
   },
   section: {
     padding: 20,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     marginBottom: 10,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 15,
+    color: colors.textPrimary,
   },
   summaryCard: {
-    backgroundColor: '#f9f9f9',
+    backgroundColor: colors.background,
     borderRadius: 12,
     padding: 15,
   },
@@ -244,23 +250,23 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     fontSize: 14,
-    color: '#666',
+    color: colors.textSecondary,
   },
   summaryValue: {
     fontSize: 14,
-    color: '#000',
+    color: colors.textPrimary,
     fontWeight: '600',
   },
   amountValue: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#007AFF',
+    color: colors.primary,
   },
   payButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#000',
+    backgroundColor: colors.textPrimary,
     padding: 16,
     borderRadius: 12,
     gap: 8,
@@ -270,14 +276,14 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   payButtonText: {
-    color: '#fff',
+    color: colors.textInverse,
     fontSize: 16,
     fontWeight: '600',
   },
   securityNote: {
     textAlign: 'center',
     fontSize: 12,
-    color: '#666',
+    color: colors.textSecondary,
     marginTop: 10,
   },
   emptyState: {
@@ -287,20 +293,20 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    color: '#999',
+    color: colors.textTertiary,
   },
   instructionText: {
     fontSize: 14,
-    color: '#666',
+    color: colors.textSecondary,
     marginBottom: 20,
     lineHeight: 20,
   },
   accountCard: {
-    backgroundColor: '#f9f9f9',
+    backgroundColor: colors.background,
     borderRadius: 12,
     padding: 20,
     borderWidth: 1,
-    borderColor: '#eee',
+    borderColor: colors.border,
     marginBottom: 20,
   },
   accountRow: {
@@ -308,14 +314,14 @@ const styles = StyleSheet.create({
   },
   accountLabel: {
     fontSize: 12,
-    color: '#666',
+    color: colors.textSecondary,
     marginBottom: 4,
     textTransform: 'uppercase',
   },
   accountValue: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#000',
+    color: colors.textPrimary,
   },
   accountNumberRow: {
     flexDirection: 'row',
@@ -324,22 +330,22 @@ const styles = StyleSheet.create({
     marginTop: 5,
     paddingTop: 15,
     borderTopWidth: 1,
-    borderTopColor: '#eee',
+    borderTopColor: colors.border,
   },
   accountNumberValue: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#000',
+    color: colors.textPrimary,
     letterSpacing: 2,
   },
   doneButton: {
-    backgroundColor: '#000',
+    backgroundColor: colors.textPrimary,
     padding: 16,
     borderRadius: 12,
     alignItems: 'center',
   },
   doneButtonText: {
-    color: '#fff',
+    color: colors.textInverse,
     fontSize: 16,
     fontWeight: '600',
   }

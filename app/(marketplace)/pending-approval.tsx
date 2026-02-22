@@ -3,10 +3,13 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
+import { useColors } from '@/constants/design';
 
 export default function PendingApprovalScreen() {
     const router = useRouter();
     const { logout } = useAuthStore();
+    const colors = useColors();
+    const styles = getStyles(colors);
 
     const handleLogout = async () => {
         await logout();
@@ -17,7 +20,7 @@ export default function PendingApprovalScreen() {
         <View style={styles.container}>
             <View style={styles.content}>
                 <View style={styles.iconContainer}>
-                    <Ionicons name="hourglass-outline" size={64} color="#f59e0b" />
+                    <Ionicons name="hourglass-outline" size={64} color={colors.warning} />
                 </View>
                 <Text style={styles.title}>Registration Pending</Text>
                 <Text style={styles.message}>
@@ -37,10 +40,10 @@ export default function PendingApprovalScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: any) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#fff',
+        backgroundColor: colors.background,
         padding: 30,
         justifyContent: 'space-between',
     },
@@ -53,21 +56,23 @@ const styles = StyleSheet.create({
         width: 120,
         height: 120,
         borderRadius: 60,
-        backgroundColor: '#fffbeb',
+        backgroundColor: colors.surface,
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: 30,
+        borderWidth: 1,
+        borderColor: colors.border,
     },
     title: {
         fontSize: 24,
         fontWeight: 'bold',
         marginBottom: 20,
-        color: '#111',
+        color: colors.textPrimary,
         textAlign: 'center',
     },
     message: {
         fontSize: 16,
-        color: '#666',
+        color: colors.textSecondary,
         textAlign: 'center',
         marginBottom: 15,
         lineHeight: 24,
@@ -77,13 +82,13 @@ const styles = StyleSheet.create({
         marginBottom: 20,
     },
     button: {
-        backgroundColor: '#000',
+        backgroundColor: colors.textPrimary,
         padding: 16,
         borderRadius: 8,
         alignItems: 'center',
     },
     buttonText: {
-        color: '#fff',
+        color: colors.textInverse,
         fontSize: 16,
         fontWeight: '600',
     },
