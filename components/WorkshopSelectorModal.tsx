@@ -40,12 +40,21 @@ export function WorkshopSelectorModal({
     }, [visible, initialSelectedIds]);
 
     const loadWorkshops = async () => {
-        setLoading(true);
+        // If we already have workshops, don't show full loading if just refreshing
+        if (workshops.length === 0) setLoading(true);
+
         try {
-            const allWorkshops = await firebaseService.getAllWorkshops();
+            // Add a timeout to prevent indefinite spinning
+            const fetchPromise = firebaseService.getAllWorkshops();
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Timeout loading workshops')), 10000)
+            );
+
+            const allWorkshops = await Promise.race([fetchPromise, timeoutPromise]) as Workshop[];
             setWorkshops(allWorkshops.filter(w => !excludeIds.includes(w.id)));
         } catch (error) {
             console.error('Failed to load workshops:', error);
+            // Optionally show an alert or empty state
         } finally {
             setLoading(false);
         }

@@ -238,7 +238,9 @@ export default function MemberAuthScreen() {
             await setDoc(doc(db, 'users', uid), {
                 email: email.trim().toLowerCase(),
                 role: 'customer',
-                workshopIds: selectedWorkshopIds,
+                selectedWorkshopIds: selectedWorkshopIds,
+                connectedWorkshopIds: selectedWorkshopIds,
+                workshopId: selectedWorkshopIds[0] || '',
                 birthday: birthday ? format(birthday, 'yyyy-MM-dd') : '',
                 createdAt: new Date(),
                 updatedAt: new Date(),
@@ -274,7 +276,7 @@ export default function MemberAuthScreen() {
             if (!uid) throw new Error('User ID not found');
 
             await updateDoc(doc(db, 'users', uid), {
-                workshopIds: selectedWorkshopIds,
+                selectedWorkshopIds: selectedWorkshopIds,
                 workshopId: selectedWorkshopIds[0],
                 connectedWorkshopIds: selectedWorkshopIds,
             });

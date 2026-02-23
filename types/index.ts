@@ -66,6 +66,7 @@ export interface User {
   createdAt: Date;
   updatedAt: Date;
   birthday?: string; // Format: YYYY-MM-DD
+  needsProfileCompletion?: boolean;
 }
 
 
