@@ -67,7 +67,7 @@ export default function FinanceScreen() {
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [filteredQuotes, setFilteredQuotes] = useState<Quote[]>([]);
   const [quoteSearchQuery, setQuoteSearchQuery] = useState('');
-  const [quoteFilter, setQuoteFilter] = useState<'all' | 'draft' | 'pending' | 'converted'>('all');
+  const [quoteFilter, setQuoteFilter] = useState<'all' | 'draft' | 'pending' | 'converted' | 'rejected'>('all');
   const [showCreateOptionsModal, setShowCreateOptionsModal] = useState(false);
 
   const { invoiceId: deepLinkInvoiceId } = useLocalSearchParams<{ invoiceId?: string }>();
@@ -84,9 +84,13 @@ export default function FinanceScreen() {
     }
   }, [user?.workshopId]);
 
+  // Guard to prevent deep link from re-triggering on every invoice reload
+  const handledDeepLinkRef = React.useRef<string | null>(null);
+
   // Auto-open invoice modal when navigating from quote's "View Invoice" button
   useEffect(() => {
-    if (deepLinkInvoiceId && invoices.length > 0) {
+    if (deepLinkInvoiceId && invoices.length > 0 && handledDeepLinkRef.current !== deepLinkInvoiceId) {
+      handledDeepLinkRef.current = deepLinkInvoiceId;
       const target = invoices.find(inv => inv.id === deepLinkInvoiceId);
       if (target) {
         setSelectedInvoice(target);
@@ -108,10 +112,12 @@ export default function FinanceScreen() {
   const loadQuotes = async () => {
     if (!user?.workshopId) return;
     try {
+      console.log('[loadQuotes] Loading quotes for workshopId:', user.workshopId);
       const quotesData = await firebaseService.getQuotes(user.workshopId);
+      console.log('[loadQuotes] Loaded', quotesData.length, 'quotes');
       setQuotes(quotesData);
     } catch (error) {
-      console.error('Error loading quotes:', error);
+      console.error('[loadQuotes] Error loading quotes:', error);
     }
   };
 
@@ -229,6 +235,8 @@ export default function FinanceScreen() {
       result = result.filter(q => q.status === 'pending_approval');
     } else if (quoteFilter === 'converted') {
       result = result.filter(q => q.status === 'converted');
+    } else if (quoteFilter === 'rejected') {
+      result = result.filter(q => q.status === 'rejected');
     }
 
     // Search Filter
@@ -517,7 +525,7 @@ export default function FinanceScreen() {
 
     setLoading(true);
     try {
-      const paymentHistory = selectedInvoice.paymentHistory || [];
+      const paymentHistory = [...(selectedInvoice.paymentHistory || [])];
       paymentHistory.push({
         amount,
         date: new Date(),
@@ -953,7 +961,7 @@ export default function FinanceScreen() {
             />
           </View>
           <View style={[styles.filterContainer, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-            {(['all', 'draft', 'pending', 'converted'] as const).map((f) => (
+            {(['all', 'draft', 'pending', 'rejected', 'converted'] as const).map((f) => (
               <TouchableOpacity
                 key={f}
                 style={[
@@ -1478,9 +1486,9 @@ export default function FinanceScreen() {
               </View>
 
 
-              {/* Due Date Selection - Prerequisite for Approval */}
+              {/* Due Date Selection - Available for any editable invoice */}
               {
-                (selectedInvoice.status === 'draft' || !selectedInvoice.status) && (
+                canEditInvoice() && (
                   <View style={styles.dueDateSection}>
                     <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Due Date (Required)</Text>
                     <TouchableOpacity
@@ -1502,7 +1510,10 @@ export default function FinanceScreen() {
                         {Platform.OS === 'ios' && (
                           <View style={[styles.datePickerToolbar, { backgroundColor: colors.surface, borderBottomColor: colors.border, borderBottomWidth: 1 }]}>
                             <TouchableOpacity
-                              onPress={() => setActiveDatePicker(null)}
+                              onPress={() => {
+                                setActiveDatePicker(null);
+                                handleSaveInvoice(false, false);
+                              }}
                               style={styles.datePickerDoneButton}
                             >
                               <Text style={[styles.datePickerDoneText, { color: colors.primary }]}>Done</Text>
@@ -1514,6 +1525,19 @@ export default function FinanceScreen() {
                           mode="date"
                           display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                           minimumDate={new Date()}
+                          onChange={(event, selectedDate) => {
+                            if (Platform.OS === 'android') {
+                              setShowDatePicker(false);
+                            }
+                            if (selectedDate) {
+                              setEditingDueDate(selectedDate);
+                              if (Platform.OS === 'android') {
+                                handleSaveInvoice(false, false);
+                              }
+                            }
+                            // On iOS, we keep the picker open until "Done" is pressed (handled by toolbar)
+                            // On Android, the modal closes after selection
+                          }}
                           // Use system theme variant or force dark based on background color check if needed
                           // For now keeping simple as we don't have straight access to isDark here without hook change
                           style={Platform.OS === 'ios' ? { backgroundColor: colors.surface } : undefined}
@@ -1635,6 +1659,20 @@ export default function FinanceScreen() {
                 )
               }
 
+              {/* Save Changes Button */}
+              {canEditInvoice() && (
+                <TouchableOpacity
+                  style={[styles.approveButton, { backgroundColor: colors.surface, borderColor: colors.primary, borderWidth: 1, marginBottom: 8 }]}
+                  onPress={() => handleSaveInvoice(true, false)}
+                  disabled={loading}
+                >
+                  <ActivityIndicator animating={loading} size="small" color={colors.primary} style={{ marginRight: 8, display: loading ? 'flex' : 'none' }} />
+                  <Text style={[styles.approveButtonText, { color: colors.primary }]}>
+                    Save Changes
+                  </Text>
+                </TouchableOpacity>
+              )}
+
               {/* Approve Button for Drafts */}
               {
                 (selectedInvoice.status === 'draft' || !selectedInvoice.status) && (
@@ -1655,17 +1693,22 @@ export default function FinanceScreen() {
                 !showAddItem && (
                   <>
                     <View style={styles.paymentActions}>
-                      <Text style={styles.paymentSummaryText}>
-                        Paid: ₦{(selectedInvoice.amountPaid || 0).toLocaleString()} / {(editingItems.reduce((sum, item) => sum + item.total, 0) - (selectedInvoice.amountPaid || 0)) < 0 ? 'Overpayment' : 'Remaining'}: ₦
-                        {Math.abs(editingItems.reduce((sum, item) => sum + item.total, 0) - (selectedInvoice.amountPaid || 0)).toLocaleString()}
-                      </Text>
                       {(() => {
-                        const currentTotal = editingItems.reduce((sum, item) => sum + item.total, 0);
+                        const subtotal = editingItems.reduce((sum, item) => sum + item.total, 0);
+                        const vatRate = parseFloat(editingVatRate) || 0;
+                        const discountVal = parseFloat(editingDiscount) || 0;
+                        const vatAmount = subtotal * (vatRate / 100);
+                        const computedTotal = subtotal + vatAmount - discountVal;
                         const amountPaid = selectedInvoice.amountPaid || 0;
-                        const isFullyPaid = amountPaid >= currentTotal;
+                        const remaining = computedTotal - amountPaid;
+                        const isFullyPaid = amountPaid >= computedTotal;
 
                         return (
                           <>
+                            <Text style={styles.paymentSummaryText}>
+                              Paid: ₦{amountPaid.toLocaleString()} / {remaining < 0 ? 'Overpayment' : 'Remaining'}: ₦
+                              {Math.abs(remaining).toLocaleString()}
+                            </Text>
                             <TouchableOpacity
                               style={[styles.payButton, (isFullyPaid || loading) && styles.disabledButton]}
                               onPress={() => {

@@ -126,16 +126,23 @@ export default function CustomerQuoteDetailsScreen() {
         if (!quote) return;
         setRejecting(true);
         try {
+            console.log('[confirmReject] Rejecting quote:', quote.id, 'reason:', rejectionReason);
             await firebaseService.rejectQuote(
                 quote.id,
                 user?.id || '',
                 user?.name || 'Customer',
                 rejectionReason || undefined
             );
-            Alert.alert('Quote Rejected', 'The workshop will be notified and can revise the quote.');
+            console.log('[confirmReject] Quote rejected successfully');
             setShowRejectModal(false);
-            router.back();
+            setRejectionReason('');
+            Alert.alert(
+                'Quote Rejected',
+                'The workshop will be notified and can revise the quote.',
+                [{ text: 'OK', onPress: () => router.back() }]
+            );
         } catch (error: any) {
+            console.error('[confirmReject] Error rejecting quote:', error);
             Alert.alert('Error', error.message || 'Failed to reject quote');
         } finally {
             setRejecting(false);
@@ -289,6 +296,7 @@ export default function CustomerQuoteDetailsScreen() {
 
     const balance = invoice ? invoice.total - (invoice.amountPaid || 0) : quote.total;
     const isPending = quote.status === 'pending_approval';
+    const isRejected = quote.status === 'rejected';
     const isConverted = quote.status === 'converted' && invoice;
 
     return (
@@ -298,7 +306,7 @@ export default function CustomerQuoteDetailsScreen() {
                     <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>
-                    {isPending ? 'Quote Approval' : 'Invoice'}
+                    {isPending ? 'Quote Approval' : isRejected ? 'Rejected Quote' : 'Invoice'}
                 </Text>
                 <TouchableOpacity onPress={handleDownloadQuote}>
                     <Ionicons name="download-outline" size={24} color={colors.textPrimary} />
@@ -313,6 +321,18 @@ export default function CustomerQuoteDetailsScreen() {
                         <View style={styles.bannerText}>
                             <Text style={styles.bannerTitle}>Approval Required</Text>
                             <Text style={styles.bannerSubtitle}>Please review and approve this quote</Text>
+                        </View>
+                    </View>
+                )}
+
+                {isRejected && (
+                    <View style={[styles.approvalBanner, { backgroundColor: colors.error + '20' }]}>
+                        <Ionicons name="close-circle" size={24} color={colors.error} />
+                        <View style={styles.bannerText}>
+                            <Text style={[styles.bannerTitle, { color: colors.error }]}>Quote Rejected</Text>
+                            <Text style={styles.bannerSubtitle}>
+                                See History & Activity at bottom for details
+                            </Text>
                         </View>
                     </View>
                 )}

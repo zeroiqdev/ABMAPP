@@ -260,6 +260,7 @@ export const useAuthStore = create<AuthState>()(
                     name: name || existingUserData.name, // Use provided name or keep existing
                     phone: phone || existingUserData.phone, // Use provided phone or keep existing
                     connectedWorkshopIds: currentConnected.filter(Boolean),
+                    selectedWorkshopIds: currentConnected.filter(Boolean),
                     workshopId: currentConnected[0] || existingUserData.workshopId,
                     updatedAt: new Date(),
                   }, { merge: true });
@@ -270,6 +271,7 @@ export const useAuthStore = create<AuthState>()(
                     name: name || existingUserData.name,
                     phone: phone || existingUserData.phone,
                     connectedWorkshopIds: currentConnected.filter(Boolean),
+                    selectedWorkshopIds: currentConnected.filter(Boolean),
                     workshopId: currentConnected[0] || existingUserData.workshopId,
                   };
                   set({ user: updatedUser, firebaseUser, loading: false, isGuest: false, guestEmail: null });
@@ -295,6 +297,7 @@ export const useAuthStore = create<AuthState>()(
             role: 'customer',
             workshopId: workshopIds[0] || '', // First workshop as active, or empty if none
             connectedWorkshopIds: workshopIds.length > 0 ? workshopIds : [],
+            selectedWorkshopIds: workshopIds.length > 0 ? workshopIds : [],
             birthday: birthday || existingCustomers.find(c => c.birthday)?.birthday || '',
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -362,6 +365,8 @@ export const useAuthStore = create<AuthState>()(
             phone: invitation.phone || '',
             role: invitation.role,
             workshopId: invitation.workshopId,
+            connectedWorkshopIds: [invitation.workshopId],
+            selectedWorkshopIds: [invitation.workshopId],
             birthday: birthday || invitation.birthday || '',
             ...(invitation.role === 'vendor' ? { vendorStatus: 'pending_details' } : {}),
             createdAt: new Date(),

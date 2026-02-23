@@ -118,7 +118,8 @@ export default function TowRequestScreen() {
         try {
             setLoading(true);
             await updateDoc(doc(db, 'users', user.id), {
-                selectedWorkshopIds: arrayUnion(...newIds)
+                selectedWorkshopIds: arrayUnion(...newIds),
+                connectedWorkshopIds: arrayUnion(...newIds)
             });
             await loadWorkshops();
             if (newIds.length > 0) setSelectedWorkshopId(newIds[newIds.length - 1]);
@@ -265,26 +266,7 @@ export default function TowRequestScreen() {
                 serviceCharge: price,
             });
 
-            const invoiceId = await firebaseService.createInvoice({
-                jobId,
-                userId: user.id,
-                workshopId: selectedWorkshopId || user.workshopId || 'default_workshop',
-                items: [{
-                    description: `Tow Service from ${address ? address.substring(0, 20) + '...' : 'Location'}`,
-                    quantity: 1,
-                    unitPrice: price,
-                    total: price
-                }],
-                subtotal: price,
-                vat: 0,
-                discount: 0,
-                total: price,
-                paymentStatus: 'pending',
-                status: 'draft', // User requested to revert to manual approval
-                dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
-            });
-
-            // 3. Success
+            // No auto-invoice — staff will create a quote/invoice through the standard job flow
             setShowPaymentModal(false);
             Alert.alert(
                 'Tow Requested',

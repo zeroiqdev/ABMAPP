@@ -128,14 +128,17 @@ export default function QuoteDetailsScreen() {
                     onPress: async () => {
                         setSending(true);
                         try {
-                            const invoiceId = await firebaseService.approveQuote(
+                            await firebaseService.approveQuote(
                                 quote.id,
                                 user?.id || '',
                                 user?.name || 'Staff',
                                 quote.total
                             );
-                            Alert.alert('Success', 'Quote approved and converted to invoice');
-                            router.push(`/(workshop)/finance?invoiceId=${invoiceId}`);
+                            Alert.alert(
+                                'Success',
+                                'Quote approved and converted to invoice.',
+                                [{ text: 'OK', onPress: () => router.back() }]
+                            );
                         } catch (error: any) {
                             Alert.alert('Error', error.message || 'Failed to approve quote');
                         } finally {
@@ -226,6 +229,17 @@ export default function QuoteDetailsScreen() {
             };
 
             await firebaseService.updateQuote(quote.id, updatedQuote);
+
+            // Log the edit action
+            if (user) {
+                await firebaseService.addQuoteLog(quote.id, {
+                    action: 'edit',
+                    description: `Updated quote items and totals (Total: ₦${total.toLocaleString()})`,
+                    userId: user.id,
+                    userName: user.name,
+                });
+            }
+
             Alert.alert('Success', 'Quote updated successfully');
             setIsEditing(false);
             setShowAddItem(false);
@@ -468,21 +482,12 @@ export default function QuoteDetailsScreen() {
                 {/* Rejection Reason Banner */}
                 {quote.status === 'rejected' && (
                     <View style={[styles.card, { backgroundColor: colors.error + '15', borderColor: colors.error + '30', borderWidth: 1 }]}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                             <Ionicons name="close-circle" size={20} color={colors.error} />
-                            <Text style={{ fontSize: 15, fontWeight: '600', color: colors.error }}>Quote Rejected</Text>
+                            <Text style={{ fontSize: 15, fontWeight: '600', color: colors.error }}>Quote Rejected by Customer</Text>
                         </View>
-                        {quote.rejectionReason ? (
-                            <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 20 }}>
-                                &quot;{quote.rejectionReason}&quot;
-                            </Text>
-                        ) : (
-                            <Text style={{ fontSize: 14, color: colors.textSecondary, fontStyle: 'italic' }}>
-                                No reason provided
-                            </Text>
-                        )}
-                        <Text style={{ fontSize: 12, color: colors.textTertiary, marginTop: 8 }}>
-                            You can edit and resend this quote for approval
+                        <Text style={{ fontSize: 12, color: colors.textTertiary, marginTop: 4 }}>
+                            See History & Activity at bottom for details
                         </Text>
                     </View>
                 )}
@@ -757,43 +762,6 @@ export default function QuoteDetailsScreen() {
                     </View>
                 </View>
 
-                {/* History & Activity Log */}
-                <View style={[styles.card, { marginTop: 16 }]}>
-                    <Text style={styles.cardTitle}>History & Activity</Text>
-                    {quote.history && quote.history.filter(log => log.action === 'approve' || log.action === 'reject').length > 0 ? (
-                        quote.history
-                            .filter(log => log.action === 'approve' || log.action === 'reject')
-                            .slice().reverse().map((log, index, arr) => (
-                                <View key={index} style={styles.logItem}>
-                                    <View style={styles.logIconContainer}>
-                                        <View style={[styles.logLine, index === arr.length - 1 && { display: 'none' }]} />
-                                        <Ionicons
-                                            name={
-                                                log.action === 'approve' ? 'checkmark-circle-outline' :
-                                                    'close-circle-outline'
-
-                                            }
-                                            size={14}
-                                            color={colors.textSecondary}
-                                            style={{ backgroundColor: colors.surface, zIndex: 1 }}
-                                        />
-                                    </View>
-                                    <View style={styles.logContent}>
-                                        <Text style={styles.logDescription}>{log.description}</Text>
-                                        <Text style={styles.logMeta}>
-                                            {format(new Date(log.timestamp), 'MMM dd, h:mm a')} • {log.userName}
-                                        </Text>
-                                    </View>
-                                </View>
-                            ))
-                    ) : (
-                        <View style={{ alignItems: 'center', padding: 20 }}>
-                            <Ionicons name="clipboard-outline" size={48} color={colors.textTertiary} />
-                            <Text style={{ marginTop: 10, color: colors.textSecondary }}>No history recorded yet</Text>
-                        </View>
-                    )}
-                </View>
-
                 <View style={{ height: 100 }} />
             </ScrollView>
 
@@ -1066,58 +1034,6 @@ const getStyles = (colors: any) => StyleSheet.create({
         backgroundColor: colors.surface,
         borderWidth: 1,
         borderColor: colors.border,
-    },
-    pendingPill: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 8,
-        paddingVertical: 6,
-        backgroundColor: colors.warning + '20',
-        borderRadius: 12,
-        gap: 4,
-        marginRight: 8,
-    },
-    pendingPillText: {
-        fontSize: 12,
-        fontWeight: '600',
-        color: colors.warning,
-    },
-    logItem: {
-        flexDirection: 'row',
-        gap: 12,
-        marginBottom: 16,
-    },
-    logIconContainer: {
-        alignItems: 'center',
-        width: 16,
-    },
-    logLine: {
-        position: 'absolute',
-        top: 14,
-        bottom: -16,
-        width: 1,
-        backgroundColor: colors.border,
-        left: 7.5,
-    },
-    logContent: {
-        flex: 1,
-        paddingBottom: 4,
-    },
-    logDescription: {
-        fontSize: 14,
-        color: colors.textPrimary,
-        marginBottom: 2,
-    },
-    logMeta: {
-        fontSize: 12,
-        color: colors.textSecondary,
-    },
-    emptyLogText: {
-        fontSize: 14,
-        color: colors.textSecondary,
-        fontStyle: 'italic',
-        textAlign: 'center',
-        padding: 16,
     },
     sendButtonText: {
         color: colors.textPrimary,

@@ -15,6 +15,8 @@ import { useColors } from '@/constants/design';
 import { firebaseService } from '@/services/firebaseService';
 import { Invoice, Quote } from '@/types';
 import { format } from 'date-fns';
+import { useFocusEffect } from '@react-navigation/native';
+import { useCallback } from 'react';
 
 export default function InvoicesScreen() {
   const { user } = useAuthStore();
@@ -27,9 +29,11 @@ export default function InvoicesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [workshopNamesMap, setWorkshopNamesMap] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    loadInvoices();
-  }, [user, filter]);
+  useFocusEffect(
+    useCallback(() => {
+      loadInvoices();
+    }, [user, filter])
+  );
 
   const loadInvoices = async () => {
     if (!user) return;

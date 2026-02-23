@@ -14,6 +14,8 @@ import { useAuthStore } from '@/store/authStore';
 import { firebaseService } from '@/services/firebaseService';
 import { Quote } from '@/types';
 import { format } from 'date-fns';
+import { useFocusEffect } from '@react-navigation/native';
+import { useCallback } from 'react';
 
 export default function CustomerQuotesScreen() {
     const { user } = useAuthStore();
@@ -22,9 +24,11 @@ export default function CustomerQuotesScreen() {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
 
-    useEffect(() => {
-        loadQuotes();
-    }, [user?.id]);
+    useFocusEffect(
+        useCallback(() => {
+            loadQuotes();
+        }, [user?.id])
+    );
 
     const loadQuotes = async () => {
         if (!user?.id) return;

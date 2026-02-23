@@ -8,6 +8,7 @@ import {
   TextInput,
   Alert,
   Switch,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,14 +18,14 @@ import { firebaseService } from '@/services/firebaseService';
 import { Spacing, Typography, useColors } from '@/constants/design';
 
 export default function ProfileScreen() {
-  const { user, logout } = useAuthStore();
+  const { user, logout, setUser } = useAuthStore();
   const router = useRouter();
   const colors = useColors();
   const styles = getStyles(colors);
   const themeSelectorStyles = getThemeSelectorStyles(colors);
 
   const [editing, setEditing] = useState(false);
-  // ... rest of state
+  const [loading, setLoading] = useState(false);
 
   const [name, setName] = useState(user?.name || '');
   const [phone, setPhone] = useState(user?.phone || '');
@@ -33,17 +34,44 @@ export default function ProfileScreen() {
 
   const handleSave = async () => {
     if (!user) return;
+    if (!name.trim()) {
+      Alert.alert('Error', 'Name cannot be empty');
+      return;
+    }
 
+    setLoading(true);
     try {
       await firebaseService.updateUser(user.id, {
-        name,
-        phone,
+        name: name.trim(),
+        phone: phone.trim(),
       });
+
+      // Update local state
+      setUser({
+        ...user,
+        name: name.trim(),
+        phone: phone.trim(),
+      });
+
       setEditing(false);
       Alert.alert('Success', 'Profile updated successfully');
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to update profile');
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const handleEdit = () => {
+    setName(user?.name || '');
+    setPhone(user?.phone || '');
+    setEditing(true);
+  };
+
+  const handleCancel = () => {
+    setName(user?.name || '');
+    setPhone(user?.phone || '');
+    setEditing(false);
   };
 
   const handleLogout = () => {
@@ -54,7 +82,6 @@ export default function ProfileScreen() {
         style: 'destructive',
         onPress: async () => {
           try {
-            await logout();
             await logout();
             router.replace('/');
           } catch (error: any) {
@@ -73,6 +100,26 @@ export default function ProfileScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Profile</Text>
+        <View style={styles.headerActions}>
+          {editing ? (
+            <>
+              <TouchableOpacity onPress={handleCancel} style={styles.headerButton}>
+                <Text style={[styles.cancelText, { color: colors.error }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleSave} style={styles.headerButton} disabled={loading}>
+                {loading ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <Text style={styles.saveButton}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </>
+          ) : (
+            <TouchableOpacity onPress={handleEdit} style={styles.headerButton}>
+              <Text style={styles.saveButton}>Edit</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <ScrollView
@@ -361,6 +408,18 @@ const getStyles = (colors: any) => StyleSheet.create({
     fontSize: 16,
     color: colors.primary,
     fontWeight: '600',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 15,
+  },
+  headerButton: {
+    padding: 5,
+  },
+  cancelText: {
+    fontSize: 16,
+    fontWeight: '500',
   },
   content: {
     flex: 1,

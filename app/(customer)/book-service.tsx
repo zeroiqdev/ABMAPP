@@ -90,7 +90,8 @@ export default function BookServiceScreen() {
     try {
       setLoading(true);
       await updateDoc(doc(db, 'users', user.id), {
-        selectedWorkshopIds: arrayUnion(...newIds)
+        selectedWorkshopIds: arrayUnion(...newIds),
+        connectedWorkshopIds: arrayUnion(...newIds)
       });
       await loadWorkshops();
       if (newIds.length > 0) setSelectedWorkshopId(newIds[newIds.length - 1]);

@@ -84,8 +84,10 @@ export interface Vehicle {
 }
 
 export interface StatusHistoryEntry {
-  fromStatus: JobStatus;
-  toStatus: JobStatus;
+  type?: 'status' | 'note' | 'assignment' | 'quote' | 'payment' | 'other';
+  description?: string;
+  fromStatus?: JobStatus;
+  toStatus?: JobStatus;
   changedBy: string;      // User ID
   changedByName: string;  // User name for display
   changedAt: Date;

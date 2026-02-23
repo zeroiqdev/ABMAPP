@@ -28,6 +28,7 @@ import {
   User,
   Vehicle,
   Job,
+  JobStatus,
   Invoice,
   InventoryItem,
   StockTransaction,
@@ -68,6 +69,11 @@ export const firebaseService = {
     }, {} as any);
   },
 
+  // Helper to safely get an array from potentially missing Firestore data
+  safeArray<T>(arr: any): T[] {
+    return Array.isArray(arr) ? arr : [];
+  },
+
   async getUser(userId: string): Promise<User | null> {
     // ... rest of the file
 
@@ -86,6 +92,7 @@ export const firebaseService = {
   },
 
   async getUsersByWorkshop(workshopId: string): Promise<User[]> {
+    if (!workshopId) return [];
     const q = query(collection(db, 'users'), where('workshopId', '==', workshopId));
     const snapshot = await getDocs(q);
     return snapshot.docs.map((doc) => {
@@ -269,6 +276,8 @@ export const firebaseService = {
     const customerData = this.sanitizeData({
       ...customer,
       role: 'customer' as const,
+      selectedWorkshopIds: customer.selectedWorkshopIds || [customer.workshopId],
+      connectedWorkshopIds: customer.connectedWorkshopIds || [customer.workshopId],
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
     });
@@ -443,6 +452,7 @@ export const firebaseService = {
   },
 
   async getVehicles(userId: string): Promise<Vehicle[]> {
+    if (!userId) return [];
     const q = query(
       collection(db, 'vehicles'),
       where('userId', '==', userId)
@@ -521,7 +531,7 @@ export const firebaseService = {
         updatedAt: data.updatedAt?.toDate(),
         scheduledDate: data.scheduledDate?.toDate(),
         completedAt: data.completedAt?.toDate(),
-        statusHistory: data.statusHistory?.map((entry: any) => ({
+        statusHistory: this.safeArray(data.statusHistory).map((entry: any) => ({
           ...entry,
           changedAt: entry.changedAt?.toDate(),
         })),
@@ -552,6 +562,26 @@ export const firebaseService = {
     const docRef = doc(db, 'jobs', jobId);
     await updateDoc(docRef, {
       ...this.sanitizeData(data),
+      updatedAt: Timestamp.now(),
+    });
+  },
+
+  async addJobLog(jobId: string, log: {
+    type: 'status' | 'note' | 'assignment' | 'quote' | 'payment' | 'other',
+    description: string,
+    userId: string,
+    userName: string,
+    fromStatus?: JobStatus,
+    toStatus?: JobStatus
+  }): Promise<void> {
+    const docRef = doc(db, 'jobs', jobId);
+    await updateDoc(docRef, {
+      statusHistory: arrayUnion({
+        ...log,
+        changedBy: log.userId,
+        changedByName: log.userName,
+        changedAt: Timestamp.now(),
+      }),
       updatedAt: Timestamp.now(),
     });
   },
@@ -620,11 +650,11 @@ export const firebaseService = {
   async createInvoice(invoice: Omit<Invoice, 'id' | 'createdAt'>): Promise<string> {
     // Generate invoice ID in format: INV-CUSTOMERID-XXXX
     // XXXX is last 4 digits of timestamp
-    const timestamp = Date.now().toString();
-    const lastFour = timestamp.slice(-4);
-    // Use first 8 chars of customer ID or 'DIRECT' if no user ID
+    // Generate robust invoice ID in format: INV-CUSTOMERID-TIME-RAND
+    const timeSegment = Math.floor(Date.now() / 100).toString().slice(-6); // decisecond segment for more variability
+    const randomSuffix = Math.random().toString(36).substring(2, 5).toUpperCase(); // 3-char random string
     const customerIdentifier = invoice.userId ? invoice.userId.slice(0, 8) : 'DIRECT';
-    const invoiceId = `INV-${customerIdentifier}-${lastFour}`;
+    const invoiceId = `INV-${customerIdentifier}-${timeSegment}-${randomSuffix}`;
 
     // Sanitize invoice object to remove undefined values which Firestore setDoc doesn't accept
     const cleanInvoice = this.sanitizeData(invoice);
@@ -664,9 +694,9 @@ export const firebaseService = {
       updateData.approvedAt = Timestamp.fromDate(updateData.approvedAt);
     }
     if (updateData.paymentHistory) {
-      updateData.paymentHistory = updateData.paymentHistory.map((record: any) => ({
+      updateData.paymentHistory = this.safeArray(updateData.paymentHistory).map((record: any) => ({
         ...record,
-        date: Timestamp.fromDate(record.date),
+        date: record.date instanceof Date ? Timestamp.fromDate(record.date) : record.date,
       }));
     }
     await updateDoc(doc(db, 'invoices', invoiceId), this.sanitizeData(updateData));
@@ -711,14 +741,11 @@ export const firebaseService = {
 
         // Check if we should remind (7, 2, or 1 days before due)
         if ([7, 2, 1].includes(diffDays)) {
-          // Check if we already sent a reminder TODAY for this invoice
-          // Since we don't have a complex query, we'll check local storage or a simpler heuristic
-          // ideally we'd store 'lastReminderSent' on the invoice, but let's check notifications
-          // Optimization: Fetch only recent notifications for this user?
-          // For now, let's keep it simple: If we are effectively spamming, we need 'lastReminderDate' on invoice.
-
-          // Let's assume we can add a field to invoice locally to track this without schema change if we use 'any'
-          // or we just query notifications.
+          // Safety check: skip if invoice doesn't have a linked user ID
+          if (!invoice.userId) {
+            console.log(`Skipping reminder for invoice ${invoice.id} - No linked user ID`);
+            continue;
+          }
 
           const notificationsRef = collection(db, 'notifications');
           const q = query(
@@ -765,6 +792,7 @@ export const firebaseService = {
   },
 
   async getInventoryItems(workshopId: string): Promise<InventoryItem[]> {
+    if (!workshopId) return [];
     const q = query(
       collection(db, 'inventory'),
       where('workshopId', '==', workshopId)
@@ -789,6 +817,7 @@ export const firebaseService = {
     workshopId: string,
     callback: (items: InventoryItem[]) => void
   ): () => void {
+    if (!workshopId) return () => { };
     const q = query(
       collection(db, 'inventory'),
       where('workshopId', '==', workshopId)
@@ -1138,6 +1167,7 @@ export const firebaseService = {
   },
 
   async getNotifications(userId: string, unreadOnly: boolean = false): Promise<Notification[]> {
+    if (!userId) return [];
     const constraints: QueryConstraint[] = [where('userId', '==', userId)];
     if (unreadOnly) {
       constraints.push(where('read', '==', false));
@@ -1218,6 +1248,7 @@ export const firebaseService = {
     workshopId: string,
     callback: (jobs: Job[]) => void
   ): () => void {
+    if (!workshopId) return () => { };
     const q = query(
       collection(db, 'jobs'),
       where('workshopId', '==', workshopId),
@@ -1233,7 +1264,7 @@ export const firebaseService = {
           updatedAt: data.updatedAt?.toDate(),
           scheduledDate: data.scheduledDate?.toDate(),
           completedAt: data.completedAt?.toDate(),
-          statusHistory: data.statusHistory?.map((entry: any) => ({
+          statusHistory: this.safeArray(data.statusHistory).map((entry: any) => ({
             ...entry,
             changedAt: entry.changedAt?.toDate(),
           })),
@@ -1247,6 +1278,7 @@ export const firebaseService = {
     userId: string,
     callback: (notifications: Notification[]) => void
   ): () => void {
+    if (!userId) return () => { };
     const q = query(
       collection(db, 'notifications'),
       where('userId', '==', userId),
@@ -1318,6 +1350,7 @@ export const firebaseService = {
   },
 
   async getCustomerRegistrations(workshopId: string): Promise<CustomerRegistration[]> {
+    if (!workshopId) return [];
     const q = query(
       collection(db, 'customerRegistrations'),
       where('workshopId', '==', workshopId),
@@ -1423,6 +1456,7 @@ export const firebaseService = {
   },
 
   async getStaffInvitations(workshopId: string): Promise<StaffInvitation[]> {
+    if (!workshopId) return [];
     const q = query(
       collection(db, 'staffInvitations'),
       where('workshopId', '==', workshopId),
@@ -1557,7 +1591,7 @@ export const firebaseService = {
   async createQuote(quote: Omit<Quote, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
     const docRef = await addDoc(collection(db, 'quotes'), this.sanitizeData({
       ...quote,
-      status: 'draft',
+      status: quote.status || 'draft',
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
     }));
@@ -1575,12 +1609,12 @@ export const firebaseService = {
         createdAt: data.createdAt?.toDate(),
         updatedAt: data.updatedAt?.toDate(),
         sentAt: data.sentAt?.toDate(),
-        items: data.items?.map((item: any) => ({
+        items: this.safeArray(data.items).map((item: any) => ({
           ...item,
           addedAt: item.addedAt?.toDate(),
           approvedAt: item.approvedAt?.toDate(),
         })),
-        history: data.history?.map((log: any) => ({
+        history: this.safeArray(data.history).map((log: any) => ({
           ...log,
           timestamp: log.timestamp?.toDate(),
         })),
@@ -1601,25 +1635,32 @@ export const firebaseService = {
 
     const q = query(collection(db, 'quotes'), ...constraints);
     const snapshot = await getDocs(q);
-    return snapshot.docs.map((doc) => {
-      const data = doc.data();
-      return {
-        id: doc.id,
-        ...data,
-        createdAt: data.createdAt?.toDate(),
-        updatedAt: data.updatedAt?.toDate(),
-        sentAt: data.sentAt?.toDate(),
-        items: data.items?.map((item: any) => ({
-          ...item,
-          addedAt: item.addedAt?.toDate(),
-          approvedAt: item.approvedAt?.toDate(),
-        })),
-        history: data.history?.map((log: any) => ({
-          ...log,
-          timestamp: log.timestamp?.toDate(),
-        })),
-      };
-    }) as Quote[];
+    console.log(`[getQuotes] Found ${snapshot.docs.length} quotes for workshopId=${workshopId}`);
+    const results: Quote[] = [];
+    for (const docSnap of snapshot.docs) {
+      try {
+        const data = docSnap.data();
+        results.push({
+          id: docSnap.id,
+          ...data,
+          createdAt: data.createdAt?.toDate(),
+          updatedAt: data.updatedAt?.toDate(),
+          sentAt: data.sentAt?.toDate(),
+          items: this.safeArray(data.items).map((item: any) => ({
+            ...item,
+            addedAt: item.addedAt?.toDate(),
+            approvedAt: item.approvedAt?.toDate(),
+          })),
+          history: this.safeArray(data.history).map((log: any) => ({
+            ...log,
+            timestamp: log.timestamp?.toDate(),
+          })),
+        } as Quote);
+      } catch (err) {
+        console.error(`[getQuotes] Error processing quote ${docSnap.id}:`, err);
+      }
+    }
+    return results;
   },
 
   async updateQuote(quoteId: string, data: Partial<Quote>): Promise<void> {
@@ -1650,6 +1691,7 @@ export const firebaseService = {
   // Get quotes pending approval for a customer
   async getQuotesForCustomer(userId: string): Promise<Quote[]> {
     // Query by userId (used by some older quotes or manual quotes)
+    // Query by userId (used by some older quotes or manual quotes)
     const qByUserId = query(
       collection(db, 'quotes'),
       where('userId', '==', userId),
@@ -1679,12 +1721,12 @@ export const firebaseService = {
         createdAt: data.createdAt?.toDate(),
         updatedAt: data.updatedAt?.toDate(),
         sentAt: data.sentAt?.toDate(),
-        items: data.items?.map((item: any) => ({
+        items: this.safeArray(data.items).map((item: any) => ({
           ...item,
           addedAt: item.addedAt?.toDate(),
           approvedAt: item.approvedAt?.toDate(),
         })),
-        history: data.history?.map((log: any) => ({
+        history: this.safeArray(data.history).map((log: any) => ({
           ...log,
           timestamp: log.timestamp?.toDate(),
         })),
@@ -1701,10 +1743,13 @@ export const firebaseService = {
       }
     });
 
-    return Array.from(quotesMap.values());
+    // Final safety filter: ensure everything in the map is actually pending_approval
+    // and belongs to this user (userId or customerId)
+    const finalQuotes = Array.from(quotesMap.values()).filter(q => q.status === 'pending_approval' && (q.userId === userId || q.customerId === userId));
+
+    return finalQuotes.sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
   },
 
-  // Reject a quote with optional reason
   // Reject a quote with optional reason
   async rejectQuote(quoteId: string, userId: string, userName: string, reason?: string): Promise<void> {
     const docRef = doc(db, 'quotes', quoteId);
@@ -1734,6 +1779,21 @@ export const firebaseService = {
       }),
       updatedAt: Timestamp.now(),
     }));
+
+    // If it's a quote for a job, mirror the action to the job's history
+    const quote = await this.getQuote(quoteId);
+    if (quote?.jobId) {
+      try {
+        await this.addJobLog(quote.jobId, {
+          type: 'quote',
+          description: `Quote ${log.action}: ${log.description}`,
+          userId: log.userId,
+          userName: log.userName,
+        });
+      } catch (err) {
+        console.log('[addQuoteLog] Mirroring to job history failed (likely permissions):', err);
+      }
+    }
   },
 
   async approveQuote(quoteId: string, approverId: string, approverName: string, expectedTotal?: number): Promise<string> {
@@ -1744,8 +1804,6 @@ export const firebaseService = {
 
     // Safety Check: Ensure price hasn't changed since user viewed it
     if (expectedTotal !== undefined) {
-      // Use a small epsilon for float comparison just in case, though usually exact matching is preferred for currency integers/fixed
-      // Assuming integers or consistent rounding. Let's use strict equality but logging.
       if (quote.total !== expectedTotal) {
         throw new Error(`Price Mismatch: The quote total has changed from ₦${expectedTotal.toLocaleString()} to ₦${quote.total.toLocaleString()}. Please review the updated quote.`);
       }
@@ -1760,7 +1818,7 @@ export const firebaseService = {
       customerEmail: quote.customerEmail,
       customerAddress: quote.customerAddress,
       workshopId: quote.workshopId,
-      items: quote.items.map(item => ({
+      items: this.safeArray(quote.items).map((item: any) => ({
         description: item.description,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
@@ -1908,6 +1966,20 @@ export const firebaseService = {
         paymentHistory,
         paymentStatus: newPaymentStatus,
       });
+
+      // Log to job history if applicable
+      if (invoice.jobId) {
+        try {
+          await this.addJobLog(invoice.jobId, {
+            type: 'payment',
+            description: `Recorded ${payment.method.replace('_', ' ')} payment: ₦${payment.amount.toLocaleString()}`,
+            userId: payment.recordedBy || '',
+            userName: payment.recordedByName || '',
+          });
+        } catch (err) {
+          console.log('[recordPayment] Mirroring to job history failed (likely permissions):', err);
+        }
+      }
     }
   },
 
@@ -1952,6 +2024,20 @@ export const firebaseService = {
       paymentStatus: newPaymentStatus,
       pendingPayments: updatedPending,
     });
+
+    // Log to job history if applicable
+    if (invoice.jobId) {
+      try {
+        await this.addJobLog(invoice.jobId, {
+          type: 'payment',
+          description: `Confirmed pending ${pending.method.replace('_', ' ')} payment: ₦${pending.amount.toLocaleString()}`,
+          userId: confirmedBy,
+          userName: confirmedByName,
+        });
+      } catch (err) {
+        console.log('[confirmPendingPayment] Mirroring to job history failed (likely permissions):', err);
+      }
+    }
   },
 
   async rejectPendingPayment(invoiceId: string, pendingPaymentId: string): Promise<void> {
@@ -1966,6 +2052,7 @@ export const firebaseService = {
     workshopId: string,
     callback: (quotes: Quote[]) => void
   ): () => void {
+    if (!workshopId) return () => { };
     const q = query(
       collection(db, 'quotes'),
       where('workshopId', '==', workshopId),
@@ -1980,12 +2067,12 @@ export const firebaseService = {
           createdAt: data.createdAt?.toDate(),
           updatedAt: data.updatedAt?.toDate(),
           sentAt: data.sentAt?.toDate(),
-          items: data.items?.map((item: any) => ({
+          items: this.safeArray(data.items).map((item: any) => ({
             ...item,
             addedAt: item.addedAt?.toDate(),
             approvedAt: item.approvedAt?.toDate(),
           })),
-          history: data.history?.map((log: any) => ({
+          history: this.safeArray(data.history).map((log: any) => ({
             ...log,
             timestamp: log.timestamp?.toDate(),
           })),

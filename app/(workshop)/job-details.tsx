@@ -153,6 +153,8 @@ export default function WorkshopJobDetailsScreen() {
 
       // Create status history entry
       const statusHistoryEntry: StatusHistoryEntry = {
+        type: 'status',
+        description: `Changed status from ${job.status} to ${newStatus}`,
         fromStatus: job.status,
         toStatus: newStatus,
         changedBy: user.id,
@@ -194,7 +196,7 @@ export default function WorkshopJobDetailsScreen() {
   };
 
   const assignTechnicians = async () => {
-    if (!job || selectedTechnicians.length === 0) return;
+    if (!job || selectedTechnicians.length === 0 || !user) return;
 
     setUpdating(true);
     try {
@@ -208,6 +210,14 @@ export default function WorkshopJobDetailsScreen() {
         // Keep legacy fields for backwards compatibility
         assignedTechnicianId: selectedTechnicians[0],
         technicianName: techNames[0],
+      });
+
+      // Log action
+      await firebaseService.addJobLog(job.id, {
+        type: 'assignment',
+        description: `Assigned technicians: ${techNames.join(', ')}`,
+        userId: user.id,
+        userName: user.name,
       });
 
       setShowTechnicianModal(false);
@@ -229,11 +239,20 @@ export default function WorkshopJobDetailsScreen() {
   };
 
   const saveNotes = async () => {
-    if (!job) return;
+    if (!job || !user) return;
 
     setUpdating(true);
     try {
       await firebaseService.updateJob(job.id, { notes });
+
+      // Log action
+      await firebaseService.addJobLog(job.id, {
+        type: 'note',
+        description: 'Updated job notes',
+        userId: user.id,
+        userName: user.name,
+      });
+
       Alert.alert('Success', 'Notes saved successfully');
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to save notes');
@@ -380,18 +399,20 @@ export default function WorkshopJobDetailsScreen() {
         )}
 
         {/* Assign Technicians */}
-        {job && canAssignTechnician && (
+        {job && (
           <View style={[styles.section, { backgroundColor: colors.surface }]}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
               <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Assigned Technicians</Text>
-              <TouchableOpacity
-                style={[styles.updateStatusButton, { backgroundColor: colors.primary }]}
-                onPress={() => setShowTechnicianModal(true)}
-              >
-                <Text style={styles.updateStatusText}>
-                  {(job.assignedTechnicianIds?.length || job.assignedTechnicianId) ? 'Edit' : 'Assign'}
-                </Text>
-              </TouchableOpacity>
+              {canAssignTechnician && (
+                <TouchableOpacity
+                  style={[styles.updateStatusButton, { backgroundColor: colors.primary }]}
+                  onPress={() => setShowTechnicianModal(true)}
+                >
+                  <Text style={styles.updateStatusText}>
+                    {(job.assignedTechnicianIds?.length || job.assignedTechnicianId) ? 'Edit' : 'Assign'}
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
             <View style={[styles.infoCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               {(job.technicianNames && job.technicianNames.length > 0) ? (
@@ -432,28 +453,28 @@ export default function WorkshopJobDetailsScreen() {
               onPress={saveNotes}
               disabled={updating}
             >
-              <Text style={styles.saveButtonText}>
+              <Text style={[styles.saveButtonText, { color: colors.textInverse }]}>
                 {updating ? 'Saving...' : 'Save Notes'}
               </Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {/* Status History */}
+        {/* Job History */}
         {job?.statusHistory && job.statusHistory.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Status History</Text>
-            <View style={styles.infoCard}>
+            <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Job History</Text>
+            <View style={[styles.infoCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               {job.statusHistory.slice().reverse().map((entry, index) => (
                 <View key={index} style={styles.historyEntry}>
                   <View style={styles.historyHeader}>
-                    <Text style={styles.historyUser}>{entry.changedByName}</Text>
-                    <Text style={styles.historyDate}>
-                      {format(entry.changedAt, 'MMM dd, yyyy HH:mm')}
+                    <Text style={[styles.historyUser, { color: colors.textPrimary }]}>{entry.changedByName}</Text>
+                    <Text style={[styles.historyDate, { color: colors.textSecondary }]}>
+                      {entry.changedAt instanceof Date ? format(entry.changedAt, 'MMM dd, yyyy HH:mm') : 'Recently'}
                     </Text>
                   </View>
-                  <Text style={styles.historyChange}>
-                    {entry.fromStatus} → {entry.toStatus}
+                  <Text style={[styles.historyChange, { color: colors.textSecondary }]}>
+                    {entry.description || `${entry.fromStatus} → ${entry.toStatus}`}
                   </Text>
                 </View>
               ))}
