@@ -12,7 +12,7 @@ import { useThemeStore } from '@/store/themeStore';
 
 export default function RootLayout() {
   const router = useRouter();
-  const { setUser, setFirebaseUser } = useAuthStore();
+  const { setUser, setFirebaseUser, setGuest } = useAuthStore();
   const { getEffectiveTheme } = useThemeStore();
   const effectiveTheme = getEffectiveTheme();
 
@@ -57,6 +57,7 @@ export default function RootLayout() {
               if (newJSON !== lastUserJSON.current) {
                 lastUserJSON.current = newJSON;
                 setUser(userData);
+                setGuest(false); // Ensure guest flag is cleared for authenticated users
               }
 
               // --- PUSH REGISTRATION (ONCE PER LOGIN) ---

@@ -53,29 +53,44 @@ export default function CreateInventoryItemScreen() {
 
     const colors = useColors();
 
+    // Generate a unique ID using timestamp + random hex
+    const generateUniqueId = (): string => {
+        const timestamp = Date.now().toString(36).toUpperCase();
+        const random = Math.random().toString(16).substring(2, 6).toUpperCase();
+        return `ITEM-${timestamp}${random}`;
+    };
+
     const handleNewQuantityChange = (delta: number) => {
         setNewUnitIds((prev) => {
             if (delta > 0) {
-                // Add empty slots
-                const newSlots = Array(delta).fill('');
+                // Auto-generate unique IDs for new slots
+                const newSlots = Array(delta).fill(null).map(() => generateUniqueId());
                 return [...prev, ...newSlots];
             } else {
                 // Remove from end
                 const slotsToRemove = Math.abs(delta);
                 if (prev.length === 0) return prev;
-
-                // Check if we are removing filled slots
-                const idsToRemove = prev.slice(-slotsToRemove);
-                const filledIdsToRemove = idsToRemove.filter(id => id.trim() !== '').length;
-
-                if (filledIdsToRemove > 0) {
-                    // Ideally we'd warn here, but for simplicity in this refactor we'll just remove
-                    // consistent with standard UI patterns where - button just removes.
-                    // If user wants to clear specific ones they can clear text.
-                }
                 return prev.slice(0, Math.max(0, prev.length - slotsToRemove));
             }
         });
+    };
+
+    // Allow typing a number directly into the quantity field
+    const handleDirectQuantityInput = (text: string) => {
+        const parsed = parseInt(text, 10);
+        if (text === '' || text === '0') {
+            // Clear all new units
+            setNewUnitIds([]);
+            return;
+        }
+        if (isNaN(parsed) || parsed < 0) return;
+        const desired = parsed;
+        const current = newUnitIds.length;
+        if (desired > current) {
+            handleNewQuantityChange(desired - current);
+        } else if (desired < current) {
+            handleNewQuantityChange(desired - current);
+        }
     };
 
     const loadItem = async () => {
@@ -124,9 +139,9 @@ export default function CreateInventoryItemScreen() {
 
         // Validate new unit IDs
         // 1. No empty slots allowed in new units
-        const emptyNewSlots = newUnitIds.some(id => id.trim() === '');
+        const emptyNewSlots = newUnitIds.some(uid => uid.trim() === '');
         if (emptyNewSlots) {
-            Alert.alert('Error', 'Please enter Unique ID for all new units or remove empty slots using the - button');
+            Alert.alert('Error', 'All units must have a unique ID. Please fill in or remove empty entries.');
             return;
         }
 
@@ -347,8 +362,14 @@ export default function CreateInventoryItemScreen() {
                                 <Ionicons name="remove" size={20} color={newUnitIds.length === 0 ? colors.textTertiary : colors.textPrimary} />
                             </TouchableOpacity>
 
-                            <View style={styles.quantityDisplay}>
-                                <Text style={[styles.quantityText, { color: colors.textPrimary }]}>{newUnitIds.length}</Text>
+                            <View style={[styles.quantityDisplay, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+                                <TextInput
+                                    style={[styles.quantityText, { color: colors.textPrimary }]}
+                                    value={String(newUnitIds.length)}
+                                    onChangeText={handleDirectQuantityInput}
+                                    keyboardType="number-pad"
+                                    selectTextOnFocus
+                                />
                             </View>
 
                             <TouchableOpacity
@@ -362,7 +383,7 @@ export default function CreateInventoryItemScreen() {
 
                     {newUnitIds.length > 0 && (
                         <View style={[styles.unitIdsContainer, { backgroundColor: colors.background }]}>
-                            <Text style={[styles.helperText, { color: colors.textSecondary }]}>Enter Unique ID (Serial Number) for each new unit</Text>
+                            <Text style={[styles.helperText, { color: colors.textSecondary }]}>Unique IDs are auto-generated. You can edit them if needed.</Text>
                             {newUnitIds.map((uid, index) => {
                                 const isEmpty = !uid.trim();
                                 return (
@@ -550,15 +571,20 @@ const styles = StyleSheet.create({
         backgroundColor: '#F9F9F9',
     },
     quantityDisplay: {
-        minWidth: 60,
-        paddingHorizontal: 20,
+        minWidth: 70,
+        height: 44,
+        paddingHorizontal: 12,
         alignItems: 'center',
         justifyContent: 'center',
+        borderRadius: 12,
+        borderWidth: 1,
+        marginHorizontal: 12,
     },
     quantityText: {
-        fontSize: 24,
+        fontSize: 20,
         fontWeight: '600',
-        color: '#333',
+        textAlign: 'center',
+        minWidth: 40,
     },
     unitIdsContainer: {
         backgroundColor: '#F9F9F9',

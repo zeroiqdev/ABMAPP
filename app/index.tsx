@@ -22,13 +22,25 @@ export default function Index() {
   const { user, setGuest } = useAuthStore();
   const [isReady, setIsReady] = useState(false);
   const [authInitialized, setAuthInitialized] = useState(false);
+  const [storeHydrated, setStoreHydrated] = useState(false);
 
-  // Wait for Firebase auth to initialize before showing login UI
+  // Wait for zustand store to hydrate from AsyncStorage
+  useEffect(() => {
+    // Check if already hydrated
+    if (useAuthStore.persist.hasHydrated()) {
+      setStoreHydrated(true);
+    } else {
+      const unsub = useAuthStore.persist.onFinishHydration(() => {
+        setStoreHydrated(true);
+      });
+      return () => unsub();
+    }
+  }, []);
+
+  // Wait for Firebase auth to initialize
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       setAuthInitialized(true);
-      // If user is already authenticated, the _layout.tsx will set user state
-      // and the next useEffect will route them
     });
     return () => unsubscribe();
   }, []);
@@ -45,15 +57,12 @@ export default function Index() {
   const hasRouted = React.useRef(false);
 
   useEffect(() => {
-    // Only route when auth is initialized and splash is done
-    if (isReady && authInitialized && !hasRouted.current) {
-      // If we have a Firebase Auth user but no store user yet, wait a bit longer for RootLayout's onSnapshot to fire
+    // Only route when auth is initialized, store is hydrated, and splash is done
+    if (isReady && authInitialized && storeHydrated && !hasRouted.current) {
+      // If we have a Firebase Auth user but no store user yet, wait for RootLayout's onSnapshot
       if (auth.currentUser && !user) {
-        // We wait for RootLayout to fetch user profile. 
-        // Increase timeout to 5s to give more time for cold Firestore starts
         const timeout = setTimeout(() => {
           if (!hasRouted.current && auth.currentUser && !user) {
-            // Still no user after 5s, maybe doc doesn't exist? Try to determine role or fallback.
             hasRouted.current = true;
             console.log('[Routing] Timeout waiting for user profile. Falling back to marketplace.');
             setGuest(true);
@@ -71,12 +80,11 @@ export default function Index() {
         router.replace('/(marketplace)/home');
       }
     }
-  }, [isReady, authInitialized, user]);
+  }, [isReady, authInitialized, storeHydrated, user]);
 
   const routeUser = (userData: any) => {
-    console.log('[Routing] User:', userData.email, 'Role:', userData.role); // Debug Log
+    console.log('[Routing] User:', userData.email, 'Role:', userData.role);
 
-    // Priority Check for Super Admin (Route to Workshop App)
     if (userData.role === 'super_admin') {
       router.replace('/(workshop)/dashboard');
       return;
@@ -93,22 +101,16 @@ export default function Index() {
     } else if (userData.role === 'customer') {
       router.replace('/(customer)/home');
     } else if (workshopRoles.includes(userData.role)) {
-      // System workshop roles
       router.replace('/(workshop)/dashboard');
     } else if (userData.workshopId && userData.role !== 'customer' && userData.role !== 'vendor') {
-      // Custom roles: if user has workshopId and is not customer/vendor, route to workshop
       router.replace('/(workshop)/dashboard');
     } else {
-      // Fallback -> Default to Customer App for truly unmatched roles
       router.replace('/(customer)/home');
     }
   };
 
-
-  // ...(useEffect and routeUser remain same)
-
   // Show splash screen while initializing
-  if (!isReady || !authInitialized) {
+  if (!isReady || !authInitialized || !storeHydrated) {
     return (
       <View style={styles.splashContainer}>
         <Image
@@ -121,10 +123,7 @@ export default function Index() {
     );
   }
 
-
-
   // Authenticated users are handled by useEffect + routeUser
-  // This return is for the brief moment before routing completes
   return (
     <View style={styles.splashContainer}>
       <Image
