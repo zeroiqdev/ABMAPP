@@ -45,9 +45,7 @@ export default function SettingsScreen() {
         id: string;
     } | null>(null);
 
-    // Member mode modal
     const [showMemberModeModal, setShowMemberModeModal] = useState(false);
-    // Track if we are in the member flow (vs guest flow)
     const [isMemberModeFlow, setIsMemberModeFlow] = useState(false);
 
     // Existing customer detection
@@ -128,19 +126,13 @@ export default function SettingsScreen() {
         }
     };
 
-    // Step 1: Check email for existing account or invitation
     const handleEmailContinue = async () => {
         const trimmedEmail = email.trim().toLowerCase();
         if (!trimmedEmail || !trimmedEmail.includes('@')) {
             setError('Please enter a valid email address');
             return;
         }
-        if (!trimmedEmail || !trimmedEmail.includes('@')) {
-            setError('Please enter a valid email address');
-            return;
-        }
 
-        // Guest Flow: Only update guest email, do not proceed to auth
         if (!isMemberModeFlow) {
             setGuestEmail(trimmedEmail);
             Alert.alert('Success', 'Guest email updated.');
@@ -152,7 +144,6 @@ export default function SettingsScreen() {
         setInvitation(null);
 
         try {
-            // Check for staff invitation
             const staffQ = query(
                 collection(db, 'staffInvitations'),
                 where('email', '==', trimmedEmail),
@@ -180,22 +171,16 @@ export default function SettingsScreen() {
                 return;
             }
 
-            // No invitation found -> Proceed to Unified Auth (Login/Signup)
             setStep('login');
 
         } catch (err) {
             console.error('Error checking email:', err);
-            // Default to login step in case of error (safe fallback)
             setStep('login');
         } finally {
             setLoading(false);
         }
     };
 
-    // Unified Authentication Handler
-    // Tries to Log In first.
-    // If "User Not Found", assumes New User -> Redirects to 'selectWorkshops' -> 'createCustomer'
-    // This allows New Users to explicitly "Create Password" and confirm it.
     const handleUnifiedAuth = async () => {
         if (!password) {
             setError('Please enter your password');
@@ -206,25 +191,20 @@ export default function SettingsScreen() {
         setError('');
 
         try {
-            setLoading(true);
             const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
             setGuest(false);
 
-            // Check User Role and Route
             const userDocRef = doc(db, 'users', userCredential.user.uid);
             const userDocSnap = await getDoc(userDocRef);
 
             if (userDocSnap.exists()) {
                 navigateUser({ ...userDocSnap.data(), role: userDocSnap.data().role } as any);
             } else {
-                // Fallback if user doc missing (should typically be caught by error handling)
                 console.error('User document not found');
             }
 
         } catch (signInErr: any) {
-            // 2. If User Not Found (or Invalid Credential), treating as New User Flow
             if (signInErr.code === 'auth/user-not-found' || signInErr.code === 'auth/invalid-credential') {
-                // Do NOT auto-create. Redirect to Setup Flow.
                 setStep('createCustomer');
             } else if (signInErr.code === 'auth/wrong-password') {
                 setError('Incorrect password.');
@@ -236,7 +216,6 @@ export default function SettingsScreen() {
         }
     };
 
-    // Helper to route users based on role
     const navigateUser = (userData: any) => {
         if (userData.role === 'super_admin' || workshopRoles.includes(userData.role)) {
             router.replace('/(workshop)/dashboard');
@@ -250,15 +229,13 @@ export default function SettingsScreen() {
             }
         } else if (userData.role === 'customer') {
             router.replace('/(customer)/home');
-        } else if (userData.workshopId && userData.role !== 'customer' && userData.role !== 'vendor') {
-            // Custom workshop roles
+        } else if (userData.workshopId) {
             router.replace('/(workshop)/dashboard');
         } else {
             router.replace('/(customer)/home');
         }
     };
 
-    // Handle login for existing accounts
     const handleLogin = async () => {
         if (!password.trim()) {
             setError('Please enter your password');
@@ -280,7 +257,6 @@ export default function SettingsScreen() {
             const userData = userDocSnap.data();
             setGuest(false);
 
-            // Route based on role
             if (userData.role === 'super_admin' || workshopRoles.includes(userData.role)) {
                 router.replace('/(workshop)/dashboard');
             } else if (userData.role === 'vendor') {
@@ -293,8 +269,7 @@ export default function SettingsScreen() {
                 }
             } else if (userData.role === 'customer') {
                 router.replace('/(customer)/home');
-            } else if (userData.workshopId && userData.role !== 'customer' && userData.role !== 'vendor') {
-                // Custom workshop roles
+            } else if (userData.workshopId) {
                 router.replace('/(workshop)/dashboard');
             } else {
                 router.replace('/(customer)/home');
@@ -312,7 +287,6 @@ export default function SettingsScreen() {
         }
     };
 
-    // Handle account creation for invited users
     const handleCreateAccount = async () => {
         if (!password.trim() || password.length < 6) {
             setError('Password must be at least 6 characters');
@@ -331,25 +305,20 @@ export default function SettingsScreen() {
         setError('');
         try {
             if (invitation && invitation.type === 'staff') {
-                // Use staff invite flow
                 await acceptStaffInvite(email.trim().toLowerCase(), password, invitation.code, birthday ? format(birthday, 'yyyy-MM-dd') : undefined);
             } else {
-                // Use customer registration flow (merging or fresh)
                 await registerCustomerAccount(email.trim().toLowerCase(), password, undefined, undefined, undefined, birthday ? format(birthday, 'yyyy-MM-dd') : undefined);
             }
 
             setGuest(false);
 
-            // Routing is handled by the auth store after registration
-            // But let's add explicit routing as backup
             const userData = useAuthStore.getState().user;
             if (userData) {
                 if (userData.role === 'super_admin' || workshopRoles.includes(userData.role)) {
                     router.replace('/(workshop)/dashboard');
                 } else if (userData.role === 'vendor') {
                     router.replace('/(marketplace)/vendor-registration');
-                } else if (userData.workshopId && userData.role !== 'customer' && userData.role !== 'vendor') {
-                    // Custom workshop roles
+                } else if (userData.workshopId) {
                     router.replace('/(workshop)/dashboard');
                 } else {
                     router.replace('/(customer)/home');
@@ -369,7 +338,6 @@ export default function SettingsScreen() {
         }
     };
 
-    // Reset flow
     const handleBack = () => {
         setStep('email');
         setPassword('');
@@ -379,7 +347,6 @@ export default function SettingsScreen() {
         setSelectedWorkshopIds([]);
     };
 
-    // Handle new customer account creation (without invitation)
     const handleCreateNewCustomer = async () => {
         if (!password.trim() || password.length < 6) {
             setError('Password must be at least 6 characters');
@@ -399,10 +366,8 @@ export default function SettingsScreen() {
         try {
             const normalizedEmail = email.trim().toLowerCase();
 
-            // Check for existing customer records with this email (created by staff)
             let existingName = '';
             let existingPhone = '';
-            // Create Firebase auth account
             const userCredential = await createUserWithEmailAndPassword(
                 auth,
                 normalizedEmail,
@@ -410,7 +375,6 @@ export default function SettingsScreen() {
             );
             const uid = userCredential.user.uid;
 
-            // Now authenticated, we can safely search for existing customer records to merge
             try {
                 const usersQuery = query(
                     collection(db, 'users'),
@@ -419,34 +383,29 @@ export default function SettingsScreen() {
                 );
                 const usersSnapshot = await getDocs(usersQuery);
                 if (!usersSnapshot.empty) {
-                    // Found existing customer record - get name/phone for pre-fill
                     const existingDoc = usersSnapshot.docs[0].data();
                     existingName = existingDoc.name || '';
                     existingPhone = existingDoc.phone || '';
                 }
             } catch (err) {
-                console.log('Could not query existing customers after auth:', err);
+                console.log('Could not query existing customers:', err);
             }
 
-            // Create user document as customer with selected workshops
-            // Also set workshopId to first selected for backward compatibility with staff queries
             await setDoc(doc(db, 'users', uid), {
                 email: normalizedEmail,
-                name: existingName, // Preserve any existing name from staff-created record
-                phone: existingPhone, // Preserve any existing phone from staff-created record
+                name: existingName,
+                phone: existingPhone,
                 role: 'customer',
-                workshopId: selectedWorkshopIds[0], // For backward compatibility with staff queries
+                workshopId: selectedWorkshopIds[0],
                 selectedWorkshopIds: selectedWorkshopIds,
                 birthday: birthday ? format(birthday, 'yyyy-MM-dd') : '',
                 createdAt: new Date(),
                 updatedAt: new Date(),
             });
 
-            // Pre-fill profile fields with existing data (if any)
             setProfileName(existingName);
             setProfilePhone(existingPhone);
 
-            // Save user ID and go to profile completion step
             setNewUserId(uid);
             setStep('completeProfile');
         } catch (error: any) {
@@ -463,7 +422,6 @@ export default function SettingsScreen() {
         }
     };
 
-    // Handle profile completion after member mode registration
     const handleCompleteProfile = async () => {
         if (!profileName.trim()) {
             setError('Please enter your full name');
@@ -481,7 +439,6 @@ export default function SettingsScreen() {
         setLoading(true);
         setError('');
         try {
-            // Update user document with name and phone
             await setDoc(doc(db, 'users', newUserId), {
                 name: profileName.trim(),
                 phone: profilePhone.trim(),
@@ -497,7 +454,6 @@ export default function SettingsScreen() {
         }
     };
 
-    // Guest view - show account flow (or if we are in the middle of onboarding)
     if (isGuest || !user || step === 'selectWorkshops' || step === 'completeProfile') {
         return (
             <View style={styles.container}>

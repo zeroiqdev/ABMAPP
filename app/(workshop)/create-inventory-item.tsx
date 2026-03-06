@@ -33,27 +33,21 @@ export default function CreateInventoryItemScreen() {
     const [costPrice, setCostPrice] = useState('');
     const [sellingPrice, setSellingPrice] = useState('');
 
-    // Serial Numbers & Quantity Logic
-    // existingUnitIds: IDs already saved in DB (for edit mode)
     const [existingUnitIds, setExistingUnitIds] = useState<string[]>([]);
-    // newUnitIds: New IDs being added in this session
     const [newUnitIds, setNewUnitIds] = useState<string[]>([]);
 
-    // Total quantity is calculated, not directly set
     const totalQuantity = existingUnitIds.length + newUnitIds.length;
 
     useEffect(() => {
         if (id) {
             loadItem();
         } else {
-            // Reset form when creating new item (no id)
             resetForm();
         }
     }, [id]);
 
     const colors = useColors();
 
-    // Generate a unique ID using timestamp + random hex
     const generateUniqueId = (): string => {
         const timestamp = Date.now().toString(36).toUpperCase();
         const random = Math.random().toString(16).substring(2, 6).toUpperCase();
@@ -63,11 +57,9 @@ export default function CreateInventoryItemScreen() {
     const handleNewQuantityChange = (delta: number) => {
         setNewUnitIds((prev) => {
             if (delta > 0) {
-                // Auto-generate unique IDs for new slots
                 const newSlots = Array(delta).fill(null).map(() => generateUniqueId());
                 return [...prev, ...newSlots];
             } else {
-                // Remove from end
                 const slotsToRemove = Math.abs(delta);
                 if (prev.length === 0) return prev;
                 return prev.slice(0, Math.max(0, prev.length - slotsToRemove));
@@ -75,20 +67,16 @@ export default function CreateInventoryItemScreen() {
         });
     };
 
-    // Allow typing a number directly into the quantity field
     const handleDirectQuantityInput = (text: string) => {
         const parsed = parseInt(text, 10);
         if (text === '' || text === '0') {
-            // Clear all new units
             setNewUnitIds([]);
             return;
         }
         if (isNaN(parsed) || parsed < 0) return;
         const desired = parsed;
         const current = newUnitIds.length;
-        if (desired > current) {
-            handleNewQuantityChange(desired - current);
-        } else if (desired < current) {
+        if (desired !== current) {
             handleNewQuantityChange(desired - current);
         }
     };
@@ -111,7 +99,6 @@ export default function CreateInventoryItemScreen() {
                 const loadedUnitIds = item.unitIds || [];
                 setExistingUnitIds([...loadedUnitIds]);
 
-                // Start with 0 new units when editing
                 setNewUnitIds([]);
             }
         } catch (error) {
@@ -163,12 +150,10 @@ export default function CreateInventoryItemScreen() {
         setLoading(true);
 
         try {
-            // 4. Global Uniqueness Check
             const allItems = await firebaseService.getInventoryItems(user.workshopId);
             const allOtherUniqueIds = new Set<string>();
 
             allItems.forEach(item => {
-                // Skip current item if editing
                 if (item.id === id) return;
 
                 if (item.unitIds) {
@@ -234,8 +219,6 @@ export default function CreateInventoryItemScreen() {
                 await firebaseService.createInventoryItem(itemData);
             }
 
-            console.log('Item saved successfully');
-            // Navigate back with refresh param
             router.replace(`/(workshop)/inventory?refresh=${Date.now()}`);
 
             setTimeout(() => {

@@ -16,7 +16,6 @@ export default function RootLayout() {
   const { getEffectiveTheme } = useThemeStore();
   const effectiveTheme = getEffectiveTheme();
 
-  // Guards to prevent infinite loops
   const pushRegisteredForUid = useRef<string | null>(null);
   const lastUserJSON = useRef<string | null>(null);
 
@@ -28,17 +27,14 @@ export default function RootLayout() {
       if (firebaseUser) {
         setFirebaseUser(firebaseUser);
 
-        // Unsubscribe from previous listeners
         if (userUnsubscribe) userUnsubscribe();
         if (workshopUnsubscribe) workshopUnsubscribe();
 
-        // Subscribe to user document
         const userRef = doc(db, 'users', firebaseUser.uid);
         userUnsubscribe = onSnapshot(userRef,
           (userDoc: any) => {
             if (userDoc.exists()) {
               const data = userDoc.data();
-              // Validate Vendor Role
               if (data.vendorStatus && data.role !== 'vendor') {
                 data.role = 'vendor';
               }
@@ -50,29 +46,25 @@ export default function RootLayout() {
                 updatedAt: data.updatedAt?.toDate() || new Date(),
               } as User;
 
-              // --- SKIP NO-OP UPDATES ---
-              // Compare key fields to avoid triggering re-renders on timestamp-only changes
               const { updatedAt, createdAt, ...comparableFields } = userData as any;
               const newJSON = JSON.stringify(comparableFields);
               if (newJSON !== lastUserJSON.current) {
                 lastUserJSON.current = newJSON;
                 setUser(userData);
-                setGuest(false); // Ensure guest flag is cleared for authenticated users
+                setGuest(false);
               }
 
-              // --- PUSH REGISTRATION (ONCE PER LOGIN) ---
               if (userData.id && pushRegisteredForUid.current !== userData.id) {
                 pushRegisteredForUid.current = userData.id;
                 const { notificationService } = require('@/services/notificationService');
                 notificationService.registerAndSavePushToken(userData.id).catch((err: any) =>
-                  console.log('Push registration failed silently:', err)
+                  console.log('Push registration failed:', err)
                 );
               }
 
-              // *** SUBSCRIPTION GATING START ***
+              // Subscription gating for workshop staff
               const gatedRoles = ['admin', 'technician', 'storekeeper', 'accountant', 'service_advisor'];
               if (userData.workshopId && gatedRoles.includes(userData.role)) {
-                // Clean up previous workshop listener if workshopId changed
                 if (workshopUnsubscribe) workshopUnsubscribe();
 
                 const workshopRef = doc(db, 'workshops', userData.workshopId);
@@ -80,21 +72,15 @@ export default function RootLayout() {
                   if (workshopDoc.exists()) {
                     const wsData = workshopDoc.data();
                     const isActive = wsData.subscriptionStatus === 'active' || wsData.subscriptionStatus === 'trial';
-                    const now = new Date();
                     const expiry = wsData.subscriptionExpiry?.toDate();
-                    const isExpired = expiry && expiry < now;
+                    const isExpired = expiry && expiry < new Date();
 
                     if (!isActive || (isActive && isExpired)) {
-                      console.log('[Gating] Workshop Subscription Inactive/Expired. Redirecting...');
                       router.replace('/(auth)/subscription-expired');
                     }
                   }
                 });
               }
-              // *** SUBSCRIPTION GATING END ***
-
-            } else {
-              console.log('[RootLayout] User document not found (yet).');
             }
           },
           (error: any) => {
@@ -132,4 +118,3 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
-
