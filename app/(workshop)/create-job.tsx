@@ -86,7 +86,7 @@ export default function CreateJobScreen() {
     const [searchCustomerQuery, setSearchCustomerQuery] = useState('');
 
     const filteredBrands = CAR_BRANDS.filter(b =>
-        b.name.toLowerCase().includes(searchBrandQuery.toLowerCase())
+        (b.name || '').toLowerCase().includes(searchBrandQuery.toLowerCase())
     );
 
     useFocusEffect(
@@ -875,11 +875,11 @@ export default function CreateJobScreen() {
                             <FlatList
                                 data={customers
                                     .filter(c =>
-                                        c.name.toLowerCase().includes(searchCustomerQuery.toLowerCase()) ||
-                                        c.email.toLowerCase().includes(searchCustomerQuery.toLowerCase()) ||
+                                        (c.name || '').toLowerCase().includes(searchCustomerQuery.toLowerCase()) ||
+                                        (c.email || '').toLowerCase().includes(searchCustomerQuery.toLowerCase()) ||
                                         (c.phone && c.phone.includes(searchCustomerQuery))
                                     )
-                                    .sort((a, b) => a.name.localeCompare(b.name))
+                                    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
                                 }
                                 keyExtractor={(item) => item.id}
                                 renderItem={({ item }) => (
@@ -890,8 +890,8 @@ export default function CreateJobScreen() {
                                             setShowCustomerModal(false);
                                         }}
                                     >
-                                        <Text style={[styles.listItemTitle, { color: colors.textPrimary }]}>{item.name}</Text>
-                                        <Text style={[styles.listItemSubtitle, { color: colors.textSecondary }]}>{item.email}</Text>
+                                        <Text style={[styles.listItemTitle, { color: colors.textPrimary }]}>{item.name || 'No Name'}</Text>
+                                        <Text style={[styles.listItemSubtitle, { color: colors.textSecondary }]}>{item.email || ''}</Text>
                                     </TouchableOpacity>
                                 )}
                             />

@@ -198,7 +198,15 @@ export default function SettingsScreen() {
             const userDocSnap = await getDoc(userDocRef);
 
             if (userDocSnap.exists()) {
-                navigateUser({ ...userDocSnap.data(), role: userDocSnap.data().role } as any);
+                const userData = userDocSnap.data();
+                if (!userData.name || !userData.name.trim()) {
+                    setNewUserId(userCredential.user.uid);
+                    setProfileName('');
+                    setProfilePhone(userData.phone || '');
+                    setStep('completeProfile');
+                    return;
+                }
+                navigateUser({ ...userData, role: userData.role } as any);
             } else {
                 console.error('User document not found');
             }
@@ -256,6 +264,14 @@ export default function SettingsScreen() {
 
             const userData = userDocSnap.data();
             setGuest(false);
+
+            if (!userData.name || !userData.name.trim()) {
+                setNewUserId(userCredential.user.uid);
+                setProfileName('');
+                setProfilePhone(userData.phone || '');
+                setStep('completeProfile');
+                return;
+            }
 
             if (userData.role === 'super_admin' || workshopRoles.includes(userData.role)) {
                 router.replace('/(workshop)/dashboard');
@@ -446,7 +462,14 @@ export default function SettingsScreen() {
             }, { merge: true });
 
             setGuest(false);
-            router.replace('/(customer)/home');
+
+            const userDocRef = doc(db, 'users', newUserId);
+            const userDocSnap = await getDoc(userDocRef);
+            if (userDocSnap.exists()) {
+                navigateUser({ ...userDocSnap.data(), role: userDocSnap.data().role } as any);
+            } else {
+                router.replace('/(customer)/home');
+            }
         } catch (error: any) {
             setError(error.message || 'Failed to save profile');
         } finally {

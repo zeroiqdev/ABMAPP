@@ -74,6 +74,11 @@ export default function Index() {
   }, [isReady, authInitialized, storeHydrated, user]);
 
   const routeUser = (userData: any) => {
+    if (!userData.name || !userData.name.trim()) {
+      router.replace('/(marketplace)/home');
+      return;
+    }
+
     if (userData.role === 'super_admin') {
       router.replace('/(workshop)/dashboard');
       return;

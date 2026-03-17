@@ -145,7 +145,16 @@ export default function MemberAuthScreen() {
             const userDocSnap = await getDoc(userDocRef);
 
             if (userDocSnap.exists()) {
-                navigateUser({ ...userDocSnap.data(), role: userDocSnap.data().role } as any);
+                const userData = userDocSnap.data();
+                if (!userData.name || !userData.name.trim()) {
+                    setNewUserId(userCredential.user.uid);
+                    setFirstName('');
+                    setLastName('');
+                    setPhone(userData.phone || '');
+                    setStep('completeProfile');
+                    return;
+                }
+                navigateUser({ ...userData, role: userData.role } as any);
             } else {
                 router.replace('/(marketplace)/home');
             }
@@ -310,7 +319,14 @@ export default function MemberAuthScreen() {
             });
 
             setGuest(false);
-            router.replace('/(customer)/home');
+
+            const userDocRef = doc(db, 'users', uid);
+            const userDocSnap = await getDoc(userDocRef);
+            if (userDocSnap.exists()) {
+                navigateUser({ ...userDocSnap.data(), role: userDocSnap.data().role } as any);
+            } else {
+                router.replace('/(customer)/home');
+            }
         } catch (err: any) {
             setError(err.message || 'Failed to save profile');
         } finally {
