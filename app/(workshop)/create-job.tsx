@@ -293,6 +293,7 @@ export default function CreateJobScreen() {
     };
 
     const handleCreateVehicle = async () => {
+        if (loading) return;
         if (!selectedCustomer || !newVehicle.make || !newVehicle.model || !newVehicle.licensePlate) {
             Alert.alert('Error', 'Please fill in required fields');
             return;
@@ -624,6 +625,8 @@ export default function CreateJobScreen() {
                 customerId: selectedCustomer.id,
                 userId: selectedCustomer.id, // Add userId for customer app visibility
                 customerName: selectedCustomer.name,
+                customerEmail: (selectedCustomer.email || '').toLowerCase().trim(),
+                customerPhone: selectedCustomer.phone,
                 workshopId: user.workshopId,
                 items: quoteItems,
                 subtotal,
@@ -860,7 +863,7 @@ export default function CreateJobScreen() {
                                 onChangeText={(t) => setNewCustomer({ ...newCustomer, phone: t })}
                             />
                             <TouchableOpacity style={[styles.primaryButton, { backgroundColor: colors.primary }]} onPress={handleCreateCustomer}>
-                                <Text style={styles.primaryButtonText}>Create Customer</Text>
+                                <Text style={[styles.primaryButtonText, { color: colors.textInverse }]}>Create Customer</Text>
                             </TouchableOpacity>
                         </View>
                     ) : (
@@ -1015,8 +1018,12 @@ export default function CreateJobScreen() {
                                 />
                             </View>
 
-                            <TouchableOpacity style={[styles.primaryButton, { backgroundColor: colors.primary }]} onPress={handleCreateVehicle}>
-                                <Text style={[styles.primaryButtonText, { color: colors.textInverse }]}>Add Vehicle</Text>
+                            <TouchableOpacity style={[styles.primaryButton, { backgroundColor: colors.primary }, loading && { opacity: 0.5 }]} onPress={handleCreateVehicle} disabled={loading}>
+                                {loading ? (
+                                    <ActivityIndicator size="small" color={colors.textInverse} />
+                                ) : (
+                                    <Text style={[styles.primaryButtonText, { color: colors.textInverse }]}>Add Vehicle</Text>
+                                )}
                             </TouchableOpacity>
                         </ScrollView>
                     ) : (

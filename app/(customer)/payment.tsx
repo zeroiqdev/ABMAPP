@@ -121,7 +121,7 @@ export default function PaymentScreen() {
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Invoice Number</Text>
               <Text style={styles.summaryValue}>
-                #{invoice.id.slice(0, 8)}
+                {(invoice as any).invoiceNumber || `INV-${invoice.id.slice(0, 8)}`}
               </Text>
             </View>
             <View style={styles.summaryRow}>

@@ -585,39 +585,67 @@ export const firebaseService = {
       updatedAt: Timestamp.now(),
     });
   },
+ 
+  async getInvoices(userId?: string, workshopId?: string, email?: string): Promise<Invoice[]> {
+    const invoicesMap = new Map<string, Invoice>();
 
-  async getInvoices(userId?: string, workshopId?: string): Promise<Invoice[]> {
-    const constraints: QueryConstraint[] = [];
+    const fetchInvoices = async (constraints: QueryConstraint[]) => {
+      const q = query(collection(db, 'invoices'), ...constraints, orderBy('createdAt', 'desc'));
+      const snapshot = await getDocs(q);
+      snapshot.docs.forEach(docSnap => {
+        const data = docSnap.data();
+        if (!invoicesMap.has(docSnap.id)) {
+          invoicesMap.set(docSnap.id, {
+            id: docSnap.id,
+            ...data,
+            createdAt: data.createdAt?.toDate(),
+            paymentDate: data.paymentDate?.toDate(),
+            dueDate: data.dueDate?.toDate(),
+            approvedAt: data.approvedAt?.toDate(),
+            status: data.status || 'draft',
+            approvedBy: data.approvedBy,
+            amountPaid: data.amountPaid || 0,
+            paymentHistory: data.paymentHistory
+              ? data.paymentHistory.map((record: any) => ({
+                ...record,
+                date: record.date?.toDate() || new Date(),
+              }))
+              : [],
+          } as Invoice);
+        }
+      });
+    };
+
+    const queryPromises = [];
+
+    // Query by userId - wrapped in try/catch for isolation
     if (userId) {
-      constraints.push(where('userId', '==', userId));
+      queryPromises.push(
+        fetchInvoices([where('userId', '==', userId)])
+          .catch(err => console.log('[getInvoices] userId query failed:', err.message))
+      );
     }
-    if (workshopId) {
-      constraints.push(where('workshopId', '==', workshopId));
-    }
-    constraints.push(orderBy('createdAt', 'desc'));
 
-    const q = query(collection(db, 'invoices'), ...constraints);
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map((doc) => {
-      const data = doc.data();
-      return {
-        id: doc.id,
-        ...data,
-        createdAt: data.createdAt?.toDate(),
-        paymentDate: data.paymentDate?.toDate(),
-        dueDate: data.dueDate?.toDate(),
-        approvedAt: data.approvedAt?.toDate(),
-        status: data.status || 'draft', // Backwards compatibility
-        approvedBy: data.approvedBy,
-        amountPaid: data.amountPaid || 0,
-        paymentHistory: data.paymentHistory
-          ? data.paymentHistory.map((record: any) => ({
-            ...record,
-            date: record.date?.toDate() || new Date(),
-          }))
-          : [],
-      };
-    }) as Invoice[];
+    // Query by customerEmail - wrapped in try/catch for isolation
+    if (email) {
+      queryPromises.push(
+        fetchInvoices([where('customerEmail', '==', email.toLowerCase().trim())])
+          .catch(err => console.log('[getInvoices] email query failed:', err.message))
+      );
+    }
+
+    // For staff: workshopId
+    if (workshopId && !userId && !email) {
+      queryPromises.push(
+        fetchInvoices([where('workshopId', '==', workshopId)])
+          .catch(err => console.log('[getInvoices] workshopId query failed:', err.message))
+      );
+    }
+
+    await Promise.all(queryPromises);
+
+    return Array.from(invoicesMap.values())
+      .sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
   },
 
   async getInvoice(invoiceId: string): Promise<Invoice | null> {
@@ -647,32 +675,77 @@ export const firebaseService = {
     return null;
   },
 
+  async getNextInvoiceNumber(workshopId: string): Promise<string> {
+    const q = query(
+      collection(db, 'invoices'),
+      where('workshopId', '==', workshopId)
+    );
+    const snap = await getDocs(q);
+    let maxNum = 0;
+    snap.docs.forEach(d => {
+      const num = d.data().invoiceNumber;
+      if (num) {
+        const n = parseInt(num.replace('INV-', ''), 10);
+        if (!isNaN(n) && n > maxNum) maxNum = n;
+      }
+    });
+    return `INV-${String(maxNum + 1).padStart(4, '0')}`;
+  },
+
+  async getNextQuoteNumber(workshopId: string): Promise<string> {
+    const q = query(
+      collection(db, 'quotes'),
+      where('workshopId', '==', workshopId)
+    );
+    const snap = await getDocs(q);
+    let maxNum = 0;
+    snap.docs.forEach(d => {
+      const num = d.data().quoteNumber;
+      if (num) {
+        const n = parseInt(num.replace('QT-', ''), 10);
+        if (!isNaN(n) && n > maxNum) maxNum = n;
+      }
+    });
+    return `QT-${String(maxNum + 1).padStart(4, '0')}`;
+  },
+
   async createInvoice(invoice: Omit<Invoice, 'id' | 'createdAt'>): Promise<string> {
-    // Generate invoice ID in format: INV-CUSTOMERID-XXXX
-    // XXXX is last 4 digits of timestamp
-    // Generate robust invoice ID in format: INV-CUSTOMERID-TIME-RAND
-    const timeSegment = Math.floor(Date.now() / 100).toString().slice(-6); // decisecond segment for more variability
-    const randomSuffix = Math.random().toString(36).substring(2, 5).toUpperCase(); // 3-char random string
+    const timeSegment = Math.floor(Date.now() / 100).toString().slice(-6);
+    const randomSuffix = Math.random().toString(36).substring(2, 5).toUpperCase();
     const customerIdentifier = invoice.userId ? invoice.userId.slice(0, 8) : 'DIRECT';
     const invoiceId = `INV-${customerIdentifier}-${timeSegment}-${randomSuffix}`;
 
-    // Sanitize invoice object to remove undefined values which Firestore setDoc doesn't accept
-    const cleanInvoice = this.sanitizeData(invoice);
+    let invoiceNumber = invoice.invoiceNumber;
+    if (!invoiceNumber) {
+      try {
+        invoiceNumber = await this.getNextInvoiceNumber(invoice.workshopId);
+      } catch (e) {
+        // Fallback if user doesn't have permission to query all invoices (e.g. customer)
+        invoiceNumber = `INV-${String(Math.floor(Date.now() / 1000) % 10000).padStart(4, '0')}`;
+      }
+    }
 
-    // Use setDoc with custom ID instead of setDoc
+    const normalizedEmail = invoice.customerEmail ? invoice.customerEmail.toLowerCase().trim() : '';
+    const cleanInvoice = this.sanitizeData({
+      ...invoice,
+      customerEmail: normalizedEmail,
+    });
+ 
     const docRef = doc(db, 'invoices', invoiceId);
     await setDoc(docRef, {
       ...cleanInvoice,
-      status: cleanInvoice.status || 'draft', // Use passed status or default
+      invoiceNumber,
+      status: cleanInvoice.status || 'draft',
       createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
     });
 
-    // Send Push Notification to Admins
     try {
       const { notificationService } = require('./notificationService');
+      const customerName = invoice.customerName || customerIdentifier;
       notificationService.sendPushToAdmins(
         'New Invoice Created',
-        `Invoice #${invoiceId} created for ${customerIdentifier}`,
+        `New invoice created for ${customerName}`,
         { type: 'invoice', id: invoiceId }
       ).catch((err: any) => console.log('Failed to send admin push:', err));
     } catch (e) {
@@ -964,6 +1037,8 @@ export const firebaseService = {
       throw error;
     }
   },
+
+
 
   async createOrder(order: Omit<Order, 'id' | 'createdAt'>): Promise<string> {
     const docRef = await addDoc(collection(db, 'orders'), this.sanitizeData({
@@ -1589,8 +1664,13 @@ export const firebaseService = {
   // ============ QUOTE FUNCTIONS ============
 
   async createQuote(quote: Omit<Quote, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
+    const quoteNumber = quote.quoteNumber || await this.getNextQuoteNumber(quote.workshopId);
+
+    const normalizedEmail = quote.customerEmail ? quote.customerEmail.toLowerCase().trim() : '';
     const docRef = await addDoc(collection(db, 'quotes'), this.sanitizeData({
       ...quote,
+      customerEmail: normalizedEmail,
+      quoteNumber,
       status: quote.status || 'draft',
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
@@ -1689,26 +1769,39 @@ export const firebaseService = {
   },
 
   // Get quotes pending approval for a customer
-  async getQuotesForCustomer(userId: string): Promise<Quote[]> {
-    // Query by userId (used by some older quotes or manual quotes)
-    // Query by userId (used by some older quotes or manual quotes)
-    const qByUserId = query(
-      collection(db, 'quotes'),
-      where('userId', '==', userId),
-      where('status', '==', 'pending_approval')
+  async getQuotesForCustomer(userId: string, email?: string): Promise<Quote[]> {
+    const queryPromises: Promise<any>[] = [];
+
+    // Query by userId - isolated
+    queryPromises.push(
+      getDocs(query(
+        collection(db, 'quotes'),
+        where('userId', '==', userId),
+        where('status', '==', 'pending_approval')
+      )).catch(err => { console.log('[getQuotes] userId query failed:', err.message); return null; })
     );
 
-    // Query by customerId (used by job-created quotes)
-    const qByCustomerId = query(
-      collection(db, 'quotes'),
-      where('customerId', '==', userId),
-      where('status', '==', 'pending_approval')
+    // Query by customerId - isolated
+    queryPromises.push(
+      getDocs(query(
+        collection(db, 'quotes'),
+        where('customerId', '==', userId),
+        where('status', '==', 'pending_approval')
+      )).catch(err => { console.log('[getQuotes] customerId query failed:', err.message); return null; })
     );
 
-    const [snapshotUserId, snapshotCustomerId] = await Promise.all([
-      getDocs(qByUserId),
-      getDocs(qByCustomerId),
-    ]);
+    // Query by email - isolated
+    if (email) {
+      queryPromises.push(
+        getDocs(query(
+          collection(db, 'quotes'),
+          where('customerEmail', '==', email.toLowerCase().trim()),
+          where('status', '==', 'pending_approval')
+        )).catch(err => { console.log('[getQuotes] email query failed:', err.message); return null; })
+      );
+    }
+
+    const snapshots = await Promise.all(queryPromises);
 
     // Combine and deduplicate by quote ID
     const quotesMap = new Map<string, Quote>();
@@ -1732,20 +1825,17 @@ export const firebaseService = {
         })),
       } as Quote;
     };
-
-    snapshotUserId.docs.forEach((docSnap) => {
-      quotesMap.set(docSnap.id, processDoc(docSnap));
-    });
-
-    snapshotCustomerId.docs.forEach((docSnap) => {
-      if (!quotesMap.has(docSnap.id)) {
-        quotesMap.set(docSnap.id, processDoc(docSnap));
+    snapshots.forEach((snapshot) => {
+      if (snapshot && snapshot.docs) {
+        snapshot.docs.forEach((docSnap: any) => {
+          if (!quotesMap.has(docSnap.id)) {
+            quotesMap.set(docSnap.id, processDoc(docSnap));
+          }
+        });
       }
     });
 
-    // Final safety filter: ensure everything in the map is actually pending_approval
-    // and belongs to this user (userId or customerId)
-    const finalQuotes = Array.from(quotesMap.values()).filter(q => q.status === 'pending_approval' && (q.userId === userId || q.customerId === userId));
+    const finalQuotes = Array.from(quotesMap.values()).filter(q => q.status === 'pending_approval' && (q.userId === userId || q.customerId === userId || (email && q.customerEmail?.toLowerCase() === email.toLowerCase().trim())));
 
     return finalQuotes.sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
   },
@@ -1849,12 +1939,16 @@ export const firebaseService = {
       convertedToInvoiceId: invoiceId,
     });
 
-    await this.addQuoteLog(quoteId, {
-      action: 'approve',
-      description: `Quote approved (₦${quote.total.toLocaleString()})`,
-      userId: approverId,
-      userName: approverName,
-    });
+    try {
+      await this.addQuoteLog(quoteId, {
+        action: 'approve',
+        description: `Quote approved (₦${quote.total.toLocaleString()})`,
+        userId: approverId,
+        userName: approverName,
+      });
+    } catch (e) {
+      console.log('[approveQuote] Failed to add quote log (likely permissions):', e);
+    }
 
     return invoiceId;
   },
@@ -1983,7 +2077,7 @@ export const firebaseService = {
     }
   },
 
-  async confirmPendingPayment(invoiceId: string, pendingPaymentId: string, confirmedBy: string, confirmedByName: string): Promise<void> {
+  async confirmPendingPayment(invoiceId: string, pendingPaymentId: string, confirmedBy: string, confirmedByName: string, paymentMethod?: string, verifiedAmount?: number): Promise<void> {
     const invoice = await this.getInvoice(invoiceId);
     if (!invoice) throw new Error('Invoice not found');
 
@@ -1992,12 +2086,13 @@ export const firebaseService = {
     if (pendingIndex === -1) throw new Error('Pending payment not found');
 
     const pending = pendingPayments[pendingIndex];
+    const actualAmount = verifiedAmount !== undefined ? verifiedAmount : pending.amount;
 
     // Move to payment history
     const paymentEntry: PaymentRecord = {
-      amount: pending.amount,
+      amount: actualAmount,
       date: pending.date,
-      method: pending.method,
+      method: paymentMethod || pending.method,
       recordedBy: pending.recordedBy,
       recordedByName: pending.recordedByName,
       note: `Confirmed by ${confirmedByName}`,
@@ -2005,7 +2100,7 @@ export const firebaseService = {
       entityId: invoiceId,
     };
 
-    const newAmountPaid = (invoice.amountPaid || 0) + pending.amount;
+    const newAmountPaid = (invoice.amountPaid || 0) + actualAmount;
     const paymentHistory = [...(invoice.paymentHistory || []), paymentEntry];
 
     // Remove from pending
@@ -2030,7 +2125,7 @@ export const firebaseService = {
       try {
         await this.addJobLog(invoice.jobId, {
           type: 'payment',
-          description: `Confirmed pending ${pending.method.replace('_', ' ')} payment: ₦${pending.amount.toLocaleString()}`,
+          description: `Confirmed pending ${pending.method.replace('_', ' ')} payment: ₦${actualAmount.toLocaleString()}`,
           userId: confirmedBy,
           userName: confirmedByName,
         });

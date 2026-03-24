@@ -303,16 +303,25 @@ export const useAuthStore = create<AuthState>()(
             updatedAt: new Date(),
           };
 
+          // Create user document FIRST so security rules can verify identity during migration
+          await setDoc(doc(db, 'users', firebaseUser.uid), {
+            ...userData,
+            createdAt: userData.createdAt,
+            updatedAt: new Date(),
+          });
+
           // If existing customer documents found, migrate vehicles and delete old records
           for (const existing of existingCustomers) {
             if (existing.id !== firebaseUser.uid) {
               console.log('[Signup] Migrating data from old customer ID:', existing.id);
               try {
+                // Migrate vehicles (vehicles rules allow owner access)
                 const oldVehicles = await firebaseService.getVehicles(existing.id);
                 for (const vehicle of oldVehicles) {
                   await firebaseService.updateVehicle(vehicle.id, { userId: firebaseUser.uid });
                 }
                 console.log('[Signup] Migrated', oldVehicles.length, 'vehicles from', existing.id);
+
                 // Delete the old customer document
                 await deleteDoc(doc(db, 'users', existing.id));
                 console.log('[Signup] Deleted old customer document:', existing.id);
@@ -322,11 +331,61 @@ export const useAuthStore = create<AuthState>()(
             }
           }
 
-          await setDoc(doc(db, 'users', firebaseUser.uid), {
-            ...userData,
-            createdAt: userData.createdAt,
-            updatedAt: new Date(),
-          });
+          // Migrate invoices linked by email (uses email-based security rule)
+          try {
+            const emailInvoicesQ = query(
+              collection(db, 'invoices'),
+              where('customerEmail', '==', normalizedEmail)
+            );
+            const emailInvSnap = await getDocs(emailInvoicesQ);
+            for (const invDoc of emailInvSnap.docs) {
+              const data = invDoc.data();
+              if (data.userId !== firebaseUser.uid) {
+                await setDoc(doc(db, 'invoices', invDoc.id), {
+                  userId: firebaseUser.uid,
+                }, { merge: true });
+              }
+            }
+            console.log('[Signup] Email-linked invoices migrated:', emailInvSnap.docs.length);
+          } catch (emailMigErr) {
+            console.warn('[Signup] Email invoice migration error:', emailMigErr);
+          }
+
+          // Migrate quotes linked by email (uses email-based security rule)
+          try {
+            const emailQuotesQ = query(
+              collection(db, 'quotes'),
+              where('customerEmail', '==', normalizedEmail)
+            );
+            const emailQuotesSnap = await getDocs(emailQuotesQ);
+            for (const qDoc of emailQuotesSnap.docs) {
+              const data = qDoc.data();
+              if (data.userId !== firebaseUser.uid || data.customerId !== firebaseUser.uid) {
+                await setDoc(doc(db, 'quotes', qDoc.id), {
+                  userId: firebaseUser.uid,
+                  customerId: firebaseUser.uid,
+                }, { merge: true });
+              }
+            }
+            console.log('[Signup] Email-linked quotes migrated:', emailQuotesSnap.docs.length);
+          } catch (emailQuoteMigErr) {
+            console.warn('[Signup] Email quote migration error:', emailQuoteMigErr);
+          }
+ 
+          // Find and mark any unused staff invitations/manual records as used
+          try {
+            const invitationsQ = query(
+              collection(db, 'staffInvitations'),
+              where('email', '==', normalizedEmail),
+              where('used', '==', false)
+            );
+            const invSnap = await getDocs(invitationsQ);
+            for (const invDoc of invSnap.docs) {
+              await firebaseService.markStaffInvitationAsUsed(invDoc.id);
+            }
+          } catch (invError) {
+            console.warn('[Signup] Could not mark invitations as used:', invError);
+          }
 
           // Send welcome email
           await emailService.sendWelcomeEmail(normalizedEmail, finalName, 'customer');

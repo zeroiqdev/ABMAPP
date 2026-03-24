@@ -16,6 +16,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { format } from 'date-fns';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { firebaseService } from '@/services/firebaseService';
 import { useAuthStore } from '@/store/authStore';
 import { useColors } from '@/constants/design';
 import * as AppleAuthentication from 'expo-apple-authentication';
@@ -89,14 +90,14 @@ export default function MemberAuthScreen() {
         setInvitation(null);
 
         try {
-            // Check for staff invitation
+            // Check for staff invitation (Public read allowed)
             const staffQ = query(
                 collection(db, 'staffInvitations'),
                 where('email', '==', trimmedEmail),
                 where('used', '==', false)
             );
             const staffSnap = await getDocs(staffQ);
-
+ 
             if (!staffSnap.empty) {
                 const staffDoc = staffSnap.docs[0];
                 const data = staffDoc.data();
@@ -111,7 +112,8 @@ export default function MemberAuthScreen() {
                     setIsExistingCustomer(true);
                     setExistingWorkshops([data.workshopId]);
                 }
-
+ 
+                // Unused invitation found — show full registration form
                 setStep('create');
                 setLoading(false);
                 return;
@@ -140,10 +142,19 @@ export default function MemberAuthScreen() {
         try {
             const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
             setGuest(false);
-
+ 
+            // Success! Mark invitation as used if it exists
+            if (invitation) {
+                try {
+                    await firebaseService.markStaffInvitationAsUsed(invitation.id);
+                } catch (invError) {
+                    console.warn('[Login] Could not mark invitation as used:', invError);
+                }
+            }
+ 
             const userDocRef = doc(db, 'users', userCredential.user.uid);
             const userDocSnap = await getDoc(userDocRef);
-
+ 
             if (userDocSnap.exists()) {
                 const userData = userDocSnap.data();
                 if (!userData.name || !userData.name.trim()) {
@@ -160,8 +171,12 @@ export default function MemberAuthScreen() {
             }
         } catch (err: any) {
             if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
-                // User doesn't exist - go to create customer flow
-                setStep('createCustomer');
+                // User doesn't exist - Check if we have an invitation
+                if (invitation) {
+                    setStep('create'); // Go to registration for invited users
+                } else {
+                    setStep('createCustomer'); // Normal new customer flow
+                }
             } else if (err.code === 'auth/wrong-password') {
                 setError('Incorrect password. Please try again.');
             } else {
@@ -578,18 +593,30 @@ export default function MemberAuthScreen() {
                                 </View>
 
                                 {showDatePicker && (
-                                    <DateTimePicker
-                                        value={birthday || new Date()}
-                                        mode="date"
-                                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                                        maximumDate={new Date()}
-                                        onChange={(event, selectedDate) => {
-                                            setShowDatePicker(Platform.OS === 'ios');
-                                            if (selectedDate) {
-                                                setBirthday(selectedDate);
-                                            }
-                                        }}
-                                    />
+                                    <View>
+                                        {Platform.OS === 'ios' && (
+                                            <TouchableOpacity
+                                                style={{ alignSelf: 'flex-end', paddingVertical: 8, paddingHorizontal: 12 }}
+                                                onPress={() => setShowDatePicker(false)}
+                                            >
+                                                <Text style={{ color: colors.accent, fontWeight: '600', fontSize: 16 }}>Done</Text>
+                                            </TouchableOpacity>
+                                        )}
+                                        <DateTimePicker
+                                            value={birthday || new Date()}
+                                            mode="date"
+                                            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                                            maximumDate={new Date()}
+                                            onChange={(event, selectedDate) => {
+                                                if (Platform.OS !== 'ios') {
+                                                    setShowDatePicker(false);
+                                                }
+                                                if (selectedDate) {
+                                                    setBirthday(selectedDate);
+                                                }
+                                            }}
+                                        />
+                                    </View>
                                 )}
                             </View>
                             {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -655,18 +682,30 @@ export default function MemberAuthScreen() {
                                 </View>
 
                                 {showDatePicker && (
-                                    <DateTimePicker
-                                        value={birthday || new Date()}
-                                        mode="date"
-                                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                                        maximumDate={new Date()}
-                                        onChange={(event, selectedDate) => {
-                                            setShowDatePicker(Platform.OS === 'ios');
-                                            if (selectedDate) {
-                                                setBirthday(selectedDate);
-                                            }
-                                        }}
-                                    />
+                                    <View>
+                                        {Platform.OS === 'ios' && (
+                                            <TouchableOpacity
+                                                style={{ alignSelf: 'flex-end', paddingVertical: 8, paddingHorizontal: 12 }}
+                                                onPress={() => setShowDatePicker(false)}
+                                            >
+                                                <Text style={{ color: colors.accent, fontWeight: '600', fontSize: 16 }}>Done</Text>
+                                            </TouchableOpacity>
+                                        )}
+                                        <DateTimePicker
+                                            value={birthday || new Date()}
+                                            mode="date"
+                                            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                                            maximumDate={new Date()}
+                                            onChange={(event, selectedDate) => {
+                                                if (Platform.OS !== 'ios') {
+                                                    setShowDatePicker(false);
+                                                }
+                                                if (selectedDate) {
+                                                    setBirthday(selectedDate);
+                                                }
+                                            }}
+                                        />
+                                    </View>
                                 )}
                             </View>
 

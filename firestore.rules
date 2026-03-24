@@ -153,7 +153,13 @@ service cloud.firestore {
     }
     
     match /invoices/{invoiceId} {
-      allow read: if resource == null || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      // Customer reads own invoices by userId
+      allow read: if isAuthenticated() && resource != null && resource.data.userId == request.auth.uid;
+      // Customer reads invoices linked by email
+      allow read: if isAuthenticated() && resource != null && resource.data.customerEmail != null && getUserData() != null && resource.data.customerEmail == getUserData().email;
+      // Non-existent doc check (for get() calls)
+      allow read: if resource == null && isAuthenticated();
+      // Staff/admin reads
       allow read: if resource != null && (
         isSuperAdmin() || 
         (isStaff() && resource.data.workshopId == getUserWorkshopId())
@@ -162,18 +168,22 @@ service cloud.firestore {
         (isStaff() && request.resource.data.workshopId == getUserWorkshopId()) || 
         (isAuthenticated() && request.resource.data.userId == request.auth.uid);
       
-      
       allow update: if isSuperAdmin() || 
         (isStaff() && (resource.data.workshopId == getUserWorkshopId() || resource.data.workshopId == null)) ||
-        (isAuthenticated() && resource.data.userId == request.auth.uid);
+        (isAuthenticated() && resource.data.userId == request.auth.uid) ||
+        (isAuthenticated() && resource.data.customerEmail != null && getUserData() != null && resource.data.customerEmail == getUserData().email);
     }
-
+ 
     match /quotes/{quoteId} {
-      // Allow customers to read quotes where they are the customerId or userId
-      allow read: if resource == null || (isAuthenticated() && (
-        resource.data.customerId == request.auth.uid || 
-        resource.data.userId == request.auth.uid
-      ));
+      // Customer reads by customerId
+      allow read: if isAuthenticated() && resource != null && resource.data.customerId == request.auth.uid;
+      // Customer reads by userId
+      allow read: if isAuthenticated() && resource != null && resource.data.userId == request.auth.uid;
+      // Customer reads by email
+      allow read: if isAuthenticated() && resource != null && resource.data.customerEmail != null && getUserData() != null && resource.data.customerEmail == getUserData().email;
+      // Non-existent doc check
+      allow read: if resource == null && isAuthenticated();
+      // Staff/admin reads
       allow read: if resource != null && (
         isSuperAdmin() || 
         (isStaff() && resource.data.workshopId == getUserWorkshopId())
@@ -184,7 +194,9 @@ service cloud.firestore {
       // Allow customers to update quotes (for approval)
       allow update: if isSuperAdmin() || 
         (isStaff() && resource.data.workshopId == getUserWorkshopId()) ||
-        (isAuthenticated() && (resource.data.customerId == request.auth.uid || resource.data.userId == request.auth.uid));
+        (isAuthenticated() && resource.data.customerId == request.auth.uid) ||
+        (isAuthenticated() && resource.data.userId == request.auth.uid) ||
+        (isAuthenticated() && resource.data.customerEmail != null && getUserData() != null && resource.data.customerEmail == getUserData().email);
     }
     
     match /inventory/{itemId} {

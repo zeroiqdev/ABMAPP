@@ -135,6 +135,7 @@ export interface PaymentRecord {
   note?: string;
   entityType?: 'quote' | 'invoice';
   entityId?: string;
+  receiptUrl?: string;
 }
 
 export interface PendingPayment {
@@ -145,6 +146,7 @@ export interface PendingPayment {
   recordedByName: string;
   date: Date;
   status: 'pending' | 'confirmed' | 'rejected';
+  proofUrl?: string;
 }
 
 export interface ApprovalEntry {
@@ -177,6 +179,7 @@ export interface Quote {
   id: string;
   workshopId: string;
   jobId?: string;
+  quoteNumber?: string;
 
   // Customer
   userId?: string;
@@ -184,7 +187,7 @@ export interface Quote {
   customerPhone?: string;
   customerEmail?: string;
   customerAddress?: string;
-  customerId?: string; // Sometimes used instead of userId
+  customerId?: string;
 
   // Items & Pricing
   items: QuoteItem[];
@@ -198,7 +201,7 @@ export interface Quote {
   status: QuoteStatus;
   convertedToInvoiceId?: string;
   rejectionReason?: string;
-  history?: QuoteLogEntry[]; // Audit trail
+  history?: QuoteLogEntry[];
 
   createdAt: Date;
   updatedAt: Date;
@@ -214,8 +217,9 @@ export interface Invoice {
   customerEmail?: string;
   customerAddress?: string;
   workshopId: string;
+  invoiceNumber?: string;
   items: InvoiceItem[];
-  pendingItems?: InvoiceItem[];      // Unapproved additions
+  pendingItems?: InvoiceItem[];
   subtotal: number;
   vat: number;
   vatRate?: number;
@@ -228,14 +232,14 @@ export interface Invoice {
   amountPaid?: number;
   paymentHistory?: PaymentRecord[];
   pendingPayments?: PendingPayment[];
-  status: 'draft' | 'approved' | 'void';  // Backwards compat
-  invoiceStatus?: InvoiceStatus;          // New workflow status
+  status: 'draft' | 'approved' | 'void';
+  invoiceStatus?: InvoiceStatus;
   approvedAt?: Date;
   approvedBy?: string;
-  approvalHistory?: ApprovalEntry[];      // All approvals
-  sourceQuoteId?: string;                 // Original quote
-  lastUpdatedAt?: Date;                   // Last staff edit time
-  wasUpdated?: boolean;                   // Flag for customer notification
+  approvalHistory?: ApprovalEntry[];
+  sourceQuoteId?: string;
+  lastUpdatedAt?: Date;
+  wasUpdated?: boolean;
   createdAt: Date;
 }
 
@@ -245,6 +249,7 @@ export interface InvoiceItem {
   quantity: number;
   unitPrice: number;
   total: number;
+  isNewAddition?: boolean;
 }
 
 export interface InventoryItem {

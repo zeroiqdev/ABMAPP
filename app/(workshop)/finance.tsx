@@ -12,6 +12,10 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  Image,
+  Dimensions,
+  Platform,
+  Linking,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,9 +25,13 @@ import { Invoice, InvoiceItem, Job, User, PaymentStatus, InventoryItem, Quote } 
 import { format } from 'date-fns';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Colors, Typography, Spacing, BorderRadius, Shadows, StatusColors, useColors } from '@/constants/design';
-import { Platform } from 'react-native';
+import { amountToWords } from '@/utils/formatUtils';
+// Merged into top react-native import
+
 
 export default function FinanceScreen() {
   const { user } = useAuthStore();
@@ -56,6 +64,11 @@ export default function FinanceScreen() {
   const [recordedPaymentAmount, setRecordedPaymentAmount] = useState<number>(0);
   const [editingVatRate, setEditingVatRate] = useState('');
   const [editingDiscount, setEditingDiscount] = useState('');
+  const [proofModalUrl, setProofModalUrl] = useState<string | null>(null);
+  const [pendingPaymentToConfirm, setPendingPaymentToConfirm] = useState<any>(null);
+  const [pendingPaymentModal, setPendingPaymentModal] = useState(false);
+  const [pendingProofUrl, setPendingProofUrl] = useState<string | null>(null);
+  const [returnToInvoice, setReturnToInvoice] = useState(false);
   const colors = useColors();
   const styles = useMemo(() => getStyles(colors), [colors]);
 
@@ -93,21 +106,40 @@ export default function FinanceScreen() {
       handledDeepLinkRef.current = deepLinkInvoiceId;
       const target = invoices.find(inv => inv.id === deepLinkInvoiceId);
       if (target) {
-        setSelectedInvoice(target);
-        setShowInvoiceModal(true);
+        handleInvoicePress(target);
         setMainSection('invoices');
       } else {
         // Invoice might not be in current list, fetch directly
         firebaseService.getInvoice(deepLinkInvoiceId).then(inv => {
           if (inv) {
-            setSelectedInvoice(inv);
-            setShowInvoiceModal(true);
+            handleInvoicePress(inv);
             setMainSection('invoices');
           }
         });
       }
     }
   }, [deepLinkInvoiceId, invoices]);
+
+  // Sequencer for modals to prevent layering issues in React Native
+  useEffect(() => {
+    // 1. Invoice -> Payment Recording
+    if (pendingPaymentModal && !showInvoiceModal) {
+      setPendingPaymentModal(false);
+      setShowPaymentModal(true);
+    }
+    // 2. Invoice -> Proof Viewer
+    if (pendingProofUrl && !showInvoiceModal) {
+      const url = pendingProofUrl;
+      setPendingProofUrl(null);
+      setProofModalUrl(url);
+      setReturnToInvoice(true);
+    }
+    // 3. Return to Invoice (from Payment or Proof)
+    if (returnToInvoice && !showPaymentModal && !proofModalUrl) {
+      setReturnToInvoice(false);
+      setShowInvoiceModal(true);
+    }
+  }, [pendingPaymentModal, pendingProofUrl, returnToInvoice, showInvoiceModal, showPaymentModal, proofModalUrl]);
 
   const loadQuotes = async () => {
     if (!user?.workshopId) return;
@@ -259,6 +291,13 @@ export default function FinanceScreen() {
     }
   };
 
+  const calculateSubtotal = (items: InvoiceItem[]) => {
+    return items.reduce((sum, item) => {
+      const itemTotal = typeof item.total === 'number' ? item.total : (item.quantity * item.unitPrice) || 0;
+      return sum + itemTotal;
+    }, 0);
+  };
+
   const getPaymentStatusColor = (status: string) => {
     switch (status) {
       case 'paid': return '#30D158';
@@ -270,17 +309,32 @@ export default function FinanceScreen() {
   };
 
   const handleInvoicePress = async (invoice: Invoice) => {
+    // Set initial state from the list item for immediate feedback
     setSelectedInvoice(invoice);
-    setEditingItems([...invoice.items]);
+    setEditingItems([...(invoice.items || [])]);
     setEditingDueDate(invoice.dueDate || null);
     setActiveDatePicker(null);
     setEditingItemIndex(null);
     setShowAddItem(false);
-
     setNewItem({ description: '', quantity: '1', unitPrice: '' });
     setAddItemMode('manual');
     setEditingVatRate(invoice.vatRate ? invoice.vatRate.toString() : '0');
     setEditingDiscount(invoice.discount ? invoice.discount.toString() : '0');
+    setShowInvoiceModal(true);
+
+    // Fetch full invoice Details to ensure we have all items and latest data
+    try {
+      const fullInvoice = await firebaseService.getInvoice(invoice.id);
+      if (fullInvoice) {
+        setSelectedInvoice(fullInvoice);
+        setEditingItems([...(fullInvoice.items || [])]);
+        setEditingVatRate(fullInvoice.vatRate ? fullInvoice.vatRate.toString() : '0');
+        setEditingDiscount(fullInvoice.discount ? fullInvoice.discount.toString() : '0');
+        setEditingDueDate(fullInvoice.dueDate || null);
+      }
+    } catch (error) {
+      console.error('Error fetching full invoice:', error);
+    }
 
     // Load customer name
     try {
@@ -303,7 +357,7 @@ export default function FinanceScreen() {
   };
 
   const canEditInvoice = () => {
-    return selectedInvoice && (selectedInvoice.amountPaid || 0) < (selectedInvoice.total || 0);
+    return selectedInvoice && selectedInvoice.status !== 'void';
   };
 
   const handleApproveInvoice = async () => {
@@ -326,7 +380,7 @@ export default function FinanceScreen() {
       const updatedInvoice = updatedInvoices.find(inv => inv.id === selectedInvoice.id);
       if (updatedInvoice) {
         setSelectedInvoice(updatedInvoice);
-        setEditingItems([...updatedInvoice.items]);
+        setEditingItems([...(updatedInvoice.items || [])]);
       }
 
       const isTowInvoice = selectedInvoice.items.some(i => i.description.toLowerCase().includes('tow'));
@@ -346,23 +400,25 @@ export default function FinanceScreen() {
   const handleEditItem = (index: number, field: 'description' | 'quantity' | 'unitPrice', value: string) => {
     if (!canEditInvoice()) return;
 
-    const updatedItems = [...editingItems];
-    const item = { ...updatedItems[index] };
+    setEditingItems(prev => {
+      const updatedItems = [...prev];
+      const item = { ...updatedItems[index] };
 
-    if (field === 'description') {
-      item.description = value;
-    } else if (field === 'quantity') {
-      const qty = parseFloat(value) || 0;
-      item.quantity = qty;
-      item.total = qty * item.unitPrice;
-    } else if (field === 'unitPrice') {
-      const price = parseFloat(value) || 0;
-      item.unitPrice = price;
-      item.total = item.quantity * price;
-    }
+      if (field === 'description') {
+        item.description = value;
+      } else if (field === 'quantity') {
+        const qty = parseFloat(value) || 0;
+        item.quantity = qty;
+        item.total = qty * item.unitPrice;
+      } else if (field === 'unitPrice') {
+        const price = parseFloat(value) || 0;
+        item.unitPrice = price;
+        item.total = item.quantity * price;
+      }
 
-    updatedItems[index] = item;
-    setEditingItems(updatedItems);
+      updatedItems[index] = item;
+      return updatedItems;
+    });
   };
 
   const handleDeleteItem = async (index: number) => {
@@ -371,11 +427,14 @@ export default function FinanceScreen() {
       Alert.alert('Error', 'Cannot delete LABOUR item');
       return;
     }
-    const updatedItems = editingItems.filter((_, i) => i !== index);
-    setEditingItems(updatedItems);
+    setEditingItems(prev => {
+      const updated = prev.filter((_, i) => i !== index);
+      saveInvoiceItems(updated);
+      return updated;
+    });
 
-    // Save immediately after deletion
-    await saveInvoiceItems(updatedItems);
+    // Save is now handled inside setEditingItems to ensure we use the correct array
+
   };
 
   const handleAddItem = () => {
@@ -393,6 +452,7 @@ export default function FinanceScreen() {
       quantity: qty,
       unitPrice: price,
       total: qty * price,
+      isNewAddition: selectedInvoice?.paymentStatus === 'paid',
     };
 
     // Use functional updater to always get latest state
@@ -415,24 +475,37 @@ export default function FinanceScreen() {
       quantity: quantity,
       unitPrice: inventoryItem.unitPrice,
       total: quantity * inventoryItem.unitPrice,
+      isNewAddition: selectedInvoice?.paymentStatus === 'paid',
     };
 
-    const updatedItems = [...editingItems, item];
-    setEditingItems(updatedItems);
+    setEditingItems(prev => {
+      const updated = [...prev, item];
+      saveInvoiceItems(updated);
+      return updated;
+    });
 
-    // Save immediately
-    await saveInvoiceItems(updatedItems);
+    // Save is now handled inside setEditingItems
+
   };
 
   const saveInvoiceItems = async (items: InvoiceItem[]) => {
     if (!selectedInvoice || !canEditInvoice()) return;
 
     try {
-      const subtotal = items.reduce((sum, item) => sum + item.total, 0);
+      const subtotal = calculateSubtotal(items);
       const vatRate = parseFloat(editingVatRate) || 0;
       const discount = parseFloat(editingDiscount) || 0;
       const vatAmount = subtotal * (vatRate / 100);
       const total = subtotal + vatAmount - discount;
+
+      const amountPaid = selectedInvoice.amountPaid || 0;
+      let newPaymentStatus = selectedInvoice.paymentStatus;
+      
+      if (total > amountPaid) {
+        newPaymentStatus = amountPaid > 0 ? 'partially_paid' : 'pending';
+      } else if (total <= amountPaid && amountPaid > 0) {
+        newPaymentStatus = 'paid';
+      }
 
       const updateData: any = {
         items: items,
@@ -441,6 +514,7 @@ export default function FinanceScreen() {
         vat: vatAmount,
         vatRate,
         discount,
+        paymentStatus: newPaymentStatus,
       };
 
       // Ensure workshop ownership is set if available
@@ -478,29 +552,28 @@ export default function FinanceScreen() {
     }
 
     // Use current edited total instead of original total
-    const subtotal = editingItems.reduce((sum, item) => sum + item.total, 0);
+    const subtotal = calculateSubtotal(editingItems);
     const vatRate = parseFloat(editingVatRate) || 0;
     const discount = parseFloat(editingDiscount) || 0;
     const vatAmount = subtotal * (vatRate / 100);
     const currentTotal = subtotal + vatAmount - discount;
     const amountPaid = selectedInvoice.amountPaid || 0;
+    const remaining = currentTotal - amountPaid;
+
+    if (remaining <= 0) {
+      Alert.alert('Info', 'Invoice is already fully paid');
+      return;
+    }
 
     if (isFullPayment) {
-      const remaining = currentTotal - amountPaid;
-      if (remaining <= 0) {
-        Alert.alert('Info', 'Invoice is already fully paid');
-        return;
-      }
-      processPayment(remaining, 'full');
+      setPaymentAmount(remaining.toString());
     } else {
-      // Open payment modal for partial payment
-      // Temporarily hide invoice modal to show payment modal on top
-      setShowInvoiceModal(false);
-      setActiveDatePicker(null);
-      setTimeout(() => {
-        setShowPaymentModal(true);
-      }, 300);
+      setPaymentAmount('');
     }
+
+    // Close invoice modal first, then open payment modal via useEffect
+    setShowInvoiceModal(false);
+    setPendingPaymentModal(true);
   };
 
   const processPayment = async (amount: number, type: 'partial' | 'full') => {
@@ -526,17 +599,46 @@ export default function FinanceScreen() {
     setLoading(true);
     try {
       const paymentHistory = [...(selectedInvoice.paymentHistory || [])];
-      paymentHistory.push({
-        amount,
-        date: new Date(),
-        method: paymentMethod,
-        recordedBy: user?.id,
-      });
+      
+      if (pendingPaymentToConfirm) {
+        console.log('[processPayment] Confirming pending payment with amount:', amount);
+        // Confirm pending payment with selected method
+        await firebaseService.confirmPendingPayment(
+          selectedInvoice.id,
+          pendingPaymentToConfirm.id,
+          user?.id || '',
+          user?.name || '',
+          paymentMethod,
+          amount
+        );
+        
+        // Add to local history for the final updateInvoice call below
+        paymentHistory.push({
+          amount,
+          date: new Date(),
+          method: paymentMethod,
+          recordedBy: user?.id,
+          recordedByName: user?.name || 'Staff',
+          note: `Confirmed payment proof`
+        });
+        
+        setPendingPaymentToConfirm(null);
+      } else {
+        paymentHistory.push({
+          amount,
+          date: new Date(),
+          method: paymentMethod,
+          recordedBy: user?.id,
+          recordedByName: user?.name || 'Staff'
+        });
+      }
 
-      // Also update the total if items were edited
-      const finalSubtotal = editingItems.reduce((sum, item) => sum + item.total, 0);
-      const finalVatAmount = finalSubtotal * (vatRate / 100);
-      const finalTotal = finalSubtotal + finalVatAmount - discount;
+      // ALWAYS update the full invoice to ensure items and totals are synced
+      const finalSubtotal = calculateSubtotal(editingItems);
+      const finalVatRate = parseFloat(editingVatRate) || 0;
+      const finalDiscount = parseFloat(editingDiscount) || 0;
+      const finalVatAmount = finalSubtotal * (finalVatRate / 100);
+      const finalTotal = finalSubtotal + finalVatAmount - finalDiscount;
 
       await firebaseService.updateInvoice(selectedInvoice.id, {
         paymentStatus: newStatus,
@@ -546,32 +648,42 @@ export default function FinanceScreen() {
         subtotal: finalSubtotal,
         total: finalTotal,
         vat: finalVatAmount,
-        vatRate: vatRate,
-        discount: discount,
+        vatRate: finalVatRate,
+        discount: finalDiscount,
       });
 
-      setRecordedPaymentAmount(amount);
+      // Update state immediately for zero-latency feedback
+      setSelectedInvoice({
+        ...selectedInvoice,
+        amountPaid: newPaid,
+        paymentStatus: newStatus,
+        paymentHistory: paymentHistory,
+        items: editingItems,
+        subtotal: finalSubtotal,
+        total: finalTotal,
+        vat: finalVatAmount,
+        vatRate: finalVatRate,
+        discount: finalDiscount
+      });
 
-      // Close invoice modal first to prevent modal stacking issues
-      setShowInvoiceModal(false);
-      setActiveDatePicker(null);
-
-      // Show success modal after invoice modal closes
-      setTimeout(() => {
-        setShowPaymentSuccessModal(true);
-      }, 300);
-
+      // Close payment modal and set flag to return to invoice
       setShowPaymentModal(false);
       setPaymentAmount('');
-      await loadInvoices();
+      setReturnToInvoice(true);
 
-      // Reload the invoice to get updated data
-      const updatedInvoices = await firebaseService.getInvoices(undefined, user?.workshopId);
-      const updatedInvoice = updatedInvoices.find(inv => inv.id === selectedInvoice.id);
-      if (updatedInvoice) {
-        setSelectedInvoice(updatedInvoice);
-        setEditingItems([...updatedInvoice.items]);
+      // Reload invoices list in background
+      loadInvoices();
+
+      // Reload the selected invoice to ensure sync with server
+      const updated = await firebaseService.getInvoice(selectedInvoice.id);
+      if (updated) {
+        setSelectedInvoice(updated);
+        setEditingItems([...updated.items]);
+        setEditingVatRate(updated.vatRate ? updated.vatRate.toString() : '0');
+        setEditingDiscount(updated.discount ? updated.discount.toString() : '0');
       }
+
+      Alert.alert('Payment Recorded', `₦${amount.toLocaleString()} recorded successfully.`);
     } catch (error) {
       Alert.alert('Error', 'Failed to record payment');
       console.error('Error recording payment:', error);
@@ -585,11 +697,20 @@ export default function FinanceScreen() {
 
     setLoading(true);
     try {
-      const subtotal = editingItems.reduce((sum, item) => sum + item.total, 0);
+      const subtotal = calculateSubtotal(editingItems);
       const vatRate = parseFloat(editingVatRate) || 0;
       const discount = parseFloat(editingDiscount) || 0;
       const vatAmount = subtotal * (vatRate / 100);
       const total = subtotal + vatAmount - discount;
+
+      const amountPaid = selectedInvoice.amountPaid || 0;
+      let newPaymentStatus = selectedInvoice.paymentStatus;
+      
+      if (total > amountPaid) {
+        newPaymentStatus = amountPaid > 0 ? 'partially_paid' : 'pending';
+      } else if (total <= amountPaid && amountPaid > 0) {
+        newPaymentStatus = 'paid';
+      }
 
       const updateData: any = {
         items: editingItems,
@@ -598,6 +719,7 @@ export default function FinanceScreen() {
         vat: vatAmount,
         vatRate,
         discount,
+        paymentStatus: newPaymentStatus,
         dueDate: editingDueDate || undefined,
       };
 
@@ -613,12 +735,11 @@ export default function FinanceScreen() {
       await loadInvoices();
 
       // Reload the invoice to get updated data
-      // Trust local state for immediate feedback
-      // const updatedInvoice = await firebaseService.getInvoice(selectedInvoice.id);
-      // if (updatedInvoice) {
-      //   setSelectedInvoice(updatedInvoice);
-      //   setEditingItems([...updatedInvoice.items]);
-      // }
+      const updatedInvoice = await firebaseService.getInvoice(selectedInvoice.id);
+      if (updatedInvoice) {
+        setSelectedInvoice(updatedInvoice);
+        setEditingItems([...(updatedInvoice.items || [])]);
+      }
 
       if (closeModal) {
         setShowInvoiceModal(false);
@@ -641,7 +762,15 @@ export default function FinanceScreen() {
         : null;
       const customer = selectedInvoice.userId ? await firebaseService.getUser(selectedInvoice.userId) : null;
 
-      // Use edited items and totals for PDF
+      let vehicleData = null;
+      if (job?.vehicleId) {
+        try {
+          vehicleData = await firebaseService.getVehicle(job.vehicleId);
+        } catch (e) {
+          console.log('Could not load vehicle:', e);
+        }
+      }
+
       const currentTotal = editingItems.reduce((sum, item) => sum + item.total, 0);
       const invoiceForPDF = {
         ...selectedInvoice,
@@ -650,19 +779,40 @@ export default function FinanceScreen() {
         subtotal: currentTotal,
       };
 
-      const html = generateInvoiceHTML(invoiceForPDF, job, customer);
+      const html = generateInvoiceHTML(invoiceForPDF, job, customer, vehicleData);
       const { uri } = await Print.printToFileAsync({ html });
-      await Sharing.shareAsync(uri);
+      
+      // Custom Filename
+      const displayNumber = (selectedInvoice as any).invoiceNumber || `INV-${selectedInvoice.id.slice(-8).toUpperCase()}`;
+      const pdfName = `${displayNumber}.pdf`;
+      const newUri = FileSystem.cacheDirectory + pdfName;
+      
+      await FileSystem.moveAsync({
+        from: uri,
+        to: newUri
+      });
+
+      await Sharing.shareAsync(newUri);
     } catch (error: any) {
       Alert.alert('Error', 'Failed to generate invoice PDF');
       console.error('Error generating PDF:', error);
     }
   };
-
-  const generateInvoiceHTML = (inv: Invoice, job: Job | null, customer: User | null) => {
+  const generateInvoiceHTML = (inv: Invoice, job: Job | null, customer: User | null, vehicleData?: any) => {
     const amountPaid = inv.amountPaid || 0;
-    const balanceDue = inv.total - amountPaid;
-    const paymentHistory = inv.paymentHistory || [];
+    const balanceDue = Math.max(0, inv.total - amountPaid);
+    const displayNumber = (inv as any).invoiceNumber || `INV-${inv.id.slice(-8).toUpperCase()}`;
+    const logoUrl = 'https://res.cloudinary.com/dyg7neetr/image/upload/v1772036824/ABM_BLACK_g6i4dm.png';
+    const amountInWords = amountToWords(inv.total);
+
+    const vehicleHtml = vehicleData ? `
+      <div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 8px; border: 1px solid #eee;">
+        <p style="margin: 0; font-size: 13px; color: #666;">VEHICLE DETAILS</p>
+        <p style="margin: 5px 0 0 0; font-size: 15px; font-weight: 600;">
+          ${vehicleData.year} ${vehicleData.make} ${vehicleData.model} • ${vehicleData.licensePlate || 'N/A'}
+        </p>
+      </div>
+    ` : '';
 
     return `
       <!DOCTYPE html>
@@ -670,80 +820,152 @@ export default function FinanceScreen() {
         <head>
           <meta charset="utf-8">
           <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            .header { text-align: center; margin-bottom: 30px; }
-            .invoice-info { display: flex; justify-content: space-between; margin-bottom: 30px; }
-            .items-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-            .items-table th, .items-table td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
-            .items-table th { background-color: #f5f5f5; }
-            .total-section { text-align: right; margin-top: 20px; }
-            .balance-box { background: #f5f5f5; padding: 15px; margin-top: 20px; text-align: center; }
-            .payment-history { margin-top: 30px; }
-            .payment-item { padding: 8px; border-bottom: 1px solid #eee; }
+            body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #333; line-height: 1.6; }
+            .header-split { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; }
+            .header-left h1 { margin: 0; font-size: 32px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
+            .header-left p { margin: 5px 0 0 0; color: #666; font-size: 14px; font-family: monospace; }
+            .logo { height: 60px; object-fit: contain; }
+            
+            .divider { height: 1px; background: #eee; margin: 20px 0; }
+            
+            .info-grid { display: flex; justify-content: space-between; margin-bottom: 40px; }
+            .info-block { flex: 1; }
+            .info-label { font-size: 12px; font-weight: 700; color: #000; text-transform: uppercase; margin-bottom: 8px; }
+            .info-value { font-size: 16px; font-weight: 600; margin: 0; }
+            .info-date { font-size: 14px; margin: 4px 0; display: flex; justify-content: flex-end; }
+            .info-date span { color: #000; width: 100px; text-align: right; margin-right: 15px; }
+            
+            .section-title { font-size: 12px; font-weight: 700; color: #000; text-transform: uppercase; margin-bottom: 15px; letter-spacing: 0.5px; }
+            
+            table { width: 100%; border-collapse: collapse; margin-bottom: 30px; border-radius: 8px; overflow: hidden; }
+            th { background: #f8f9fa; padding: 12px 15px; text-align: left; font-size: 12px; font-weight: 700; color: #000; border-bottom: 2px solid #eee; }
+            td { padding: 12px 15px; border-bottom: 1px solid #eee; font-size: 14px; }
+            .text-right { text-align: right; }
+            
+            .totals-container { display: flex; justify-content: flex-end; margin-top: 20px; }
+            .totals-table { width: 300px; margin-bottom: 0; }
+            .totals-table td { border-bottom: none; padding: 5px 0; }
+            .totals-table .grand-total { border-top: 2px solid #333; padding-top: 15px; margin-top: 10px; font-size: 24px; font-weight: 800; }
+            .totals-table .paid { color: #30D158; font-weight: 600; }
+            .totals-table .balance { color: #FF9500; font-weight: 700; font-size: 18px; }
+            
+            .words-section { margin-top: 40px; }
+            .words-label { font-size: 11px; font-weight: 700; color: #000; text-transform: uppercase; margin-bottom: 5px; }
+            .words-value { font-size: 15px; font-weight: 600; }
+            
+            .footer-card { margin-top: 60px; background: #f8f9fa; padding: 25px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; }
+            .bank-details { display: flex; gap: 40px; }
+            .bank-detail-item { font-size: 14px; }
+            .bank-detail-label { color: #000; margin-bottom: 4px; }
+            .bank-detail-value { font-weight: 700; font-size: 16px; }
+            .thanks { margin-top: 15px; color: #000; font-style: italic; font-size: 13px; }
           </style>
         </head>
         <body>
-          <div class="header">
-            <h1>INVOICE</h1>
-            <p>Invoice #${inv.id}</p>
+          <div class="header-split">
+            <div class="header-left">
+              <h1>INVOICE</h1>
+              <p>#${displayNumber}</p>
+            </div>
+            <img src="${logoUrl}" class="logo" alt="ABM Logo" />
           </div>
-          <div class="invoice-info">
-            <div>
-              <p><strong>Customer:</strong> ${customer?.name || inv.customerName || 'Direct Customer'}</p>
-              <p><strong>Date:</strong> ${format(inv.createdAt, 'MMM dd, yyyy')}</p>
-              ${inv.dueDate ? `<p><strong>Due Date:</strong> ${format(inv.dueDate, 'MMM dd, yyyy')}</p>` : ''}
+          
+          <div class="divider"></div>
+          
+          <div class="info-grid">
+            <div class="info-block">
+              <p class="info-label">BILL TO</p>
+              <p class="info-value">${customer?.name || inv.customerName || 'Direct Customer'}</p>
+              ${customer?.phone ? `<p style="margin:4px 0; color:#666;">${customer.phone}</p>` : ''}
+              ${vehicleHtml}
+            </div>
+            <div class="info-block" style="max-width: 300px;">
+              <p class="info-label" style="text-align: right;">INVOICE DETAILS</p>
+              <div class="info-date"><span>Issued:</span><strong>${format(inv.createdAt, 'MMM dd, yyyy')}</strong></div>
+              <div class="info-date"><span>Due Date:</span><strong style="color: ${inv.dueDate ? '#333' : '#999'}">${inv.dueDate ? format(inv.dueDate, 'MMM dd, yyyy') : 'N/A'}</strong></div>
             </div>
           </div>
-          <table class="items-table">
+          
+          <p class="section-title">LINE ITEMS</p>
+          <table>
             <thead>
               <tr>
                 <th>Description</th>
-                <th>Qty</th>
-                <th>Unit Price</th>
-                <th>Total</th>
+                <th class="text-right" style="width: 60px;">Qty</th>
+                <th class="text-right" style="width: 120px;">Unit Price</th>
+                <th class="text-right" style="width: 120px;">Total</th>
               </tr>
             </thead>
             <tbody>
-              ${inv.items.map(
-      (item) => `
+              ${inv.items.map(item => `
                 <tr>
                   <td>${item.description}</td>
-                  <td>${item.quantity}</td>
-                  <td>₦${item.unitPrice.toLocaleString()}</td>
-                  <td>₦${item.total.toLocaleString()}</td>
+                  <td class="text-right">${item.quantity}</td>
+                  <td class="text-right">₦${item.unitPrice.toLocaleString()}</td>
+                  <td class="text-right">₦${item.total.toLocaleString()}</td>
                 </tr>
-              `
-    ).join('')}
+              `).join('')}
             </tbody>
           </table>
-          <div class="total-section">
-            <p>Subtotal: ₦${inv.subtotal.toLocaleString()}</p>
-            ${inv.vat > 0 ? `<p>VAT: ₦${inv.vat.toLocaleString()}</p>` : ''}
-            ${inv.discount > 0 ? `<p>Discount: -₦${inv.discount.toLocaleString()}</p>` : ''}
-            <p><strong>Total: ₦${inv.total.toLocaleString()}</strong></p>
-            ${amountPaid > 0 ? `<p>Amount Paid: ₦${amountPaid.toLocaleString()}</p>` : ''}
+          
+          <div class="totals-container">
+            <table class="totals-table">
+              <tr>
+                <td style="color:#666;">Subtotal</td>
+                <td class="text-right">₦${inv.subtotal.toLocaleString()}</td>
+              </tr>
+              ${inv.vat > 0 ? `
+                <tr>
+                  <td style="color:#666;">VAT (${inv.vatRate || 0}%)</td>
+                  <td class="text-right">₦${inv.vat.toLocaleString()}</td>
+                </tr>
+              ` : ''}
+              ${inv.discount > 0 ? `
+                <tr>
+                  <td style="color:#666;">Discount</td>
+                  <td class="text-right">-₦${inv.discount.toLocaleString()}</td>
+                </tr>
+              ` : ''}
+              <tr class="grand-total">
+                <td>Total</td>
+                <td class="text-right">₦${inv.total.toLocaleString()}</td>
+              </tr>
+              <tr>
+                <td class="paid">Amount Paid</td>
+                <td class="text-right paid">₦${amountPaid.toLocaleString()}</td>
+              </tr>
+              <tr>
+                <td class="balance">Balance Due</td>
+                <td class="text-right balance">₦${balanceDue.toLocaleString()}</td>
+              </tr>
+            </table>
           </div>
-          <div class="balance-box">
-            <div><strong>{balanceDue < 0 ? 'Overpayment' : 'Balance Due'}</strong></div>
-            <div style="font-size: 24px; font-weight: bold; color: ${balanceDue < 0 ? '#30D158' : '#000'}">
-              ₦{Math.abs(balanceDue).toLocaleString()}
-            </div>
+          
+          <div class="words-section">
+            <p class="words-label">AMOUNT IN WORDS</p>
+            <p class="words-value">${amountInWords}</p>
           </div>
-              ${paymentHistory.length > 0 ? `
-            <div class="payment-history">
-              <h3>Payment History</h3>
-              ${paymentHistory.map(
-      (payment) => {
-        const paymentDate = payment.date instanceof Date ? payment.date : new Date(payment.date);
-        return `
-                <div class="payment-item">
-                  <p>₦${payment.amount.toLocaleString()} - ${format(paymentDate, 'MMM dd, yyyy')} - ${payment.method}</p>
+          
+          <div class="footer-card">
+            <div style="flex:1;">
+              <div class="bank-details">
+                <div class="bank-detail-item">
+                  <div class="bank-detail-label">Bank</div>
+                  <div class="bank-detail-value">MONIEPOINT MFB</div>
                 </div>
-              `;
-      }
-    ).join('')}
+                <div class="bank-detail-item">
+                  <div class="bank-detail-label">Acc No</div>
+                  <div class="bank-detail-value">5071154448</div>
+                </div>
+                <div class="bank-detail-item">
+                  <div class="bank-detail-label">Name</div>
+                  <div class="bank-detail-value">ABDULLATEEF BABA MUSTAPHA</div>
+                </div>
+              </div>
+              <p class="thanks">Thank you for your business!</p>
             </div>
-          ` : ''}
+            <img src="${logoUrl}" style="height: 30px; opacity: 0.2; transform: grayscale(1);" />
+          </div>
         </body>
       </html>
     `;
@@ -850,7 +1072,7 @@ export default function FinanceScreen() {
           </View>
           <View style={styles.itemInfo}>
             <Text style={[styles.itemName, { color: colors.textPrimary }]} numberOfLines={1}>
-              Invoice #{item.id.slice(0, 8)}
+              {(item as any).invoiceNumber || `INV-${item.id.slice(0, 8)}`}
             </Text>
             <Text style={[styles.itemSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
               {customerName} • {format(item.createdAt, 'MMM dd, yyyy')}
@@ -1121,7 +1343,7 @@ export default function FinanceScreen() {
                 <View style={styles.detailRow}>
                   <View style={styles.detailItem}>
                     <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Invoice #</Text>
-                    <Text style={[styles.detailValue, { color: colors.textPrimary }]}>{selectedInvoice.id}</Text>
+                    <Text style={[styles.detailValue, { color: colors.textPrimary }]}>{(selectedInvoice as any).invoiceNumber || selectedInvoice.id}</Text>
                   </View>
                   <View style={styles.detailItem}>
                     <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Customer</Text>
@@ -1232,7 +1454,14 @@ export default function FinanceScreen() {
                       >
                         <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                           <View style={{ flex: 1 }}>
-                            <Text style={[styles.itemDescription, { color: colors.textPrimary, fontSize: 15, fontWeight: '500' }]}>{item.description}</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
+                              <Text style={[styles.itemDescription, { color: colors.textPrimary, fontSize: 15, fontWeight: '500' }]}>{item.description}</Text>
+                              {item.isNewAddition && (
+                                <View style={{ backgroundColor: Colors.success, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginLeft: 8 }}>
+                                  <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>NEW</Text>
+                                </View>
+                              )}
+                            </View>
                             <Text style={[styles.itemDetails, { color: colors.textSecondary, fontSize: 13, marginTop: 2 }]}>
                               {item.quantity} × ₦{item.unitPrice.toLocaleString()}
                             </Text>
@@ -1399,7 +1628,7 @@ export default function FinanceScreen() {
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryLabel}>Subtotal:</Text>
                   <Text style={styles.summaryValue}>
-                    ₦{editingItems.reduce((sum, item) => sum + item.total, 0).toLocaleString()}
+                    ₦{calculateSubtotal(editingItems).toLocaleString()}
                   </Text>
                 </View>
 
@@ -1552,44 +1781,48 @@ export default function FinanceScreen() {
               {
                 selectedInvoice.pendingPayments &&
                 selectedInvoice.pendingPayments.length > 0 && (
-                  <View style={[styles.paymentHistorySection, { borderColor: Colors.warning, borderWidth: 1, borderRadius: 12, padding: 12 }]}>
-                    <Text style={[styles.sectionTitle, { color: Colors.warning }]}>⏳ Pending Customer Payments</Text>
+                  <View style={[styles.paymentHistorySection, { borderColor: colors.textPrimary, borderWidth: 1, borderRadius: 12, padding: 12 }]}>
+                    <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Pending Customer Payments</Text>
                     {selectedInvoice.pendingPayments.map((pp: any, index: number) => {
-                      const ppDate = pp.date instanceof Date ? pp.date : new Date(pp.date);
+                      const pd: any = pp.date; const ppDate = pd?.toDate ? pd.toDate() : pd?.seconds ? new Date(pd.seconds * 1000) : pd instanceof Date ? pd : new Date(pd || Date.now());
                       return (
-                        <View key={pp.id || index} style={[styles.paymentHistoryItem, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={[styles.paymentAmount, { color: colors.textPrimary }]}>
-                              ₦{pp.amount.toLocaleString()}
-                            </Text>
-                            <Text style={[styles.paymentDate, { color: colors.textSecondary }]}>
-                              {format(ppDate, 'MMM dd, yyyy')} — by {pp.recordedByName || 'Customer'}
-                            </Text>
-                          </View>
-                          <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <View key={pp.id || index} style={{ backgroundColor: colors.surface, borderRadius: 10, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: colors.border }}>
+                          {/* Status Message instead of Amount */}
+                          <Text style={{ fontSize: 16, fontWeight: '700', color: Colors.success, marginBottom: 2 }}>
+                            Payment proof submitted
+                          </Text>
+                          <Text style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 10 }}>
+                            {format(ppDate, 'MMM dd, yyyy')} — by {pp.recordedByName || 'Customer'}
+                          </Text>
+
+                          {/* Buttons Row */}
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            {pp.proofUrl && (
+                              <TouchableOpacity
+                                style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primary + '15', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, flex: 1, justifyContent: 'center' }}
+                                onPress={() => {
+                                  setShowInvoiceModal(false);
+                                  setPendingProofUrl(pp.proofUrl);
+                                }}
+                              >
+                                <Ionicons name="eye-outline" size={14} color={colors.primary} />
+                                <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primary }}>View Proof</Text>
+                              </TouchableOpacity>
+                            )}
                             <TouchableOpacity
-                              style={{ backgroundColor: Colors.success, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }}
-                              onPress={async () => {
-                                try {
-                                  await firebaseService.confirmPendingPayment(
-                                    selectedInvoice.id,
-                                    pp.id,
-                                    user?.id || '',
-                                    user?.name || ''
-                                  );
-                                  Alert.alert('Confirmed', `Payment of ₦${pp.amount.toLocaleString()} confirmed.`);
-                                  // Reload invoice
-                                  const updated = await firebaseService.getInvoice(selectedInvoice.id);
-                                  if (updated) setSelectedInvoice(updated);
-                                } catch (err: any) {
-                                  Alert.alert('Error', err.message);
-                                }
+                              style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.success, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, flex: 1, justifyContent: 'center' }}
+                              onPress={() => {
+                                setPendingPaymentToConfirm(pp);
+                                setPaymentAmount(''); // Force manual entry
+                                setShowInvoiceModal(false);
+                                setPendingPaymentModal(true);
                               }}
                             >
-                              <Text style={{ color: '#fff', fontWeight: '600', fontSize: 13 }}>Confirm</Text>
+                              <Ionicons name="checkmark-outline" size={14} color="#fff" />
+                              <Text style={{ color: '#fff', fontWeight: '600', fontSize: 12 }}>Accept</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
-                              style={{ backgroundColor: Colors.error, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }}
+                              style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.error, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, flex: 1, justifyContent: 'center' }}
                               onPress={() => {
                                 Alert.alert('Reject Payment', `Reject ₦${pp.amount.toLocaleString()} from ${pp.recordedByName}?`, [
                                   { text: 'Cancel', style: 'cancel' },
@@ -1610,7 +1843,8 @@ export default function FinanceScreen() {
                                 ]);
                               }}
                             >
-                              <Text style={{ color: '#fff', fontWeight: '600', fontSize: 13 }}>Reject</Text>
+                              <Ionicons name="close-outline" size={14} color="#fff" />
+                              <Text style={{ color: '#fff', fontWeight: '600', fontSize: 12 }}>Reject</Text>
                             </TouchableOpacity>
                           </View>
                         </View>
@@ -1627,15 +1861,64 @@ export default function FinanceScreen() {
                     <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Payment History</Text>
                     {selectedInvoice.paymentHistory.map(
                       (payment, index: number) => {
-                        const paymentDate = payment.date instanceof Date ? payment.date : new Date(payment.date);
+                        const d2: any = payment.date; const paymentDate = d2?.toDate ? d2.toDate() : d2?.seconds ? new Date(d2.seconds * 1000) : d2 instanceof Date ? d2 : new Date(d2 || Date.now());
                         return (
                           <View key={index} style={[styles.paymentHistoryItem, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-                            <Text style={[styles.paymentAmount, { color: colors.textPrimary }]}>
-                              ₦{payment.amount.toLocaleString()}
-                            </Text>
-                            <Text style={[styles.paymentDate, { color: colors.textSecondary }]}>
-                              {format(paymentDate, 'MMM dd, yyyy')} - {payment.method}
-                            </Text>
+                            <View style={{ flex: 1 }}>
+                              <Text style={[styles.paymentAmount, { color: colors.textPrimary }]}>
+                                ₦{payment.amount.toLocaleString()}
+                              </Text>
+                              <Text style={[styles.paymentDate, { color: colors.textSecondary }]}>
+                                {format(paymentDate, 'MMM dd, yyyy')} - {payment.method?.replace('_', ' ')}
+                              </Text>
+                            </View>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                              {payment.receiptUrl ? (
+                                <TouchableOpacity
+                                  style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primary + '15', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}
+                                  onPress={() => {
+                                  setShowInvoiceModal(false);
+                                  setPendingProofUrl(payment.receiptUrl!);
+                                }}
+                                >
+                                  <Ionicons name="document-text-outline" size={14} color={colors.primary} />
+                                  <Text style={{ fontSize: 11, fontWeight: '600', color: colors.primary }}>View Receipt</Text>
+                                </TouchableOpacity>
+                              ) : (
+                                <TouchableOpacity
+                                  style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.textPrimary + '10', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}
+                                  onPress={async () => {
+                                    try {
+                                      const result = await ImagePicker.launchImageLibraryAsync({
+                                        mediaTypes: ['images'],
+                                        quality: 0.7,
+                                      });
+                                      if (!result.canceled && result.assets[0]) {
+                                        const uploadUrl = await firebaseService.uploadFile(
+                                          result.assets[0].uri,
+                                          `receipts/${selectedInvoice.id}/payment_${index}`
+                                        );
+                                        const updatedHistory = [...(selectedInvoice.paymentHistory || [])];
+                                        updatedHistory[index] = { ...updatedHistory[index], receiptUrl: uploadUrl };
+                                        await firebaseService.updateInvoice(selectedInvoice.id, { paymentHistory: updatedHistory });
+                                        const updated = await firebaseService.getInvoice(selectedInvoice.id);
+                                        if (updated) {
+                                          setSelectedInvoice(updated);
+                                          setEditingItems([...updated.items]);
+                                        }
+                                        Alert.alert('Success', 'Receipt uploaded successfully');
+                                      }
+                                    } catch (err: any) {
+                                      Alert.alert('Error', 'Failed to upload receipt');
+                                      console.error(err);
+                                    }
+                                  }}
+                                >
+                                  <Ionicons name="cloud-upload-outline" size={14} color={colors.textSecondary} />
+                                  <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary }}>Upload Receipt</Text>
+                                </TouchableOpacity>
+                              )}
+                            </View>
                           </View>
                         );
                       }
@@ -1651,9 +1934,7 @@ export default function FinanceScreen() {
                   <View style={styles.lockedMessage}>
                     <Ionicons name="lock-closed-outline" size={20} color={Colors.warning} />
                     <Text style={styles.lockedText}>
-                      {selectedInvoice.status === 'approved'
-                        ? 'Invoice is approved and locked'
-                        : 'Invoice cannot be edited after payment has been recorded'}
+                      This invoice has been voided and cannot be edited
                     </Text>
                   </View>
                 )
@@ -1752,13 +2033,9 @@ export default function FinanceScreen() {
         transparent={true}
         statusBarTranslucent={true}
         onRequestClose={() => {
-          console.log('Modal onRequestClose called');
           setShowPaymentModal(false);
           setPaymentAmount('');
-          // Reopen invoice modal when canceling payment
-          setTimeout(() => {
-            setShowInvoiceModal(true);
-          }, 100);
+          setReturnToInvoice(true);
         }
         }
       >
@@ -1766,13 +2043,9 @@ export default function FinanceScreen() {
           style={styles.paymentModalOverlay}
           activeOpacity={1}
           onPress={() => {
-            console.log('Overlay pressed');
             setShowPaymentModal(false);
             setPaymentAmount('');
-            // Reopen invoice modal when canceling payment
-            setTimeout(() => {
-              setShowInvoiceModal(true);
-            }, 100);
+            setReturnToInvoice(true);
           }}
         >
           <TouchableOpacity
@@ -1787,6 +2060,49 @@ export default function FinanceScreen() {
                 ? Math.abs(editingItems.reduce((sum, item) => sum + item.total, 0) - (selectedInvoice.amountPaid || 0)).toLocaleString()
                 : '0'}
             </Text>
+
+            <Text style={styles.inputLabel}>Payment Method</Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+              {[
+                { key: 'cash', label: 'Cash', icon: 'cash-outline' as const },
+                { key: 'bank_transfer', label: 'Transfer', icon: 'swap-horizontal-outline' as const },
+                { key: 'bank_card', label: 'Card', icon: 'card-outline' as const },
+              ].map((m) => (
+                <TouchableOpacity
+                  key={m.key}
+                  style={[
+                    {
+                      flex: 1,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 4,
+                      paddingVertical: 10,
+                      borderRadius: 8,
+                      borderWidth: 1.5,
+                      borderColor: paymentMethod === m.key ? colors.primary : colors.border,
+                      backgroundColor: paymentMethod === m.key ? colors.primary + '15' : colors.surface,
+                    },
+                  ]}
+                  onPress={() => setPaymentMethod(m.key)}
+                >
+                  <Ionicons
+                    name={m.icon}
+                    size={16}
+                    color={paymentMethod === m.key ? colors.primary : colors.textSecondary}
+                  />
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontWeight: '600',
+                      color: paymentMethod === m.key ? colors.primary : colors.textSecondary,
+                    }}
+                  >
+                    {m.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
 
             <Text style={styles.inputLabel}>Amount</Text>
             <TextInput
@@ -1803,10 +2119,7 @@ export default function FinanceScreen() {
                 onPress={() => {
                   setShowPaymentModal(false);
                   setPaymentAmount('');
-                  // Reopen invoice modal when canceling payment
-                  setTimeout(() => {
-                    setShowInvoiceModal(true);
-                  }, 100);
+                  setReturnToInvoice(true);
                 }}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
@@ -1959,7 +2272,7 @@ export default function FinanceScreen() {
             </View>
             <Text style={styles.successTitle}>Payment Recorded!</Text>
             <Text style={styles.successMessage}>
-              Payment of ₦{recordedPaymentAmount.toLocaleString()} recorded successfully for Invoice #{selectedInvoice?.id}
+              Payment of ₦{recordedPaymentAmount.toLocaleString()} recorded successfully for {(selectedInvoice as any)?.invoiceNumber || `Invoice #${selectedInvoice?.id}`}
             </Text>
             <TouchableOpacity
               style={styles.successButton}
@@ -1972,6 +2285,40 @@ export default function FinanceScreen() {
           </View>
         </View>
       </Modal >
+
+      {/* Payment Proof Viewer Modal */}
+      <Modal
+        visible={!!proofModalUrl}
+        transparent={true}
+        animationType="fade"
+        statusBarTranslucent={true}
+        onRequestClose={() => {
+          setProofModalUrl(null);
+        }}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center' }}>
+          <View style={{ position: 'absolute', top: 60, right: 20, left: 20, flexDirection: 'row', justifyContent: 'space-between', zIndex: 10 }}>
+            <Text style={{ color: '#fff', fontSize: 17, fontWeight: '700' }}>Payment Proof</Text>
+            <TouchableOpacity onPress={() => {
+              setProofModalUrl(null);
+            }}>
+              <Ionicons name="close-circle" size={30} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          {proofModalUrl && (
+            <Image
+              source={{ uri: proofModalUrl }}
+              style={{
+                width: Dimensions.get('window').width * 0.9,
+                height: Dimensions.get('window').height * 0.7,
+                borderRadius: 12,
+                backgroundColor: '#222'
+              }}
+              resizeMode="contain"
+            />
+          )}
+        </View>
+      </Modal>
 
       {/* Create Options Modal */}
       <Modal

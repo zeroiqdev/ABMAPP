@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,22 +8,32 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  TextInput,
+  Image,
+  Dimensions,
   Platform,
+  Linking,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { firebaseService } from '@/services/firebaseService';
+import { useAuthStore } from '@/store/authStore';
 import { Invoice, Job, User } from '@/types';
 import { format } from 'date-fns';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import { amountToWords } from '@/utils/formatUtils';
 
 import { useColors } from '@/constants/design';
 
 export default function InvoiceDetailsScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { user } = useAuthStore();
   const insets = useSafeAreaInsets();
   const colors = useColors();
   const styles = useMemo(() => getStyles(colors, insets), [colors, insets]);
@@ -31,12 +41,17 @@ export default function InvoiceDetailsScreen() {
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [job, setJob] = useState<Job | null>(null);
   const [customer, setCustomer] = useState<User | null>(null);
+  const [vehicle, setVehicle] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [proofModalUrl, setProofModalUrl] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadInvoiceDetails();
-  }, [id]);
+  useFocusEffect(
+    useCallback(() => {
+      loadInvoiceDetails();
+    }, [id])
+  );
 
   const loadInvoiceDetails = async () => {
     try {
@@ -53,6 +68,14 @@ export default function InvoiceDetailsScreen() {
             const jobData = await firebaseService.getJob(invoiceData.jobId);
             if (jobData) {
               setJob(jobData);
+              if (jobData.vehicleId) {
+                try {
+                  const v = await firebaseService.getVehicle(jobData.vehicleId);
+                  if (v) setVehicle(v);
+                } catch (e) {
+                  console.log('Could not load vehicle:', e);
+                }
+              }
             }
           } catch (jobError) {
             console.log('Error fetching job details (non-fatal):', jobError);
@@ -86,7 +109,18 @@ export default function InvoiceDetailsScreen() {
     try {
       const html = generateInvoiceHTML(invoice, job, customer);
       const { uri } = await Print.printToFileAsync({ html });
-      await Sharing.shareAsync(uri);
+      
+      // Custom Filename
+      const displayNumber = (invoice as any).invoiceNumber || `INV-${invoice.id.slice(-8).toUpperCase()}`;
+      const pdfName = `${displayNumber}.pdf`;
+      const newUri = FileSystem.cacheDirectory + pdfName;
+      
+      await FileSystem.moveAsync({
+        from: uri,
+        to: newUri
+      });
+
+      await Sharing.shareAsync(newUri);
     } catch (error: any) {
       Alert.alert('Error', 'Failed to generate invoice PDF');
       console.error('Error generating PDF:', error);
@@ -95,8 +129,19 @@ export default function InvoiceDetailsScreen() {
 
   const generateInvoiceHTML = (inv: Invoice, job: Job | null, customer: User | null) => {
     const amountPaid = inv.amountPaid || 0;
-    const balanceDue = inv.total - amountPaid;
-    const paymentHistory = inv.paymentHistory || [];
+    const balanceDue = Math.max(0, inv.total - amountPaid);
+    const displayNumber = (inv as any).invoiceNumber || `INV-${inv.id.slice(-8).toUpperCase()}`;
+    const logoUrl = 'https://res.cloudinary.com/dyg7neetr/image/upload/v1772036824/ABM_BLACK_g6i4dm.png';
+    const amountInWords = amountToWords(inv.total);
+
+    const vehicleHtml = vehicle ? `
+      <div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 8px; border: 1px solid #eee;">
+        <p style="margin: 0; font-size: 13px; color: #666;">VEHICLE DETAILS</p>
+        <p style="margin: 5px 0 0 0; font-size: 15px; font-weight: 600;">
+          ${vehicle.year} ${vehicle.make} ${vehicle.model} • ${vehicle.licensePlate || 'N/A'}
+        </p>
+      </div>
+    ` : '';
 
     return `
       <!DOCTYPE html>
@@ -104,64 +149,151 @@ export default function InvoiceDetailsScreen() {
         <head>
           <meta charset="utf-8">
           <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            .header { text-align: center; margin-bottom: 30px; }
-            .invoice-info { display: flex; justify-content: space-between; margin-bottom: 30px; }
-            .items-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-            .items-table th, .items-table td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
-            .items-table th { background-color: #f5f5f5; }
-            .total-section { text-align: right; margin-top: 20px; }
-            .balance-box { background: #f5f5f5; padding: 15px; margin-top: 20px; text-align: center; }
-            .payment-history { margin-top: 30px; }
-            .payment-item { padding: 8px; border-bottom: 1px solid #eee; }
+            body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #333; line-height: 1.6; }
+            .header-split { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; }
+            .header-left h1 { margin: 0; font-size: 32px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
+            .header-left p { margin: 5px 0 0 0; color: #666; font-size: 14px; font-family: monospace; }
+            .logo { height: 60px; object-fit: contain; }
+            
+            .divider { height: 1px; background: #eee; margin: 20px 0; }
+            
+            .info-grid { display: flex; justify-content: space-between; margin-bottom: 40px; }
+            .info-block { flex: 1; }
+            .info-label { font-size: 12px; font-weight: 700; color: #000; text-transform: uppercase; margin-bottom: 8px; }
+            .info-value { font-size: 16px; font-weight: 600; margin: 0; }
+            .info-date { font-size: 14px; margin: 4px 0; display: flex; justify-content: flex-end; }
+            .info-date span { color: #000; width: 100px; text-align: right; margin-right: 15px; }
+            
+            .section-title { font-size: 12px; font-weight: 700; color: #000; text-transform: uppercase; margin-bottom: 15px; letter-spacing: 0.5px; }
+            
+            table { width: 100%; border-collapse: collapse; margin-bottom: 30px; border-radius: 8px; overflow: hidden; }
+            th { background: #f8f9fa; padding: 12px 15px; text-align: left; font-size: 12px; font-weight: 700; color: #000; border-bottom: 2px solid #eee; }
+            td { padding: 12px 15px; border-bottom: 1px solid #eee; font-size: 14px; }
+            .text-right { text-align: right; }
+            
+            .totals-container { display: flex; justify-content: flex-end; margin-top: 20px; }
+            .totals-table { width: 300px; margin-bottom: 0; }
+            .totals-table td { border-bottom: none; padding: 5px 0; }
+            .totals-table .grand-total { border-top: 2px solid #333; padding-top: 15px; margin-top: 10px; font-size: 24px; font-weight: 800; }
+            .totals-table .paid { color: #30D158; font-weight: 600; }
+            .totals-table .balance { color: #FF9500; font-weight: 700; font-size: 18px; }
+            
+            .words-section { margin-top: 40px; }
+            .words-label { font-size: 11px; font-weight: 700; color: #000; text-transform: uppercase; margin-bottom: 5px; }
+            .words-value { font-size: 15px; font-weight: 600; }
+            
+            .footer-card { margin-top: 60px; background: #f8f9fa; padding: 25px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; }
+            .bank-details { display: flex; gap: 40px; }
+            .bank-detail-item { font-size: 14px; }
+            .bank-detail-label { color: #000; margin-bottom: 4px; }
+            .bank-detail-value { font-weight: 700; font-size: 16px; }
+            .thanks { margin-top: 15px; color: #000; font-style: italic; font-size: 13px; }
           </style>
         </head>
         <body>
-          <div class="header">
-            <h1>INVOICE</h1>
-            <p>Invoice #${inv.id}</p>
+          <div class="header-split">
+            <div class="header-left">
+              <h1>INVOICE</h1>
+              <p>#${displayNumber}</p>
+            </div>
+            <img src="${logoUrl}" class="logo" alt="ABM Logo" />
           </div>
-          <div class="invoice-info">
-            <div>
-              <p><strong>Customer:</strong> ${customer?.name || 'Customer'}</p>
-              <p><strong>Date:</strong> ${format(inv.createdAt, 'MMM dd, yyyy')}</p>
-              ${inv.dueDate ? `<p><strong>Due Date:</strong> ${format(inv.dueDate, 'MMM dd, yyyy')}</p>` : ''}
+          
+          <div class="divider"></div>
+          
+          <div class="info-grid">
+            <div class="info-block">
+              <p class="info-label">BILL TO</p>
+              <p class="info-value">${customer?.name || inv.customerName || 'Direct Customer'}</p>
+              ${customer?.phone ? `<p style="margin:4px 0; color:#666;">${customer.phone}</p>` : ''}
+              ${vehicleHtml}
+            </div>
+            <div class="info-block" style="max-width: 300px;">
+              <p class="info-label" style="text-align: right;">INVOICE DETAILS</p>
+              <div class="info-date"><span>Issued:</span><strong>${format(inv.createdAt, 'MMM dd, yyyy')}</strong></div>
+              <div class="info-date"><span>Due Date:</span><strong style="color: ${inv.dueDate ? '#333' : '#999'}">${inv.dueDate ? format(inv.dueDate, 'MMM dd, yyyy') : 'N/A'}</strong></div>
             </div>
           </div>
-          <table class="items-table">
+          
+          <p class="section-title">LINE ITEMS</p>
+          <table>
             <thead>
               <tr>
                 <th>Description</th>
-                <th>Qty</th>
-                <th>Unit Price</th>
-                <th>Total</th>
+                <th class="text-right" style="width: 60px;">Qty</th>
+                <th class="text-right" style="width: 120px;">Unit Price</th>
+                <th class="text-right" style="width: 120px;">Total</th>
               </tr>
             </thead>
             <tbody>
-              ${inv.items.map(
-      (item) => `
+              ${inv.items.map(item => `
                 <tr>
                   <td>${item.description}</td>
-                  <td>${item.quantity}</td>
-                  <td>₦${item.unitPrice.toLocaleString()}</td>
-                  <td>₦${item.total.toLocaleString()}</td>
+                  <td class="text-right">${item.quantity}</td>
+                  <td class="text-right">₦${item.unitPrice.toLocaleString()}</td>
+                  <td class="text-right">₦${item.total.toLocaleString()}</td>
                 </tr>
-              `
-    ).join('')}
+              `).join('')}
             </tbody>
           </table>
-          <div class="total-section">
-            <p>Subtotal: ₦${inv.subtotal.toLocaleString()}</p>
-            ${inv.vat > 0 ? `<p>VAT: ₦${inv.vat.toLocaleString()}</p>` : ''}
-            ${inv.discount > 0 ? `<p>Discount: -₦${inv.discount.toLocaleString()}</p>` : ''}
-            <p><strong>Total: ₦${inv.total.toLocaleString()}</strong></p>
-            ${amountPaid > 0 ? `<p>Amount Paid: ₦${amountPaid.toLocaleString()}</p>` : ''}
+          
+          <div class="totals-container">
+            <table class="totals-table">
+              <tr>
+                <td style="color:#666;">Subtotal</td>
+                <td class="text-right">₦${inv.subtotal.toLocaleString()}</td>
+              </tr>
+              ${inv.vat > 0 ? `
+                <tr>
+                  <td style="color:#666;">VAT (${inv.vatRate || 0}%)</td>
+                  <td class="text-right">₦${inv.vat.toLocaleString()}</td>
+                </tr>
+              ` : ''}
+              ${inv.discount > 0 ? `
+                <tr>
+                  <td style="color:#666;">Discount</td>
+                  <td class="text-right">-₦${inv.discount.toLocaleString()}</td>
+                </tr>
+              ` : ''}
+              <tr class="grand-total">
+                <td>Total</td>
+                <td class="text-right">₦${inv.total.toLocaleString()}</td>
+              </tr>
+              <tr>
+                <td class="paid">Amount Paid</td>
+                <td class="text-right paid">₦${amountPaid.toLocaleString()}</td>
+              </tr>
+              <tr>
+                <td class="balance">Balance Due</td>
+                <td class="text-right balance">₦${balanceDue.toLocaleString()}</td>
+              </tr>
+            </table>
           </div>
-          <div class="balance-box">
-            <div><strong>${balanceDue < 0 ? 'Overpayment' : 'Balance Due'}</strong></div>
-            <div style="font-size: 24px; font-weight: bold; color: ${balanceDue < 0 ? '#30D158' : '#000'}">
-              ₦${Math.abs(balanceDue).toLocaleString()}
+          
+          <div class="words-section">
+            <p class="words-label">AMOUNT IN WORDS</p>
+            <p class="words-value">${amountInWords}</p>
+          </div>
+          
+          <div class="footer-card">
+            <div style="flex:1;">
+              <div class="bank-details">
+                <div class="bank-detail-item">
+                  <div class="bank-detail-label">Bank</div>
+                  <div class="bank-detail-value">MONIEPOINT MFB</div>
+                </div>
+                <div class="bank-detail-item">
+                  <div class="bank-detail-label">Acc No</div>
+                  <div class="bank-detail-value">5071154448</div>
+                </div>
+                <div class="bank-detail-item">
+                  <div class="bank-detail-label">Name</div>
+                  <div class="bank-detail-value">ABDULLATEEF BABA MUSTAPHA</div>
+                </div>
+              </div>
+              <p class="thanks">Thank you for your business!</p>
             </div>
+            <img src="${logoUrl}" style="height: 30px; opacity: 0.2; transform: grayscale(1);" />
           </div>
         </body>
       </html>
@@ -225,7 +357,7 @@ export default function InvoiceDetailsScreen() {
         <View style={styles.invoiceCard}>
           <View style={styles.invoiceHeader}>
             <View>
-              <Text style={styles.invoiceNumber}>Invoice #{invoice.id.slice(0, 8)}</Text>
+              <Text style={styles.invoiceNumber}>{(invoice as any).invoiceNumber || `INV-${invoice.id.slice(0, 8)}`}</Text>
               <Text style={styles.invoiceDate}>{format(invoice.createdAt, 'MMM dd, yyyy')}</Text>
               {invoice.dueDate && (
                 <Text style={[styles.invoiceDate, { color: colors.error, marginTop: 4 }]}>
@@ -265,7 +397,14 @@ export default function InvoiceDetailsScreen() {
               <View key={index} style={styles.itemRow}>
                 <View style={styles.itemInfoContainer}>
                   <View style={styles.itemInfo}>
-                    <Text style={styles.itemDescription}>{item.description}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <Text style={styles.itemDescription}>{item.description}</Text>
+                      {item.isNewAddition && (
+                        <View style={{ backgroundColor: '#4CAF50', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginLeft: 8 }}>
+                          <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>NEW</Text>
+                        </View>
+                      )}
+                    </View>
                     <Text style={styles.itemDetails}>
                       {item.quantity} × ₦{item.unitPrice.toLocaleString()} = ₦{item.total.toLocaleString()}
                     </Text>
@@ -328,11 +467,79 @@ export default function InvoiceDetailsScreen() {
           )}
         </View>
 
+        {/* Payment History */}
+        {invoice.paymentHistory && invoice.paymentHistory.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Payment History</Text>
+            <View style={styles.itemsSection}>
+              {invoice.paymentHistory.map((payment, index) => {
+                const d: any = payment.date; const paymentDate = d?.toDate ? d.toDate() : d?.seconds ? new Date(d.seconds * 1000) : d instanceof Date ? d : new Date(d || Date.now());
+                return (
+                  <View key={index} style={[styles.itemRow, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.itemDescription}>
+                        ₦{payment.amount.toLocaleString()}
+                      </Text>
+                      <Text style={styles.itemDetails}>
+                        {format(paymentDate, 'MMM dd, yyyy')} - {payment.method?.replace('_', ' ')}
+                      </Text>
+                    </View>
+                    {payment.receiptUrl && (
+                      <TouchableOpacity
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primary + '15', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}
+                        onPress={() => setProofModalUrl(payment.receiptUrl!)}
+                      >
+                        <Ionicons name="download-outline" size={14} color={colors.primary} />
+                        <Text style={{ fontSize: 11, fontWeight: '600', color: colors.primary }}>Receipt</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
+        {/* Pending Payments */}
+        {invoice.pendingPayments && invoice.pendingPayments.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Pending Payments</Text>
+            <View style={styles.itemsSection}>
+              {invoice.pendingPayments.map((pp: any, index: number) => {
+                const pd: any = pp.date; const ppDate = pd?.toDate ? pd.toDate() : pd?.seconds ? new Date(pd.seconds * 1000) : pd instanceof Date ? pd : new Date(pd || Date.now());
+                return (
+                  <View key={pp.id || index} style={[styles.itemRow, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.itemDescription, { color: colors.primary, fontWeight: '600' }]}>
+                        Awaiting Confirmation
+                      </Text>
+                      <Text style={styles.itemDetails}>
+                        Submitted on {format(ppDate, 'MMM dd, yyyy')}
+                      </Text>
+                    </View>
+                    {pp.proofUrl && (
+                      <TouchableOpacity
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primary + '15', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 }}
+                        onPress={() => setProofModalUrl(pp.proofUrl)}
+                      >
+                        <Ionicons name="image-outline" size={14} color={colors.primary} />
+                        <Text style={{ fontSize: 11, fontWeight: '600', color: colors.primary }}>View Proof</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
         {/* Payment Button */}
-        {invoice.paymentStatus !== 'paid' && (
+        {(invoice.paymentStatus !== 'paid' || (invoice.total - (invoice.amountPaid || 0) > 0.01)) && (
           <TouchableOpacity
             style={[styles.payButton, { backgroundColor: colors.textPrimary }]}
-            onPress={() => setShowPaymentModal(true)}
+            onPress={() => {
+              setShowPaymentModal(true);
+            }}
           >
             <Text style={[styles.payButtonText, { color: colors.textInverse }]}>Pay Now</Text>
           </TouchableOpacity>
@@ -376,18 +583,104 @@ export default function InvoiceDetailsScreen() {
               <View style={styles.instructionContainer}>
                 <Ionicons name="information-circle-outline" size={20} color={colors.textSecondary} />
                 <Text style={styles.instructionText}>
-                  Please use your Invoice #{invoice.id.slice(0, 8)} as the payment reference.
+                  Please use your {(invoice as any).invoiceNumber || `INV-${invoice.id.slice(0, 8)}`} as the payment reference.
                 </Text>
               </View>
             </View>
 
+            <View style={styles.instructionContainer}>
+              <Ionicons name="checkmark-circle-outline" size={20} color={colors.primary} />
+              <Text style={styles.instructionText}>
+                Once you've made the transfer, please upload the receipt below. Our team will verify the amount and update your balance.
+              </Text>
+            </View>
+
             <TouchableOpacity
-              style={[styles.doneButton, { backgroundColor: colors.textPrimary }]}
+              style={[styles.doneButton, { backgroundColor: colors.textPrimary, marginBottom: 10 }]}
               onPress={() => setShowPaymentModal(false)}
             >
               <Text style={[styles.doneButtonText, { color: colors.textInverse }]}>I've made the transfer</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.doneButton, { backgroundColor: colors.primary + '15', borderWidth: 1, borderColor: colors.primary }, uploading && { opacity: 0.5 }]}
+              disabled={uploading}
+              onPress={async () => {
+                try {
+                  const result = await ImagePicker.launchImageLibraryAsync({
+                    mediaTypes: ['images'],
+                    quality: 0.7,
+                  });
+                  if (!result.canceled && result.assets[0]) {
+                    setUploading(true);
+                    const uploadUrl = await firebaseService.uploadFile(
+                      result.assets[0].uri,
+                      `payment_proofs/${invoice.id}/proof_${Date.now()}`
+                    );
+                    const pendingPayment = {
+                      id: `pp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                      amount: 0, // Staff will verify and enter manually
+                      method: 'bank_transfer',
+                      recordedBy: user?.id || '',
+                      recordedByName: user?.name || 'Customer',
+                      date: new Date(),
+                      status: 'pending' as const,
+                      proofUrl: uploadUrl,
+                    };
+                    const pendingPayments = [...(invoice.pendingPayments || []), pendingPayment];
+                    await firebaseService.updateInvoice(invoice.id, { pendingPayments });
+                    const updated = await firebaseService.getInvoice(invoice.id);
+                    if (updated) setInvoice(updated);
+                    setShowPaymentModal(false);
+                    Alert.alert('Success', 'Payment proof uploaded. Staff will confirm your payment shortly.');
+                  }
+                } catch (err: any) {
+                  Alert.alert('Error', 'Failed to upload payment proof');
+                  console.error(err);
+                } finally {
+                  setUploading(false);
+                }
+              }}
+            >
+              {uploading ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <>
+                  <Ionicons name="cloud-upload-outline" size={18} color={colors.primary} />
+                  <Text style={[styles.doneButtonText, { color: colors.primary, marginLeft: 8 }]}>Upload Payment Proof</Text>
+                </>
+              )}
+            </TouchableOpacity>
           </View>
+        </View>
+      </Modal>
+      {/* Proof Viewer Modal */}
+      <Modal
+        visible={!!proofModalUrl}
+        transparent={true}
+        animationType="fade"
+        statusBarTranslucent={true}
+        onRequestClose={() => setProofModalUrl(null)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center' }}>
+          <View style={{ position: 'absolute', top: 60, right: 20, left: 20, flexDirection: 'row', justifyContent: 'space-between', zIndex: 10 }}>
+            <Text style={{ color: '#fff', fontSize: 17, fontWeight: '700' }}>Document Viewer</Text>
+            <TouchableOpacity onPress={() => setProofModalUrl(null)}>
+              <Ionicons name="close-circle" size={30} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          {proofModalUrl && (
+            <Image
+              source={{ uri: proofModalUrl }}
+              style={{
+                width: Dimensions.get('window').width * 0.9,
+                height: Dimensions.get('window').height * 0.7,
+                borderRadius: 12,
+                backgroundColor: '#222'
+              }}
+              resizeMode="contain"
+            />
+          )}
         </View>
       </Modal>
     </View>
@@ -657,10 +950,12 @@ const getStyles = (colors: any, insets: any) => StyleSheet.create({
     lineHeight: 18,
   },
   doneButton: {
+    flexDirection: 'row',
     backgroundColor: colors.textPrimary,
     padding: 15,
     borderRadius: 10,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   doneButtonText: {
     color: colors.textInverse,

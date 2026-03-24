@@ -41,14 +41,14 @@ export default function InvoicesScreen() {
     try {
       // Load both invoices and pending quotes
       const [invoicesData, quotesData] = await Promise.all([
-        firebaseService.getInvoices(user.id),
-        firebaseService.getQuotesForCustomer(user.id),
+        firebaseService.getInvoices(user.id, undefined, user.email),
+        firebaseService.getQuotesForCustomer(user.id, user.email),
       ]);
 
       setPendingQuotes(quotesData);
 
-      // Filter out drafts and void invoices
-      let filtered = invoicesData.filter(inv => inv.status === 'approved' || inv.status === undefined); // Backward compatibility
+      // Filter out drafts and void invoices — show everything else (approved, pending, etc.)
+      let filtered = invoicesData.filter(inv => inv.status !== 'draft' && inv.status !== 'void');
 
       if (filter === 'pending') {
         filtered = filtered.filter((inv) => inv.paymentStatus === 'pending');
@@ -133,7 +133,7 @@ export default function InvoicesScreen() {
           </View>
           <View style={styles.itemInfo}>
             <Text style={styles.itemName} numberOfLines={1}>
-              Invoice #{item.id.slice(0, 8)}
+              {(item as any).invoiceNumber || `INV-${item.id.slice(0, 8)}`}
             </Text>
             <Text style={styles.itemSubtitle} numberOfLines={1}>
               {workshopNamesMap[item.workshopId] || 'Workshop'} • ₦{item.total.toLocaleString()}

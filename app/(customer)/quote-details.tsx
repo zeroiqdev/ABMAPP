@@ -24,6 +24,8 @@ import { useColors } from '@/constants/design';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system/legacy';
+import { amountToWords } from '@/utils/formatUtils';
 
 export default function CustomerQuoteDetailsScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
@@ -186,15 +188,16 @@ export default function CustomerQuoteDetailsScreen() {
     const handleDownloadQuote = async () => {
         if (!quote) return;
         try {
-            // Use invoice data if converted, otherwise use quote data
-            const sourceData = isConverted && invoice ? invoice : quote;
             const items = quote.items;
             const subtotal = items.reduce((sum: number, item: any) => sum + (item.quantity * item.unitPrice), 0);
             const vatAmount = subtotal * (quote.vatRate || 0) / 100;
             const discount = quote.discount || 0;
             const total = subtotal + vatAmount - discount;
-            const docType = isConverted ? 'INVOICE' : 'QUOTATION';
-            const docId = isConverted && invoice ? invoice.id : quote.id;
+            const displayNumber = quote.quoteNumber || `QT-${quote.id.slice(-8).toUpperCase()}`;
+            const logoUrl = 'https://res.cloudinary.com/dyg7neetr/image/upload/v1772036824/ABM_BLACK_g6i4dm.png';
+            const amountInWords = amountToWords(total);
+
+            const docType = quote.status === 'converted' ? 'INVOICE' : 'QUOTATION';
 
             const html = `
                 <!DOCTYPE html>
@@ -202,76 +205,155 @@ export default function CustomerQuoteDetailsScreen() {
                 <head>
                     <meta charset="utf-8">
                     <style>
-                        body { font-family: Arial, sans-serif; padding: 30px; color: #333; }
-                        .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #000; padding-bottom: 15px; }
-                        .header h1 { margin: 0; font-size: 28px; color: #000; }
-                        .header p { margin: 5px 0; color: #666; }
-                        .info-grid { display: flex; justify-content: space-between; margin-bottom: 25px; }
-                        .info-block p { margin: 4px 0; }
-                        .items-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-                        .items-table th { background-color: #f0f0f0; padding: 10px; text-align: left; border-bottom: 2px solid #ddd; font-weight: 600; }
-                        .items-table td { padding: 10px; text-align: left; border-bottom: 1px solid #eee; }
-                        .total-section { text-align: right; margin-top: 20px; }
-                        .total-section p { margin: 5px 0; }
-                        .total-section .grand-total { font-size: 18px; font-weight: bold; border-top: 2px solid #000; padding-top: 10px; margin-top: 10px; }
-                        .footer { margin-top: 40px; text-align: center; color: #999; font-size: 12px; border-top: 1px solid #eee; padding-top: 15px; }
+                        body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #333; line-height: 1.6; }
+                        .header-split { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; }
+                        .header-left h1 { margin: 0; font-size: 32px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
+                        .header-left p { margin: 5px 0 0 0; color: #666; font-size: 14px; font-family: monospace; }
+                        .logo { height: 60px; object-fit: contain; }
+                        
+                        .divider { height: 1px; background: #eee; margin: 20px 0; }
+                        
+                        .info-grid { display: flex; justify-content: space-between; margin-bottom: 40px; }
+                        .info-block { flex: 1; }
+                        .info-label { font-size: 12px; font-weight: 700; color: #000; text-transform: uppercase; margin-bottom: 8px; }
+                        .info-value { font-size: 16px; font-weight: 600; margin: 0; }
+                        .info-date { font-size: 14px; margin: 4px 0; display: flex; justify-content: flex-end; }
+                        .info-date span { color: #000; width: 100px; text-align: right; margin-right: 15px; }
+                        
+                        .section-title { font-size: 12px; font-weight: 700; color: #000; text-transform: uppercase; margin-bottom: 15px; letter-spacing: 0.5px; }
+                        
+                        table { width: 100%; border-collapse: collapse; margin-bottom: 30px; border-radius: 8px; overflow: hidden; }
+                        th { background: #f8f9fa; padding: 12px 15px; text-align: left; font-size: 12px; font-weight: 700; color: #000; border-bottom: 2px solid #eee; }
+                        td { padding: 12px 15px; border-bottom: 1px solid #eee; font-size: 14px; }
+                        .text-right { text-align: right; }
+                        
+                        .totals-container { display: flex; justify-content: flex-end; margin-top: 20px; }
+                        .totals-table { width: 300px; margin-bottom: 0; }
+                        .totals-table td { border-bottom: none; padding: 5px 0; }
+                        .totals-table .grand-total { border-top: 2px solid #333; padding-top: 15px; margin-top: 10px; font-size: 24px; font-weight: 800; }
+                        
+                        .words-section { margin-top: 40px; }
+                        .words-label { font-size: 11px; font-weight: 700; color: #000; text-transform: uppercase; margin-bottom: 5px; }
+                        .words-value { font-size: 15px; font-weight: 600; }
+                        
+                        .footer-card { margin-top: 60px; background: #f8f9fa; padding: 25px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; }
+                        .bank-details { display: flex; gap: 40px; }
+                        .bank-detail-item { font-size: 14px; }
+                        .bank-detail-label { color: #000; margin-bottom: 4px; }
+                        .bank-detail-value { font-weight: 700; font-size: 16px; }
+                        .thanks { margin-top: 15px; color: #000; font-style: italic; font-size: 13px; }
                     </style>
                 </head>
                 <body>
-                    <div class="header">
-                        <h1>${docType}</h1>
-                        <p>${docType} #${docId.slice(-8).toUpperCase()}</p>
+                    <div class="header-split">
+                        <div class="header-left">
+                            <h1>${docType}</h1>
+                            <p>#${displayNumber}</p>
+                        </div>
+                        <img src="${logoUrl}" class="logo" alt="ABM Logo" />
                     </div>
+                    
+                    <div class="divider"></div>
+                    
                     <div class="info-grid">
                         <div class="info-block">
-                            <p><strong>Customer:</strong> ${quote.customerName || 'N/A'}</p>
-                            ${quote.customerEmail ? `<p><strong>Email:</strong> ${quote.customerEmail}</p>` : ''}
-                            ${quote.customerPhone ? `<p><strong>Phone:</strong> ${quote.customerPhone}</p>` : ''}
+                            <p class="info-label">BILL TO</p>
+                            <p class="info-value">${quote.customerName || 'N/A'}</p>
+                            ${quote.customerPhone ? `<p style="margin:4px 0; color:#666;">${quote.customerPhone}</p>` : ''}
                         </div>
-                        <div class="info-block">
-                            <p><strong>Date:</strong> ${format(quote.createdAt, 'MMM dd, yyyy')}</p>
+                        <div class="info-block" style="max-width: 300px;">
+                            <p class="info-label" style="text-align: right;">${docType} DETAILS</p>
+                            <div class="info-date"><span>Issued:</span><strong>${format(quote.createdAt, 'MMM dd, yyyy')}</strong></div>
                         </div>
                     </div>
-                    <table class="items-table">
+                    
+                    <p class="section-title">LINE ITEMS</p>
+                    <table>
                         <thead>
                             <tr>
                                 <th>Description</th>
-                                <th>Qty</th>
-                                <th>Unit Price</th>
-                                <th>Total</th>
+                                <th class="text-right" style="width: 60px;">Qty</th>
+                                <th class="text-right" style="width: 120px;">Unit Price</th>
+                                <th class="text-right" style="width: 120px;">Total</th>
                             </tr>
                         </thead>
                         <tbody>
                             ${items.map((item: any) => `
                                 <tr>
                                     <td>${item.description}</td>
-                                    <td>${item.quantity}</td>
-                                    <td>₦${Number(item.unitPrice).toLocaleString()}</td>
-                                    <td>₦${(item.quantity * item.unitPrice).toLocaleString()}</td>
+                                    <td class="text-right">${item.quantity}</td>
+                                    <td class="text-right">₦${Number(item.unitPrice).toLocaleString()}</td>
+                                    <td class="text-right">₦${(item.quantity * item.unitPrice).toLocaleString()}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
                     </table>
-                    <div class="total-section">
-                        <p>Subtotal: ₦${subtotal.toLocaleString()}</p>
-                        ${quote.vatRate > 0 ? `<p>VAT (${quote.vatRate}%): ₦${vatAmount.toLocaleString()}</p>` : ''}
-                        ${discount > 0 ? `<p>Discount: -₦${discount.toLocaleString()}</p>` : ''}
-                        <p class="grand-total">Total: ₦${total.toLocaleString()}</p>
+                    
+                    <div class="totals-container">
+                        <table class="totals-table">
+                            <tr>
+                                <td style="color:#666;">Subtotal</td>
+                                <td class="text-right">₦${subtotal.toLocaleString()}</td>
+                            </tr>
+                            ${quote.vatRate > 0 ? `
+                                <tr>
+                                    <td style="color:#666;">VAT (${quote.vatRate || 0}%)</td>
+                                    <td class="text-right">₦${vatAmount.toLocaleString()}</td>
+                                </tr>
+                            ` : ''}
+                            ${discount > 0 ? `
+                                <tr>
+                                    <td style="color:#666;">Discount</td>
+                                    <td class="text-right">-₦${discount.toLocaleString()}</td>
+                                </tr>
+                            ` : ''}
+                            <tr class="grand-total">
+                                <td>Total</td>
+                                <td class="text-right">₦${total.toLocaleString()}</td>
+                            </tr>
+                        </table>
                     </div>
-                    ${isConverted && invoice ? `
-                        <div class="total-section">
-                            <p>Amount Paid: ₦${(invoice.amountPaid || 0).toLocaleString()}</p>
-                            <p class="grand-total" style="color: ${balance > 0 ? '#FF3B30' : '#30D158'}">Balance: ₦${balance.toLocaleString()}</p>
+                    
+                    <div class="words-section">
+                        <p class="words-label">AMOUNT IN WORDS</p>
+                        <p class="words-value">${amountInWords}</p>
+                    </div>
+                    
+                    <div class="footer-card">
+                        <div style="flex:1;">
+                            <div class="bank-details">
+                                <div class="bank-detail-item">
+                                    <div class="bank-detail-label">Bank</div>
+                                    <div class="bank-detail-value">MONIEPOINT MFB</div>
+                                </div>
+                                <div class="bank-detail-item">
+                                    <div class="bank-detail-label">Acc No</div>
+                                    <div class="bank-detail-value">5071154448</div>
+                                </div>
+                                <div class="bank-detail-item">
+                                    <div class="bank-detail-label">Name</div>
+                                    <div class="bank-detail-value">ABDULLATEEF BABA MUSTAPHA</div>
+                                </div>
+                            </div>
+                            <p class="thanks">Thank you for your business!</p>
                         </div>
-                    ` : ''}
-                    <div class="footer">
-                        <p>This is a computer-generated document.</p>
+                        <img src="${logoUrl}" style="height: 30px; opacity: 0.2; transform: grayscale(1);" />
                     </div>
                 </body>
                 </html>
             `;
             const { uri } = await Print.printToFileAsync({ html });
-            await Sharing.shareAsync(uri);
+            
+            // Custom Filename
+            const pdfName = `${displayNumber}.pdf`;
+            const newUri = FileSystem.cacheDirectory + pdfName;
+
+            await FileSystem.moveAsync({
+                from: uri,
+                to: newUri
+            });
+            
+            await Sharing.shareAsync(newUri);
         } catch (error: any) {
             Alert.alert('Error', 'Failed to generate PDF');
             console.error('Error generating PDF:', error);

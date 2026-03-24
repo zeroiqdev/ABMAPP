@@ -71,7 +71,7 @@ export default function WorkshopInvoicesScreen() {
           <Ionicons name="receipt-outline" size={24} color={getPaymentStatusColor(item.paymentStatus)} />
         </View>
         <View style={styles.itemInfo}>
-          <Text style={[styles.itemName, { color: colors.textPrimary }]}>Invoice #{item.id.slice(0, 8)}</Text>
+          <Text style={[styles.itemName, { color: colors.textPrimary }]}>{(item as any).invoiceNumber || `INV-${item.id.slice(0, 8)}`}</Text>
           <Text style={[styles.itemSubtitle, { color: colors.textSecondary }]}>
             {format(item.createdAt, 'MMM dd, yyyy')}
           </Text>

@@ -143,7 +143,7 @@ export default function CreateInvoiceScreen() {
             const newInvoice: Omit<Invoice, 'id' | 'createdAt'> = {
                 customerName: selectedCustomer.name,
                 customerPhone: selectedCustomer.phone || '',
-                customerEmail: selectedCustomer.email || '',
+                customerEmail: (selectedCustomer.email || '').toLowerCase().trim(),
                 customerAddress: selectedCustomer.address || '',
                 workshopId: user.workshopId,
                 items: invoiceItems,
