@@ -20,6 +20,8 @@ import { firebaseService } from '@/services/firebaseService';
 import { Workshop } from '@/types';
 import { Ionicons } from '@expo/vector-icons';
 import * as AppleAuthentication from 'expo-apple-authentication';
+import { collection, query, where, getDocs, limit } from 'firebase/firestore';
+import { db } from '@/config/firebase';
 
 export default function SignupScreen() {
   const router = useRouter();
@@ -45,6 +47,46 @@ export default function SignupScreen() {
       setEmail(initialEmail);
     }
   }, [initialEmail]);
+
+  // AUTOMATIC INVITATION DETECTION:
+  // Redirect vendors to the member-auth flow if they try to use the standard customer signup
+  useEffect(() => {
+    const checkInvitation = async () => {
+      if (!email || !email.includes('@') || email.length < 5) return;
+      
+      try {
+        const staffQ = query(
+          collection(db, 'staffInvitations'),
+          where('email', 'in', [email.toLowerCase().trim(), email.trim()]),
+          where('used', '==', false),
+          limit(1)
+        );
+        const staffSnap = await getDocs(staffQ);
+        
+        if (!staffSnap.empty) {
+          const data = staffSnap.docs[0].data();
+          if (data.role?.toLowerCase() === 'vendor') {
+            Alert.alert(
+              "Invitation Detected",
+              "We found a vendor invitation for this email. Redirecting you to the correct registration flow.",
+              [{ 
+                text: "Continue", 
+                onPress: () => router.replace({
+                  pathname: '/(marketplace)/member-auth',
+                  params: { email: email.trim() }
+                }) 
+              }]
+            );
+          }
+        }
+      } catch (err) {
+        console.error('[Signup] Error checking invitation:', err);
+      }
+    };
+
+    const timer = setTimeout(checkInvitation, 1000);
+    return () => clearTimeout(timer);
+  }, [email]);
 
   // Load workshops on mount
   useEffect(() => {

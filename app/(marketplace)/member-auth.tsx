@@ -11,6 +11,8 @@ import {
     KeyboardAvoidingView,
     Platform,
     useColorScheme,
+    Image,
+    Dimensions,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { format } from 'date-fns';
@@ -20,7 +22,7 @@ import { firebaseService } from '@/services/firebaseService';
 import { useAuthStore } from '@/store/authStore';
 import { useColors } from '@/constants/design';
 import * as AppleAuthentication from 'expo-apple-authentication';
-import { collection, query, where, getDocs, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, setDoc, updateDoc, limit } from 'firebase/firestore';
 import { db, auth } from '@/config/firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { WorkshopSelectorModal } from '@/components/WorkshopSelectorModal';
@@ -34,8 +36,9 @@ const workshopRoles = ['admin', 'technician', 'storekeeper', 'accountant', 'serv
 export default function MemberAuthScreen() {
     const router = useRouter();
     const colors = useColors();
-    const styles = getStyles(colors);
-    const { setGuest, acceptStaffInvite, registerCustomerAccount, loginWithApple } = useAuthStore();
+    const isDark = useColorScheme() === 'dark';
+    const styles = getStyles(colors, isDark);
+    const { user, login, setGuest, setUser, acceptStaffInvite, registerCustomerAccount, loginWithApple, setProfileLoaded } = useAuthStore();
     const colorScheme = useColorScheme();
 
     // Auth state
@@ -77,9 +80,22 @@ export default function MemberAuthScreen() {
     // Track if user signed in with Apple (already authenticated, no password needed)
     const [isAppleUser, setIsAppleUser] = useState(false);
 
-    // Step 1: Check email for existing account or invitation
+    // Navigation state for clearing screen after success
+    const [isNavigating, setIsNavigating] = useState(false);
+
+    // AUTO-NAVIGATE: If a user is already logged in, send them to their dashboard immediately.
+    // This prevents trapped users on the login screen after a splash timeout.
+    React.useEffect(() => {
+        if (user && !isNavigating) {
+            console.log('[MemberAuth] Auto-navigating authenticated user:', user.email);
+            navigateUser(user);
+        }
+    }, [user]);
+
     const handleEmailContinue = async () => {
         const trimmedEmail = email.trim().toLowerCase();
+        const originalEmail = email.trim();
+        
         if (!trimmedEmail || !trimmedEmail.includes('@')) {
             setError('Please enter a valid email address');
             return;
@@ -90,40 +106,82 @@ export default function MemberAuthScreen() {
         setInvitation(null);
 
         try {
-            // Check for staff invitation (Public read allowed)
+            // 1. Check if user already exists in Firestore (Priority 1)
+            // Try both lowercase (standard) and original (fallback)
+            const userQ = query(
+                collection(db, 'users'),
+                where('email', 'in', [trimmedEmail, originalEmail])
+            );
+            const userSnap = await getDocs(userQ);
+            let foundUser = false;
+            if (!userSnap.empty) {
+                foundUser = true;
+                setStep('login');
+            } else {
+                // 2. Failsafe: Check Firebase Auth directly if Firestore check is inconclusive
+                try {
+                    await signInWithEmailAndPassword(auth, trimmedEmail, 'check-existence-only-dummy');
+                    foundUser = true;
+                    setStep('login');
+                } catch (authErr: any) {
+                    if (
+                        authErr.code === 'auth/wrong-password' || 
+                        authErr.code === 'auth/too-many-requests' ||
+                        authErr.code === 'auth/invalid-credential'
+                    ) {
+                        foundUser = true;
+                        setStep('login');
+                    }
+                }
+            }
+
+            // 3. Check for invitations (Priority 2) - ALWAYS check, even if user found
             const staffQ = query(
                 collection(db, 'staffInvitations'),
-                where('email', '==', trimmedEmail),
-                where('used', '==', false)
+                where('email', 'in', [trimmedEmail, originalEmail, email.trim().toLowerCase().replace(/\+.*@/, '@')])
             );
             const staffSnap = await getDocs(staffQ);
  
             if (!staffSnap.empty) {
                 const staffDoc = staffSnap.docs[0];
                 const data = staffDoc.data();
-                setInvitation({
-                    type: data.role === 'customer' ? 'customer' : 'staff',
-                    role: data.role === 'customer' ? 'Customer' : (data.role || 'Staff'),
-                    code: data.invitationCode,
-                    id: staffDoc.id
-                });
-
-                if (data.role === 'customer') {
+                const rawRole = (data.role || '').toLowerCase().trim();
+                
+                // If it's already used, we simply proceed to login flow without bothering the user with a signal to accept it
+                if (data.used) {
+                    setStep('login');
+                } else {
+                    setInvitation({
+                        type: rawRole === 'customer' ? 'customer' : 'staff',
+                        role: rawRole === 'vendor' ? 'Vendor' : (rawRole === 'customer' ? 'Customer' : (data.role || 'Staff')),
+                        code: data.invitationCode,
+                        id: staffDoc.id
+                    });
+                }
+ 
+                if (rawRole === 'customer') {
                     setIsExistingCustomer(true);
                     setExistingWorkshops([data.workshopId]);
                 }
  
-                // Unused invitation found — show full registration form
-                setStep('create');
+                // Only change step to 'create' if the user DOES NOT have an account yet AND has a valid invite
+                if (!foundUser && !data.used) {
+                    setStep('create');
+                }
                 setLoading(false);
                 return;
             }
 
-            // No invitation found -> Proceed to Login/Signup
-            setStep('login');
-        } catch (err) {
+            // 4. Completely new user -> Route to customer registration
+            if (!foundUser) {
+                setStep('createCustomer');
+            }
+        } catch (err: any) {
             console.error('Error checking email:', err);
-            setStep('login');
+            // SURFACE the error so we know if an index is missing!
+            setError(`Account check error: ${err.message || 'Unknown error'}`);
+            // Fallback to customer signup as a survival measure, but the error will be visible
+            setStep('createCustomer');
         } finally {
             setLoading(false);
         }
@@ -140,33 +198,52 @@ export default function MemberAuthScreen() {
         setError('');
 
         try {
-            const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
-            setGuest(false);
+            // Use the store's login() which atomically sets user + firebaseUser + isGuest
+            await login(email.trim(), password);
  
-            // Success! Mark invitation as used if it exists
+            // SUCCESS! Now check if we have a pending invitation to process
             if (invitation) {
                 try {
-                    await firebaseService.markStaffInvitationAsUsed(invitation.id);
-                } catch (invError) {
-                    console.warn('[Login] Could not mark invitation as used:', invError);
+                    // acceptStaffInvite handles role promotion for existing accounts
+                    await acceptStaffInvite(email.trim(), password, invitation.code);
+                    console.log('[Login] Successfully accepted invitation for existing user');
+                } catch (acceptErr) {
+                    console.error('[Login] Error accepting invitation during login:', acceptErr);
+                    // Non-blocking for the login itself
+                }
+            } else {
+                // Failsafe: Check the database one last time just in case the UI missed it
+                const staffQ = query(
+                    collection(db, 'staffInvitations'),
+                    where('email', 'in', [email.toLowerCase().trim(), email.trim()]),
+                    where('used', '==', false),
+                    limit(1)
+                );
+                const staffSnap = await getDocs(staffQ);
+                if (!staffSnap.empty) {
+                    const data = staffSnap.docs[0].data();
+                    if (data.role?.toLowerCase() === 'vendor') {
+                        await acceptStaffInvite(email.trim(), password, data.invitationCode);
+                    }
                 }
             }
  
-            const userDocRef = doc(db, 'users', userCredential.user.uid);
-            const userDocSnap = await getDoc(userDocRef);
- 
-            if (userDocSnap.exists()) {
-                const userData = userDocSnap.data();
+            // Get the fully hydrated user from the store
+            const userData = useAuthStore.getState().user;
+            
+            if (userData) {
                 if (!userData.name || !userData.name.trim()) {
-                    setNewUserId(userCredential.user.uid);
+                    setNewUserId(userData.id);
                     setFirstName('');
                     setLastName('');
                     setPhone(userData.phone || '');
                     setStep('completeProfile');
                     return;
                 }
-                navigateUser({ ...userData, role: userData.role } as any);
+                setIsNavigating(true);
+                navigateUser(userData);
             } else {
+                setIsNavigating(true);
                 router.replace('/(marketplace)/home');
             }
         } catch (err: any) {
@@ -179,10 +256,13 @@ export default function MemberAuthScreen() {
                 }
             } else if (err.code === 'auth/wrong-password') {
                 setError('Incorrect password. Please try again.');
+            } else if (err.message === 'User data not found') {
+                // Firebase Auth account exists but no Firestore document
+                router.replace('/(marketplace)/home');
             } else {
                 setError(err.message || 'Login failed');
             }
-        } finally {
+            // Reset loading ONLY on error. Success will be handled by navigation.
             setLoading(false);
         }
     };
@@ -223,9 +303,11 @@ export default function MemberAuthScreen() {
                     setNewUserId(userData.id);
                     setStep('completeProfile');
                 } else {
+                    setIsNavigating(true);
                     navigateUser(userData);
                 }
             } else {
+                setIsNavigating(true);
                 router.replace('/(marketplace)/home');
             }
         } catch (err: any) {
@@ -256,11 +338,42 @@ export default function MemberAuthScreen() {
         setError('');
 
         try {
+            // REDUNDANT CHECK: Look for invitations one last time before creating a customer
+            // This catches vendors who might have ended up in this flow by mistake (e.g. via Apple or minor typos)
+            const trimmedEmail = email.toLowerCase().trim();
+            const staffQ = query(
+                collection(db, 'staffInvitations'),
+                where('email', 'in', [trimmedEmail, email.trim()]),
+                where('used', '==', false),
+                limit(1)
+            );
+            const staffSnap = await getDocs(staffQ);
+            
+            if (!staffSnap.empty) {
+                const doc = staffSnap.docs[0];
+                const data = doc.data();
+                
+                // If a vendor invitation exists, REDIRECT them to the correct flow
+                if (data.role?.toLowerCase() === 'vendor') {
+                    setInvitation({
+                        type: 'staff',
+                        role: 'Vendor',
+                        code: data.invitationCode,
+                        id: doc.id
+                    });
+                    setStep('create');
+                    setError('A vendor invitation was found for this email. Please complete your registration here.');
+                    setLoading(false);
+                    return;
+                }
+            }
+
             const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
             const uid = userCredential.user.uid;
 
             await setDoc(doc(db, 'users', uid), {
-                email: email.trim().toLowerCase(),
+                id: uid,
+                email: trimmedEmail,
                 role: 'customer',
                 selectedWorkshopIds: selectedWorkshopIds,
                 connectedWorkshopIds: selectedWorkshopIds,
@@ -338,8 +451,9 @@ export default function MemberAuthScreen() {
             const userDocRef = doc(db, 'users', uid);
             const userDocSnap = await getDoc(userDocRef);
             if (userDocSnap.exists()) {
-                navigateUser({ ...userDocSnap.data(), role: userDocSnap.data().role } as any);
+                navigateUser({ ...userDocSnap.data(), id: userDocSnap.id } as any);
             } else {
+                setIsNavigating(true);
                 router.replace('/(customer)/home');
             }
         } catch (err: any) {
@@ -351,15 +465,39 @@ export default function MemberAuthScreen() {
 
     // Navigate user based on role
     const navigateUser = (userData: any) => {
-        if (userData.role === 'super_admin' || workshopRoles.includes(userData.role)) {
+        // Activate full-screen loading shield
+        setIsNavigating(true);
+
+        // CRITICAL: Set the user in the auth store so the entire app knows we're logged in
+        const userForStore = {
+            ...userData,
+            id: userData.id || auth.currentUser?.uid,
+            createdAt: userData.createdAt?.toDate ? userData.createdAt.toDate() : (userData.createdAt || new Date()),
+            updatedAt: userData.updatedAt?.toDate ? userData.updatedAt.toDate() : (userData.updatedAt || new Date()),
+        };
+        setUser(userForStore);
+        setGuest(false);
+        setProfileLoaded(true); // Manually set loaded during login navigation
+
+        const role = (userData.role || '').toLowerCase().trim();
+        const hasVendorStatus = !!userData.vendorStatus;
+        const workshopRoles = ['admin', 'technician', 'storekeeper', 'accountant', 'service_advisor', 'super_admin'];
+        
+        if (role === 'super_admin' || workshopRoles.includes(role)) {
             router.replace('/(workshop)/dashboard');
-        } else if (userData.role === 'vendor') {
-            if (userData.vendorStatus === 'active') {
-                router.replace('/(marketplace)/home');
-            } else {
+        } else if (role === 'vendor' || hasVendorStatus) {
+            const status = (userData.vendorStatus || '').toLowerCase().trim();
+            // Legacy vendors (no status but role=vendor) should NOT be forced to register
+            const isExplicitlyUnregistered = status === 'pending_details' || status === 'rejected';
+
+            if (isExplicitlyUnregistered) {
                 router.replace('/(marketplace)/vendor-registration');
+            } else if (status === 'pending_approval') {
+                router.replace('/(marketplace)/pending-approval');
+            } else {
+                router.replace('/(marketplace)/home');
             }
-        } else if (userData.role === 'customer') {
+        } else if (role === 'customer') {
             router.replace('/(customer)/home');
         } else if (userData.workshopId) {
             router.replace('/(workshop)/dashboard');
@@ -390,18 +528,39 @@ export default function MemberAuthScreen() {
             // Get user data from store after login
             const userData = useAuthStore.getState().user;
             if (userData) {
+                // If this is a new Apple user, we MUST check if they have a pending vendor invitation
+                // before routing them to the workshop selection screen.
+                const userEmail = userData.email || auth.currentUser?.email;
+                let hasVendorInvite = false;
+                
+                if (userEmail) {
+                    const staffQ = query(
+                        collection(db, 'staffInvitations'),
+                        where('email', 'in', [userEmail.toLowerCase().trim(), userEmail.trim()]),
+                        where('used', '==', false),
+                        limit(1)
+                    );
+                    const staffSnap = await getDocs(staffQ);
+                    if (!staffSnap.empty) {
+                        hasVendorInvite = true;
+                    }
+                }
+
                 // Check if this is a new user who needs workshop selection & profile setup
                 const hasWorkshop = userData.workshopId || (userData.connectedWorkshopIds && userData.connectedWorkshopIds.length > 0);
-                if (!hasWorkshop && userData.role === 'customer') {
+                
+                if (!hasWorkshop && userData.role === 'customer' && !hasVendorInvite) {
                     // New Apple user — needs to select workshops and complete profile
                     setNewUserId(userData.id);
                     setIsAppleUser(true);
-                    setEmail(userData.email || '');
+                    setEmail(userEmail || '');
                     setStep('appleWorkshopSelect');
                 } else {
+                    setIsNavigating(true);
                     navigateUser(userData);
                 }
             } else {
+                setIsNavigating(true);
                 router.replace('/(marketplace)/home');
             }
         } catch (err: any) {
@@ -413,24 +572,33 @@ export default function MemberAuthScreen() {
         }
     };
 
+    if (isNavigating) {
+        return (
+            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+                <ActivityIndicator size="large" color={colors.primary} />
+            </View>
+        );
+    }
+
     return (
         <View style={styles.container}>
-            {/* Header */}
-            <View style={styles.header}>
-                <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-                    <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>
-                    {step === 'email' && 'Sign In'}
-                    {step === 'login' && 'Welcome Back'}
-                    {step === 'create' && 'Create Account'}
-                    {step === 'createCustomer' && 'Create Account'}
-                    {step === 'appleWorkshopSelect' && 'Select Workshop'}
-                    {step === 'selectWorkshops' && 'Select Workshop'}
-                    {step === 'completeProfile' && 'Complete Profile'}
-                </Text>
-                <View style={{ width: 24 }} />
-            </View>
+            {/* Header - Only show for steps after email for back navigation */}
+            {step !== 'email' && (
+                <View style={styles.header}>
+                    <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+                        <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
+                    </TouchableOpacity>
+                    <Text style={styles.headerTitle}>
+                        {step === 'login' && 'Sign In'}
+                        {step === 'create' && 'Create Account'}
+                        {step === 'createCustomer' && 'Create Account'}
+                        {step === 'appleWorkshopSelect' && 'Select Workshop'}
+                        {step === 'selectWorkshops' && 'Select Workshop'}
+                        {step === 'completeProfile' && 'Complete Profile'}
+                    </Text>
+                    <View style={{ width: 24 }} />
+                </View>
+            )}
 
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -444,21 +612,22 @@ export default function MemberAuthScreen() {
                     {/* Email Step */}
                     {step === 'email' && (
                         <>
-                            <Text style={styles.subtitle}>Enter your email to continue</Text>
-                            <View style={styles.card}>
-                                <View style={styles.inputGroup}>
-                                    <TextInput
-                                        style={styles.input}
-                                        placeholder="your@email.com"
-                                        placeholderTextColor={colors.textTertiary}
-                                        value={email}
-                                        onChangeText={setEmail}
-                                        autoCapitalize="none"
-                                        keyboardType="email-address"
-                                        autoCorrect={false}
-                                        autoFocus
-                                    />
-                                </View>
+                            <Text style={[styles.welcomeHeading, { marginTop: 100 }]}>Welcome</Text>
+                            <Text style={styles.welcomeSubtitle}>Sign in to your account.</Text>
+
+                            <Text style={styles.emailLabel}>Email</Text>
+                            <View style={styles.emailInputContainer}>
+                                <TextInput
+                                    style={styles.emailInput}
+                                    placeholder="Enter Email here"
+                                    placeholderTextColor={'#bbb'}
+                                    value={email}
+                                    onChangeText={setEmail}
+                                    autoCapitalize="none"
+                                    keyboardType="email-address"
+                                    autoCorrect={false}
+                                    autoFocus
+                                />
                             </View>
                             {error ? <Text style={styles.errorText}>{error}</Text> : null}
                             <TouchableOpacity
@@ -467,7 +636,7 @@ export default function MemberAuthScreen() {
                                 disabled={loading}
                             >
                                 {loading ? (
-                                    <ActivityIndicator color={colors.textInverse} />
+                                    <ActivityIndicator color="#fff" />
                                 ) : (
                                     <Text style={styles.primaryButtonText}>Continue</Text>
                                 )}
@@ -500,30 +669,30 @@ export default function MemberAuthScreen() {
                     {/* Login Step */}
                     {step === 'login' && (
                         <>
-                            <Text style={styles.subtitle}>Enter your password to sign in</Text>
-                            <View style={styles.card}>
-                                <View style={styles.inputGroup}>
-                                    <Text style={styles.inputLabel}>Email</Text>
-                                    <View style={styles.emailDisplayRow}>
-                                        <Text style={styles.emailDisplayText}>{email}</Text>
-                                        <TouchableOpacity onPress={handleBack}>
-                                            <Text style={styles.changeLink}>Change</Text>
-                                        </TouchableOpacity>
-                                    </View>
-                                </View>
-                                <View style={styles.divider} />
-                                <View style={styles.inputGroup}>
-                                    <Text style={styles.inputLabel}>Password</Text>
-                                    <TextInput
-                                        style={styles.input}
-                                        placeholder="Enter password"
-                                        placeholderTextColor={colors.textTertiary}
-                                        value={password}
-                                        onChangeText={setPassword}
-                                        secureTextEntry
-                                    />
-                                </View>
+                            <Text style={styles.welcomeHeading}>Welcome Back</Text>
+                            <Text style={styles.welcomeSubtitle}>Enter your password to sign in.</Text>
+
+                            <Text style={styles.emailLabel}>Email</Text>
+                            <View style={[styles.emailInputContainer, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
+                                <Text style={styles.emailDisplayText}>{email}</Text>
+                                <TouchableOpacity onPress={handleBack}>
+                                    <Text style={styles.changeLink}>Change</Text>
+                                </TouchableOpacity>
                             </View>
+
+                            <Text style={styles.emailLabel}>Password</Text>
+                            <View style={styles.emailInputContainer}>
+                                <TextInput
+                                    style={styles.emailInput}
+                                    placeholder="Enter password"
+                                    placeholderTextColor={'#bbb'}
+                                    value={password}
+                                    onChangeText={setPassword}
+                                    secureTextEntry
+                                    autoFocus
+                                />
+                            </View>
+
                             {error ? <Text style={styles.errorText}>{error}</Text> : null}
                             <TouchableOpacity
                                 style={[styles.primaryButton, loading && styles.buttonDisabled]}
@@ -531,7 +700,7 @@ export default function MemberAuthScreen() {
                                 disabled={loading}
                             >
                                 {loading ? (
-                                    <ActivityIndicator color={colors.textInverse} />
+                                    <ActivityIndicator color="#fff" />
                                 ) : (
                                     <Text style={styles.primaryButtonText}>Sign In</Text>
                                 )}
@@ -545,80 +714,81 @@ export default function MemberAuthScreen() {
                             <View style={styles.invitationBadge}>
                                 <Ionicons name="checkmark-circle" size={20} color={colors.success} />
                                 <Text style={styles.invitationText}>
-                                    You've been invited as {invitation.role}
+                                    Invitation: {invitation.role}
                                 </Text>
                             </View>
-                            <Text style={styles.subtitle}>Create your password to get started</Text>
-                            <View style={styles.card}>
-                                <View style={styles.inputGroup}>
-                                    <Text style={styles.inputLabel}>Email</Text>
-                                    <Text style={styles.emailDisplayText}>{email}</Text>
-                                </View>
-                                <View style={styles.divider} />
-                                <View style={styles.inputGroup}>
-                                    <Text style={styles.inputLabel}>Password</Text>
-                                    <TextInput
-                                        style={styles.input}
-                                        placeholder="Create password"
-                                        placeholderTextColor={colors.textTertiary}
-                                        value={password}
-                                        onChangeText={setPassword}
-                                        secureTextEntry
-                                    />
-                                </View>
-                                <View style={styles.divider} />
-                                <View style={styles.inputGroup}>
-                                    <Text style={styles.inputLabel}>Confirm Password</Text>
-                                    <TextInput
-                                        style={styles.input}
-                                        placeholder="Confirm password"
-                                        placeholderTextColor={colors.textTertiary}
-                                        value={confirmPassword}
-                                        onChangeText={setConfirmPassword}
-                                        secureTextEntry
-                                    />
-                                </View>
-                                <View style={styles.divider} />
-                                <View style={styles.inputGroup}>
-                                    <Text style={styles.inputLabel}>Birthday (Optional)</Text>
-                                    <TouchableOpacity
-                                        style={styles.dateSelector}
-                                        onPress={() => setShowDatePicker(true)}
-                                    >
-                                        <Text style={[styles.dateText, !birthday && { color: colors.textTertiary }]}>
-                                            {birthday ? format(birthday, 'MMM dd, yyyy') : 'Select Birthday'}
-                                        </Text>
-                                        <Ionicons name="calendar-outline" size={20} color={colors.textTertiary} />
-                                    </TouchableOpacity>
-                                </View>
+                            <Text style={styles.welcomeHeading}>Set Password</Text>
+                            <Text style={styles.welcomeSubtitle}>Create your password to get started.</Text>
 
-                                {showDatePicker && (
-                                    <View>
-                                        {Platform.OS === 'ios' && (
-                                            <TouchableOpacity
-                                                style={{ alignSelf: 'flex-end', paddingVertical: 8, paddingHorizontal: 12 }}
-                                                onPress={() => setShowDatePicker(false)}
-                                            >
-                                                <Text style={{ color: colors.accent, fontWeight: '600', fontSize: 16 }}>Done</Text>
-                                            </TouchableOpacity>
-                                        )}
-                                        <DateTimePicker
-                                            value={birthday || new Date()}
-                                            mode="date"
-                                            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                                            maximumDate={new Date()}
-                                            onChange={(event, selectedDate) => {
-                                                if (Platform.OS !== 'ios') {
-                                                    setShowDatePicker(false);
-                                                }
-                                                if (selectedDate) {
-                                                    setBirthday(selectedDate);
-                                                }
-                                            }}
-                                        />
-                                    </View>
-                                )}
+                            <Text style={styles.emailLabel}>Email</Text>
+                            <View style={styles.emailInputContainer}>
+                                <Text style={styles.emailDisplayText}>{email}</Text>
                             </View>
+
+                            <Text style={styles.emailLabel}>Password</Text>
+                            <View style={styles.emailInputContainer}>
+                                <TextInput
+                                    style={styles.emailInput}
+                                    placeholder="Create password"
+                                    placeholderTextColor={'#bbb'}
+                                    value={password}
+                                    onChangeText={setPassword}
+                                    secureTextEntry
+                                />
+                            </View>
+
+                            <Text style={styles.emailLabel}>Confirm Password</Text>
+                            <View style={styles.emailInputContainer}>
+                                <TextInput
+                                    style={styles.emailInput}
+                                    placeholder="Confirm password"
+                                    placeholderTextColor={'#bbb'}
+                                    value={confirmPassword}
+                                    onChangeText={setConfirmPassword}
+                                    secureTextEntry
+                                />
+                            </View>
+
+                            <Text style={styles.emailLabel}>Birthday (Optional)</Text>
+                            <TouchableOpacity
+                                style={styles.emailInputContainer}
+                                onPress={() => setShowDatePicker(true)}
+                            >
+                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <Text style={[styles.emailInput, !birthday && { color: '#bbb' }]}>
+                                        {birthday ? format(birthday, 'MMM dd, yyyy') : 'Select Birthday'}
+                                    </Text>
+                                    <Ionicons name="calendar-outline" size={20} color={'#999'} />
+                                </View>
+                            </TouchableOpacity>
+
+                            {showDatePicker && (
+                                <View>
+                                    {Platform.OS === 'ios' && (
+                                        <TouchableOpacity
+                                            style={{ alignSelf: 'flex-end', paddingVertical: 8, paddingHorizontal: 12 }}
+                                            onPress={() => setShowDatePicker(false)}
+                                        >
+                                            <Text style={{ color: '#C41E24', fontWeight: '600', fontSize: 16 }}>Done</Text>
+                                        </TouchableOpacity>
+                                    )}
+                                    <DateTimePicker
+                                        value={birthday || new Date()}
+                                        mode="date"
+                                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                                        maximumDate={new Date()}
+                                        onChange={(event, selectedDate) => {
+                                            if (Platform.OS !== 'ios') {
+                                                setShowDatePicker(false);
+                                            }
+                                            if (selectedDate) {
+                                                setBirthday(selectedDate);
+                                            }
+                                        }}
+                                    />
+                                </View>
+                            )}
+
                             {error ? <Text style={styles.errorText}>{error}</Text> : null}
                             <TouchableOpacity
                                 style={[styles.primaryButton, loading && styles.buttonDisabled]}
@@ -626,7 +796,7 @@ export default function MemberAuthScreen() {
                                 disabled={loading}
                             >
                                 {loading ? (
-                                    <ActivityIndicator color={colors.textInverse} />
+                                    <ActivityIndicator color="#fff" />
                                 ) : (
                                     <Text style={styles.primaryButtonText}>Create Account</Text>
                                 )}
@@ -637,92 +807,91 @@ export default function MemberAuthScreen() {
                     {/* Create New Customer Step */}
                     {step === 'createCustomer' && (
                         <>
-                            <Text style={styles.subtitle}>Create your account</Text>
-                            <View style={styles.card}>
-                                <View style={styles.inputGroup}>
-                                    <Text style={styles.inputLabel}>Email</Text>
-                                    <Text style={styles.emailDisplayText}>{email}</Text>
-                                </View>
+                            <Text style={styles.welcomeHeading}>Create Account</Text>
+                            <Text style={styles.welcomeSubtitle}>Join ABM as a new customer.</Text>
 
-                                <View style={styles.inputGroup}>
-                                    <Text style={styles.inputLabel}>Password</Text>
-                                    <TextInput
-                                        style={styles.input}
-                                        placeholder="Create password"
-                                        placeholderTextColor={colors.textTertiary}
-                                        value={password}
-                                        onChangeText={setPassword}
-                                        secureTextEntry
-                                    />
-                                </View>
-
-                                <View style={styles.inputGroup}>
-                                    <Text style={styles.inputLabel}>Confirm Password</Text>
-                                    <TextInput
-                                        style={styles.input}
-                                        placeholder="Confirm password"
-                                        placeholderTextColor={colors.textTertiary}
-                                        value={confirmPassword}
-                                        onChangeText={setConfirmPassword}
-                                        secureTextEntry
-                                    />
-                                </View>
-
-                                <View style={styles.inputGroup}>
-                                    <Text style={styles.inputLabel}>Birthday (YYYY-MM-DD)</Text>
-                                    <TouchableOpacity
-                                        style={styles.dateSelector}
-                                        onPress={() => setShowDatePicker(true)}
-                                    >
-                                        <Text style={[styles.dateText, !birthday && { color: colors.textTertiary }]}>
-                                            {birthday ? format(birthday, 'MMM dd, yyyy') : 'Select Birthday'}
-                                        </Text>
-                                        <Ionicons name="calendar-outline" size={20} color={colors.textTertiary} />
-                                    </TouchableOpacity>
-                                </View>
-
-                                {showDatePicker && (
-                                    <View>
-                                        {Platform.OS === 'ios' && (
-                                            <TouchableOpacity
-                                                style={{ alignSelf: 'flex-end', paddingVertical: 8, paddingHorizontal: 12 }}
-                                                onPress={() => setShowDatePicker(false)}
-                                            >
-                                                <Text style={{ color: colors.accent, fontWeight: '600', fontSize: 16 }}>Done</Text>
-                                            </TouchableOpacity>
-                                        )}
-                                        <DateTimePicker
-                                            value={birthday || new Date()}
-                                            mode="date"
-                                            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                                            maximumDate={new Date()}
-                                            onChange={(event, selectedDate) => {
-                                                if (Platform.OS !== 'ios') {
-                                                    setShowDatePicker(false);
-                                                }
-                                                if (selectedDate) {
-                                                    setBirthday(selectedDate);
-                                                }
-                                            }}
-                                        />
-                                    </View>
-                                )}
+                            <Text style={styles.emailLabel}>Email</Text>
+                            <View style={styles.emailInputContainer}>
+                                <Text style={styles.emailDisplayText}>{email}</Text>
                             </View>
 
-                            {/* Workshop Selector */}
-                            <Text style={[styles.inputLabel, { marginTop: 20, marginBottom: 10 }]}>
-                                Select Workshop(s)
-                            </Text>
+                            <Text style={styles.emailLabel}>Password</Text>
+                            <View style={styles.emailInputContainer}>
+                                <TextInput
+                                    style={styles.emailInput}
+                                    placeholder="Create password"
+                                    placeholderTextColor={'#bbb'}
+                                    value={password}
+                                    onChangeText={setPassword}
+                                    secureTextEntry
+                                />
+                            </View>
+
+                            <Text style={styles.emailLabel}>Confirm Password</Text>
+                            <View style={styles.emailInputContainer}>
+                                <TextInput
+                                    style={styles.emailInput}
+                                    placeholder="Confirm password"
+                                    placeholderTextColor={'#bbb'}
+                                    value={confirmPassword}
+                                    onChangeText={setConfirmPassword}
+                                    secureTextEntry
+                                />
+                            </View>
+
+                            <Text style={styles.emailLabel}>Birthday</Text>
                             <TouchableOpacity
-                                style={styles.workshopButton}
+                                style={styles.emailInputContainer}
+                                onPress={() => setShowDatePicker(true)}
+                            >
+                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <Text style={[styles.emailInput, !birthday && { color: '#bbb' }]}>
+                                        {birthday ? format(birthday, 'MMM dd, yyyy') : 'Select Birthday'}
+                                    </Text>
+                                    <Ionicons name="calendar-outline" size={20} color={'#999'} />
+                                </View>
+                            </TouchableOpacity>
+
+                            {showDatePicker && (
+                                <View>
+                                    {Platform.OS === 'ios' && (
+                                        <TouchableOpacity
+                                            style={{ alignSelf: 'flex-end', paddingVertical: 8, paddingHorizontal: 12 }}
+                                            onPress={() => setShowDatePicker(false)}
+                                        >
+                                            <Text style={{ color: '#C41E24', fontWeight: '600', fontSize: 16 }}>Done</Text>
+                                        </TouchableOpacity>
+                                    )}
+                                    <DateTimePicker
+                                        value={birthday || new Date()}
+                                        mode="date"
+                                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                                        maximumDate={new Date()}
+                                        onChange={(event, selectedDate) => {
+                                            if (Platform.OS !== 'ios') {
+                                                setShowDatePicker(false);
+                                            }
+                                            if (selectedDate) {
+                                                setBirthday(selectedDate);
+                                            }
+                                        }}
+                                    />
+                                </View>
+                            )}
+
+                            <Text style={styles.emailLabel}>Select Workshop(s)</Text>
+                            <TouchableOpacity
+                                style={styles.emailInputContainer}
                                 onPress={() => setShowWorkshopSelector(true)}
                             >
-                                <Text style={{ color: selectedWorkshopIds.length === 0 ? colors.textTertiary : colors.textPrimary }}>
-                                    {selectedWorkshopIds.length === 0
-                                        ? 'Select Workshop'
-                                        : `${selectedWorkshopIds.length} workshop${selectedWorkshopIds.length > 1 ? 's' : ''} selected`}
-                                </Text>
-                                <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
+                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <Text style={[styles.emailInput, selectedWorkshopIds.length === 0 && { color: '#bbb' }]}>
+                                        {selectedWorkshopIds.length === 0
+                                            ? 'Select Workshop'
+                                            : `${selectedWorkshopIds.length} workshop${selectedWorkshopIds.length > 1 ? 's' : ''} selected`}
+                                    </Text>
+                                    <Ionicons name="chevron-down" size={20} color={'#999'} />
+                                </View>
                             </TouchableOpacity>
 
                             {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -732,7 +901,7 @@ export default function MemberAuthScreen() {
                                 disabled={loading}
                             >
                                 {loading ? (
-                                    <ActivityIndicator color={colors.textInverse} />
+                                    <ActivityIndicator color="#fff" />
                                 ) : (
                                     <Text style={styles.primaryButtonText}>Create Account</Text>
                                 )}
@@ -778,45 +947,46 @@ export default function MemberAuthScreen() {
                     {/* Complete Profile Step */}
                     {step === 'completeProfile' && (
                         <>
-                            <Text style={styles.subtitle}>Complete your profile</Text>
-                            <View style={styles.card}>
-                                <View style={styles.inputGroup}>
-                                    <Text style={styles.inputLabel}>First name</Text>
-                                    <TextInput
-                                        style={styles.input}
-                                        placeholder="First name"
-                                        placeholderTextColor={colors.textTertiary}
-                                        value={firstName}
-                                        onChangeText={setFirstName}
-                                        autoCapitalize="words"
-                                        autoFocus
-                                    />
-                                </View>
-                                <View style={styles.divider} />
-                                <View style={styles.inputGroup}>
-                                    <Text style={styles.inputLabel}>Last name</Text>
-                                    <TextInput
-                                        style={styles.input}
-                                        placeholder="Last name"
-                                        placeholderTextColor={colors.textTertiary}
-                                        value={lastName}
-                                        onChangeText={setLastName}
-                                        autoCapitalize="words"
-                                    />
-                                </View>
-                                <View style={styles.divider} />
-                                <View style={styles.inputGroup}>
-                                    <Text style={styles.inputLabel}>Phone (optional)</Text>
-                                    <TextInput
-                                        style={styles.input}
-                                        placeholder="Phone number"
-                                        placeholderTextColor={colors.textTertiary}
-                                        value={phone}
-                                        onChangeText={setPhone}
-                                        keyboardType="phone-pad"
-                                    />
-                                </View>
+                            <Text style={styles.welcomeHeading}>Profile</Text>
+                            <Text style={styles.welcomeSubtitle}>Tell us a bit about yourself.</Text>
+
+                            <Text style={styles.emailLabel}>First Name</Text>
+                            <View style={styles.emailInputContainer}>
+                                <TextInput
+                                    style={styles.emailInput}
+                                    placeholder="Enter first name"
+                                    placeholderTextColor={'#bbb'}
+                                    value={firstName}
+                                    onChangeText={setFirstName}
+                                    autoCapitalize="words"
+                                    autoFocus
+                                />
                             </View>
+
+                            <Text style={styles.emailLabel}>Last Name</Text>
+                            <View style={styles.emailInputContainer}>
+                                <TextInput
+                                    style={styles.emailInput}
+                                    placeholder="Enter last name"
+                                    placeholderTextColor={'#bbb'}
+                                    value={lastName}
+                                    onChangeText={setLastName}
+                                    autoCapitalize="words"
+                                />
+                            </View>
+
+                            <Text style={styles.emailLabel}>Phone (Optional)</Text>
+                            <View style={styles.emailInputContainer}>
+                                <TextInput
+                                    style={styles.emailInput}
+                                    placeholder="Enter phone number"
+                                    placeholderTextColor={'#bbb'}
+                                    value={phone}
+                                    onChangeText={setPhone}
+                                    keyboardType="phone-pad"
+                                />
+                            </View>
+
                             {error ? <Text style={styles.errorText}>{error}</Text> : null}
                             <TouchableOpacity
                                 style={[styles.primaryButton, loading && styles.buttonDisabled]}
@@ -824,7 +994,7 @@ export default function MemberAuthScreen() {
                                 disabled={loading}
                             >
                                 {loading ? (
-                                    <ActivityIndicator color={colors.textInverse} />
+                                    <ActivityIndicator color="#fff" />
                                 ) : (
                                     <Text style={styles.primaryButtonText}>Continue</Text>
                                 )}
@@ -849,7 +1019,7 @@ export default function MemberAuthScreen() {
     );
 }
 
-const getStyles = (colors: any) => StyleSheet.create({
+const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: colors.background,
@@ -875,8 +1045,8 @@ const getStyles = (colors: any) => StyleSheet.create({
         flex: 1,
     },
     contentContainer: {
-        padding: 20,
-        paddingBottom: 40,
+        padding: 24,
+        paddingBottom: 60,
     },
     subtitle: {
         fontSize: 16,
@@ -907,6 +1077,17 @@ const getStyles = (colors: any) => StyleSheet.create({
         height: 1,
         backgroundColor: colors.border,
     },
+    emailDisplayContainer: {
+        padding: 16,
+        backgroundColor: isDark ? '#fff' : 'rgba(255, 255, 255, 0.05)',
+        borderRadius: 12,
+        marginBottom: 20,
+    },
+    inputLabelInner: {
+        fontSize: 12,
+        color: isDark ? '#666' : colors.textSecondary,
+        marginBottom: 4,
+    },
     emailDisplayRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -914,15 +1095,15 @@ const getStyles = (colors: any) => StyleSheet.create({
     },
     emailDisplayText: {
         fontSize: 16,
-        color: colors.textPrimary,
+        color: isDark ? '#000' : '#fff',
     },
     changeLink: {
         fontSize: 14,
-        color: colors.primary,
+        color: isDark ? '#000' : colors.primary,
         fontWeight: '600',
     },
     primaryButton: {
-        backgroundColor: colors.textPrimary,
+        backgroundColor: '#C41E24',
         paddingVertical: 16,
         borderRadius: 12,
         alignItems: 'center',
@@ -997,5 +1178,34 @@ const getStyles = (colors: any) => StyleSheet.create({
     dateText: {
         fontSize: 16,
         color: colors.textPrimary,
+    },
+    welcomeHeading: {
+        fontSize: 32,
+        fontWeight: '800',
+        color: colors.textPrimary,
+        marginBottom: 4,
+    },
+    welcomeSubtitle: {
+        fontSize: 16,
+        color: colors.textSecondary,
+        marginBottom: 20,
+    },
+    emailLabel: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: isDark ? '#FFF' : '#000',
+        marginTop: 14,
+        marginBottom: 4,
+    },
+    emailInputContainer: {
+        backgroundColor: isDark ? '#F5F5F5' : '#333',
+        borderRadius: 10,
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+    },
+    emailInput: {
+        fontSize: 16,
+        color: isDark ? '#000' : '#FFF',
+        padding: 0,
     },
 });

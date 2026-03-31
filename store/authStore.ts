@@ -11,7 +11,7 @@ import {
   signInWithCredential,
   User as FirebaseUser
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, deleteDoc, collection, query, where, getDocs, limit, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, collection, query, where, getDocs, limit, Timestamp, serverTimestamp } from 'firebase/firestore';
 import { db, storage, auth } from '@/config/firebase';
 import { firebaseService } from '@/services/firebaseService';
 import { emailService } from '@/services/emailService';
@@ -23,7 +23,10 @@ interface AuthState {
   firebaseUser: FirebaseUser | null;
   loading: boolean;
   isGuest: boolean;
+  isProfileLoaded: boolean;
+  isAuthenticating: boolean;
   guestEmail: string | null;
+  preferredMode: 'guest' | 'member' | null;
   login: (email: string, password: string) => Promise<void>;
   loginWithApple: () => Promise<void>;
   registerCustomerAccount: (email: string, password: string, name?: string, phone?: string, workshopId?: string, birthday?: string) => Promise<void>;
@@ -34,8 +37,11 @@ interface AuthState {
   setUser: (user: User | null) => void;
   setFirebaseUser: (user: FirebaseUser | null) => void;
   setGuest: (isGuest: boolean) => void;
+  setProfileLoaded: (loaded: boolean) => void;
   setGuestEmail: (email: string | null) => void;
+  setPreferredMode: (mode: 'guest' | 'member' | null) => void;
   switchWorkshop: (workshopId: string) => Promise<void>;
+  reset: () => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -45,10 +51,13 @@ export const useAuthStore = create<AuthState>()(
       firebaseUser: null,
       loading: false,
       isGuest: false,
+      isProfileLoaded: false,
+      isAuthenticating: false,
       guestEmail: null,
+      preferredMode: null,
 
       login: async (email: string, password: string) => {
-        set({ loading: true });
+        set({ loading: true, isAuthenticating: true });
         try {
           const userCredential = await signInWithEmailAndPassword(auth, email, password);
           const firebaseUser = userCredential.user;
@@ -56,6 +65,11 @@ export const useAuthStore = create<AuthState>()(
           const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
           if (userDoc.exists()) {
             const data = userDoc.data();
+            // Normalize: if vendorStatus exists, the role must be 'vendor'
+            const isVendor = (data.role || '').toLowerCase().trim() === 'vendor';
+            if (data.vendorStatus && !isVendor) {
+              data.role = 'vendor';
+            }
             const userData: User = {
               ...data,
               id: userDoc.id,
@@ -63,18 +77,17 @@ export const useAuthStore = create<AuthState>()(
               updatedAt: data.updatedAt?.toDate() || new Date(),
             } as User;
             // Clear guest state on successful login
-            set({ user: userData, firebaseUser, loading: false, isGuest: false, guestEmail: null });
+            set({ user: userData, firebaseUser, loading: false, isGuest: false, isProfileLoaded: true, guestEmail: null, preferredMode: 'member' });
           } else {
             throw new Error('User data not found');
           }
-        } catch (error: any) {
-          set({ loading: false });
-          throw error;
+        } finally {
+          set({ loading: false, isAuthenticating: false });
         }
       },
 
       loginWithApple: async () => {
-        set({ loading: true });
+        set({ loading: true, isAuthenticating: true });
         try {
           // Generate a nonce for security
           const nonce = Math.random().toString(36).substring(2, 10);
@@ -145,21 +158,16 @@ export const useAuthStore = create<AuthState>()(
             } as User;
           }
 
-          set({ user: userData, firebaseUser, loading: false, isGuest: false, guestEmail: null });
-        } catch (error: any) {
-          set({ loading: false });
-          // User cancelled Apple sign-in — don't re-throw
-          if (error.code === 'ERR_REQUEST_CANCELED') {
-            return;
-          }
-          throw error;
+          set({ user: userData, firebaseUser, loading: false, isGuest: false, isProfileLoaded: true, guestEmail: null, preferredMode: 'member' });
+        } finally {
+          set({ loading: false, isAuthenticating: false });
         }
       },
 
       // Customer signup - accepts name, phone, workshopId from signup form
       // Also looks up existing customer records by email to auto-link additional workshops
       registerCustomerAccount: async (email: string, password: string, name?: string, phone?: string, selectedWorkshopId?: string, birthday?: string) => {
-        set({ loading: true });
+        set({ loading: true, isAuthenticating: true });
         try {
           const normalizedEmail = email.toLowerCase().trim();
 
@@ -274,7 +282,7 @@ export const useAuthStore = create<AuthState>()(
                     selectedWorkshopIds: currentConnected.filter(Boolean),
                     workshopId: currentConnected[0] || existingUserData.workshopId,
                   };
-                  set({ user: updatedUser, firebaseUser, loading: false, isGuest: false, guestEmail: null });
+                  set({ user: updatedUser, firebaseUser, loading: false, isGuest: false, isProfileLoaded: true, guestEmail: null, preferredMode: 'member' });
                   return; // Done
                 }
 
@@ -289,16 +297,51 @@ export const useAuthStore = create<AuthState>()(
           }
 
           // Build user data
+          // BUILD FINAL USER DATA
+          let finalRole = 'customer';
+          let finalWorkshopId = workshopIds[0] || '';
+          let finalVendorStatus: 'active' | 'pending_details' | 'pending_approval' | 'rejected' | undefined = undefined;
+
+          // LAST CHANCE INVITATION CHECK:
+          // If the user is registering a customer account but has a pending vendor invite,
+          // we promote them to vendor immediately to avoid "role trap".
+          try {
+            const trimmedEmail = email.toLowerCase().trim();
+            const staffQ = query(
+              collection(db, 'staffInvitations'),
+              where('email', 'in', [normalizedEmail, trimmedEmail, email.trim()]),
+              where('used', '==', false),
+              limit(1)
+            );
+            const staffSnap = await getDocs(staffQ);
+            if (!staffSnap.empty) {
+              const invData = staffSnap.docs[0].data();
+              const rawRole = (invData.role || '').toLowerCase().trim();
+              if (rawRole === 'vendor') {
+                console.log('[Signup] Promoting new registration to VENDOR due to pending invitation');
+                finalRole = 'vendor';
+                finalVendorStatus = 'pending_details';
+                finalWorkshopId = invData.workshopId || finalWorkshopId;
+                
+                // Mark invite as used immediately
+                await firebaseService.markStaffInvitationAsUsed(staffSnap.docs[0].id);
+              }
+            }
+          } catch (invError) {
+             console.warn('[Signup] Secondary invitation check failed (non-critical):', invError);
+          }
+
           const userData: User = {
             id: firebaseUser.uid,
             email: normalizedEmail,
             name: finalName,
             phone: finalPhone,
-            role: 'customer',
-            workshopId: workshopIds[0] || '', // First workshop as active, or empty if none
-            connectedWorkshopIds: workshopIds.length > 0 ? workshopIds : [],
-            selectedWorkshopIds: workshopIds.length > 0 ? workshopIds : [],
+            role: finalRole,
+            workshopId: finalWorkshopId,
+            connectedWorkshopIds: workshopIds.length > 0 ? workshopIds : (finalWorkshopId ? [finalWorkshopId] : []),
+            selectedWorkshopIds: workshopIds.length > 0 ? workshopIds : (finalWorkshopId ? [finalWorkshopId] : []),
             birthday: birthday || existingCustomers.find(c => c.birthday)?.birthday || '',
+            ...(finalVendorStatus ? { vendorStatus: finalVendorStatus } : {}),
             createdAt: new Date(),
             updatedAt: new Date(),
           };
@@ -390,15 +433,14 @@ export const useAuthStore = create<AuthState>()(
           // Send welcome email
           await emailService.sendWelcomeEmail(normalizedEmail, finalName, 'customer');
 
-          set({ user: userData, firebaseUser, loading: false, isGuest: false, guestEmail: null });
-        } catch (error: any) {
-          set({ loading: false });
-          throw error;
+          set({ user: userData, firebaseUser, loading: false, isGuest: false, isProfileLoaded: true, guestEmail: null, preferredMode: 'member' });
+        } finally {
+          set({ loading: false, isAuthenticating: false });
         }
       },
 
       acceptStaffInvite: async (email: string, password: string, invitationCode: string, birthday?: string) => {
-        set({ loading: true });
+        set({ loading: true, isAuthenticating: true });
         try {
           const invitation = await firebaseService.getStaffInvitationByCode(invitationCode);
 
@@ -414,7 +456,17 @@ export const useAuthStore = create<AuthState>()(
             throw new Error('This invitation code has already been used');
           }
 
-          const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+          let userCredential;
+          try {
+            userCredential = await createUserWithEmailAndPassword(auth, email, password);
+          } catch (authErr: any) {
+            if (authErr.code === 'auth/email-already-in-use') {
+              // User already has a customer account, sign them in instead
+              userCredential = await signInWithEmailAndPassword(auth, email, password);
+            } else {
+              throw authErr;
+            }
+          }
           const firebaseUser = userCredential.user;
 
           const userData: User = {
@@ -432,28 +484,26 @@ export const useAuthStore = create<AuthState>()(
             updatedAt: new Date(),
           };
 
+          // Use merge: true to preserve existing customer data but prioritize invite roles
           await setDoc(doc(db, 'users', firebaseUser.uid), {
             ...userData,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          });
+            updatedAt: serverTimestamp(),
+          }, { merge: true });
 
           await firebaseService.markStaffInvitationAsUsed(invitation.id);
 
-          // Send welcome email
           await emailService.sendWelcomeEmail(invitation.email, invitation.name, invitation.role);
 
-          set({ user: userData, firebaseUser, loading: false, isGuest: false, guestEmail: null });
-        } catch (error: any) {
-          set({ loading: false });
-          throw error;
+          set({ user: userData, firebaseUser, loading: false, isGuest: false, isProfileLoaded: true, guestEmail: null, preferredMode: 'member' });
+        } finally {
+          set({ loading: false, isAuthenticating: false });
         }
       },
 
       logout: async () => {
         try {
           await signOut(auth);
-          set({ user: null, firebaseUser: null, isGuest: false, guestEmail: null });
+          set({ user: null, firebaseUser: null, isGuest: false, isProfileLoaded: false, guestEmail: null });
         } catch (error: any) {
           throw error;
         }
@@ -463,7 +513,7 @@ export const useAuthStore = create<AuthState>()(
         set({ loading: true });
         try {
           await firebaseService.deleteAccount();
-          set({ user: null, firebaseUser: null, isGuest: false, guestEmail: null, loading: false });
+          set({ user: null, firebaseUser: null, isGuest: false, isProfileLoaded: false, guestEmail: null, loading: false });
         } catch (error: any) {
           set({ loading: false });
           throw error;
@@ -481,7 +531,10 @@ export const useAuthStore = create<AuthState>()(
       setUser: (user: User | null) => set({ user }),
       setFirebaseUser: (user: FirebaseUser | null) => set({ firebaseUser: user }),
       setGuest: (isGuest: boolean) => set({ isGuest }),
+      setProfileLoaded: (isProfileLoaded: boolean) => set({ isProfileLoaded }),
       setGuestEmail: (email: string | null) => set({ guestEmail: email }),
+      setIsAuthenticating: (isAuth: boolean) => set({ isAuthenticating: isAuth }),
+      setPreferredMode: (mode: 'guest' | 'member' | null) => set({ preferredMode: mode }),
 
       switchWorkshop: async (workshopId: string) => {
         const { user } = useAuthStore.getState(); // or get() if inside
@@ -512,6 +565,16 @@ export const useAuthStore = create<AuthState>()(
           throw error;
         }
       },
+      reset: () => set({ 
+        user: null, 
+        firebaseUser: null, 
+        loading: false, 
+        isGuest: false, 
+        isProfileLoaded: false, 
+        guestEmail: null,
+        isAuthenticating: false,
+        preferredMode: null 
+      }),
     }),
     {
       name: 'auth-storage',
@@ -519,7 +582,8 @@ export const useAuthStore = create<AuthState>()(
       partialize: (state) => ({
         user: state.user,
         isGuest: state.isGuest,
-        guestEmail: state.guestEmail
+        guestEmail: state.guestEmail,
+        preferredMode: state.preferredMode
       }),
     }
   )

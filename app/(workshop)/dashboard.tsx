@@ -80,11 +80,31 @@ export default function WorkshopDashboard() {
     setRefreshing(true);
 
     try {
-      const [jobs, invoices, allUsers] = await Promise.all([
-        firebaseService.getJobs(undefined, user.workshopId),
+      // Role-based data fetching
+      const role = (user.role || '').toLowerCase().trim();
+      const isAdminOrSuper = role === 'admin' || role === 'super_admin';
+      const isTech = role === 'technician';
+      
+      if (!isAdminOrSuper && !isTech) {
+        console.log('[Dashboard] Skipping data fetch for non-workshop role:', role);
+        return;
+      }
+
+      const fetchPromises: Promise<any>[] = [
+        // technicianId is the 4th parameter: userId, workshopId, status, technicianId
+        firebaseService.getJobs(undefined, user.workshopId, undefined, isTech ? user.id : undefined),
         firebaseService.getInvoices(undefined, user.workshopId),
-        firebaseService.getUsersByWorkshop(user.workshopId),
-      ]);
+      ];
+
+      // Only admins/super_admins can fetch ALL users for birthday tracking etc.
+      if (isAdminOrSuper) {
+        fetchPromises.push(firebaseService.getUsersByWorkshop(user.workshopId));
+      }
+
+      const results = await Promise.all(fetchPromises);
+      const jobs = results[0];
+      const invoices = results[1];
+      const allUsers = results[2] || []; // results[2] is only present for admins
 
       // Ensure arrays are defined
       const safeJobs = Array.isArray(jobs) ? jobs : [];
@@ -142,7 +162,18 @@ export default function WorkshopDashboard() {
       safeInvoices.forEach(inv => {
         if (!inv.jobId) return;
         const job = jobMap.get(inv.jobId);
-        if (job && job.assignedTechnicianId && inv.paymentHistory && Array.isArray(inv.paymentHistory)) {
+        if (job && inv.paymentHistory && Array.isArray(inv.paymentHistory)) {
+          // Identify all technicians involved in this job
+          const techNames: string[] = [];
+          if (job.technicianName) techNames.push(job.technicianName);
+          if (job.technicianNames && Array.isArray(job.technicianNames)) {
+            job.technicianNames.forEach(name => {
+              if (name && !techNames.includes(name)) techNames.push(name);
+            });
+          }
+
+          if (techNames.length === 0) return;
+
           // Only count payments in current period
           const periodPayments = inv.paymentHistory.filter((payment) => {
             if (!payment || !payment.date) return false;
@@ -156,10 +187,12 @@ export default function WorkshopDashboard() {
           });
 
           if (periodPayments.length > 0) {
-            const techName = job.technicianName || 'Unknown Tech';
-            const current = techRevenueMap.get(techName) || 0;
             const amount = periodPayments.reduce((sum, p) => sum + (p?.amount || 0), 0);
-            techRevenueMap.set(techName, current + amount);
+            // Distribute revenue to all assigned technicians (or just assign to each for simple breakdown)
+            techNames.forEach(techName => {
+              const current = techRevenueMap.get(techName) || 0;
+              techRevenueMap.set(techName, current + amount);
+            });
           }
         }
       });
@@ -167,8 +200,6 @@ export default function WorkshopDashboard() {
       const technicianRevenue = Array.from(techRevenueMap.entries())
         .map(([name, amount]) => ({ name, amount }))
         .sort((a, b) => b.amount - a.amount);
-      // Removed .slice(0, 3) to give full list for interactive card later? Or keep it?
-      // Let's keep all data for the interactive card task.
 
       // --- Completed Jobs ---
       const getJobDate = (dateField: any) => {
@@ -190,24 +221,18 @@ export default function WorkshopDashboard() {
         isWithinInterval(getJobDate(j.completedAt), { start: prevPeriodStart, end: prevPeriodEnd })
       ).length;
 
-      // --- Technician Specific Metrics (Keep weekly for now as it's a specific metric?)
-      // Or update to use dateRange too? User request "metrics card... select timeframe". 
-      // Technician Dashboard has "Weekly Overview". This explicitly says "Weekly". 
-      // Changing it to arbitrary range might break context.
-      // But adding "Month/Range Picker" to Technician dashboard implies it affects SOMETHING.
-      // Let's make it affect "Assigned" and "Completed" counts instead of "Weekly".
-
-      const rangeStart = startOfMonth(dateRange.start); // Enforce full month if picker only does months
+      // --- Technician Specific Metrics
+      const rangeStart = startOfMonth(dateRange.start);
       const rangeEnd = endOfMonth(dateRange.end);
 
       const techAssigned = safeJobs.filter(j =>
-        j.assignedTechnicianId === user.id &&
+        (j.assignedTechnicianId === user.id || (j.assignedTechnicianIds && j.assignedTechnicianIds.includes(user.id))) &&
         j.createdAt &&
         isWithinInterval(getJobDate(j.createdAt), { start: rangeStart, end: rangeEnd })
       ).length;
 
       const techCompleted = safeJobs.filter(j =>
-        j.assignedTechnicianId === user.id &&
+        (j.assignedTechnicianId === user.id || (j.assignedTechnicianIds && j.assignedTechnicianIds.includes(user.id))) &&
         j.status === 'completed' &&
         j.completedAt &&
         isWithinInterval(getJobDate(j.completedAt), { start: rangeStart, end: rangeEnd })
@@ -219,18 +244,16 @@ export default function WorkshopDashboard() {
       setStats({
         totalRevenue,
         lastMonthRevenue,
-        technicianRevenue, // Now has all techs
+        technicianRevenue,
         completedJobs,
         lastMonthCompletedJobs,
-        techWeeklyAssigned: techAssigned, // reusing state name but it's now Period Assigned
+        techWeeklyAssigned: techAssigned,
         techWeeklyCompleted: techCompleted,
         techRating,
-
         totalOwed,
         pendingJobsCount,
       });
 
-      // ... recent jobs logic same ...
       let filteredRecentJobs: Job[] = [];
       if (user.role === 'admin' || user.role === 'super_admin') {
         filteredRecentJobs = safeJobs
@@ -238,7 +261,7 @@ export default function WorkshopDashboard() {
           .slice(0, 5);
       } else if (user.role === 'technician') {
         filteredRecentJobs = safeJobs
-          .filter(j => j.assignedTechnicianId === user.id && j.status !== 'completed' && j.status !== 'cancelled')
+          .filter(j => (j.assignedTechnicianId === user.id || (j.assignedTechnicianIds && j.assignedTechnicianIds.includes(user.id))) && j.status !== 'completed' && j.status !== 'cancelled')
           .sort((a, b) => (getJobDate(b.createdAt).getTime() || 0) - (getJobDate(a.createdAt).getTime() || 0))
           .slice(0, 5);
       }

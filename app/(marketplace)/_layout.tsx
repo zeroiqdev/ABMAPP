@@ -1,7 +1,8 @@
 import { Tabs, useRouter, useSegments } from 'expo-router';
-import { Platform } from 'react-native';
+import { ActivityIndicator, Platform, View, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useEffect } from 'react';
+import { auth } from '@/config/firebase';
 
 import {
   ShoppingBagIcon as ShoppingBagIconSolid,
@@ -28,20 +29,26 @@ export default function MarketplaceLayout() {
   const segments = useSegments();
 
   useEffect(() => {
-    if (user?.role === 'vendor') {
-      const currentRoute = segments[segments.length - 1];
+    const role = (user?.role || '').toLowerCase().trim();
+    const hasVendorStatus = !!user?.vendorStatus;
+    const isVendor = role === 'vendor' || hasVendorStatus;
 
-      // Unapproved vendors (pending_details, rejected, or no status) must go to registration form
-      // Never let them see home screen
-      if (!user.vendorStatus || user.vendorStatus === 'pending_details' || user.vendorStatus === 'rejected') {
+    if (isVendor) {
+      const currentRoute = segments[segments.length - 1];
+      const status = (user?.vendorStatus || '').toLowerCase().trim();
+
+      // Unapproved vendors (pending_details or rejected) must go to registration form
+      // Legacy vendors (no status but role=vendor) should be allowed into the dashboard
+      const isExplicitlyUnregistered = status === 'pending_details' || status === 'rejected';
+
+      if (isExplicitlyUnregistered) {
         if (currentRoute !== 'vendor-registration') {
-          // Use a small timeout to ensure navigation is ready or avoid immediate loop
           setTimeout(() => router.replace('/(marketplace)/vendor-registration'), 100);
         }
-      } else if (user.vendorStatus === 'pending_approval' && currentRoute !== 'pending-approval') {
+      } else if (status === 'pending_approval' && currentRoute !== 'pending-approval') {
         setTimeout(() => router.replace('/(marketplace)/pending-approval'), 100);
-      } else if (user.vendorStatus === 'active') {
-        // If active, they shouldn't be on registration or pending screens
+      } else if (status === 'active' || !status) {
+        // Active or Legacy vendors (no status) can access the dashboard
         if (currentRoute === 'vendor-registration' || currentRoute === 'pending-approval') {
           setTimeout(() => router.replace('/(marketplace)/home'), 100);
         }
@@ -49,8 +56,11 @@ export default function MarketplaceLayout() {
     }
   }, [user?.role, user?.vendorStatus, segments, router]);
 
+  const isVendor = (user?.role || '').toLowerCase().trim() === 'vendor' || !!user?.vendorStatus;
+
   return (
     <Tabs
+      key={`${user?.id || 'guest'}-${user?.role || 'none'}`}
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
@@ -68,9 +78,9 @@ export default function MarketplaceLayout() {
       <Tabs.Screen
         name="home"
         options={{
-          title: user?.role === 'vendor' ? 'Home' : 'Marketplace',
+          title: isVendor ? 'Home' : 'Marketplace',
           tabBarIcon: ({ focused, color, size }) => (
-            user?.role === 'vendor' ? (
+            isVendor ? (
               focused ? <HomeIconSolid size={size} color={color} /> : <HomeIconOutline size={size} color={color} />
             ) : (
               focused ? <ShoppingBagIconSolid size={size} color={color} /> : <ShoppingBagIconOutline size={size} color={color} />
@@ -81,7 +91,7 @@ export default function MarketplaceLayout() {
       <Tabs.Screen
         name="upload"
         options={{
-          href: Boolean(isGuest) ? null : undefined,
+          href: isVendor ? undefined : null,
           title: 'Sell',
           tabBarIcon: ({ focused, color, size }) => (
             focused ? <PlusCircleIconSolid size={size} color={color} /> : <PlusCircleIconOutline size={size} color={color} />

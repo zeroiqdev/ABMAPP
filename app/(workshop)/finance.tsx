@@ -1110,9 +1110,7 @@ export default function FinanceScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <TouchableOpacity onPress={() => router.back()} style={{ marginRight: 16 }}>
-            <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
-          </TouchableOpacity>
+          <View style={{ width: 8 }} />
           <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Finance</Text>
         </View>
         <TouchableOpacity

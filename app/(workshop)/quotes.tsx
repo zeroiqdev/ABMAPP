@@ -109,9 +109,7 @@ export default function WorkshopQuotesScreen() {
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
             <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-                <TouchableOpacity onPress={() => router.back()}>
-                    <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
-                </TouchableOpacity>
+                <View style={{ width: 24 }} />
                 <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Quotes</Text>
                 <TouchableOpacity onPress={() => router.push('/(workshop)/create-quote')}>
                     <Ionicons name="add-circle-outline" size={24} color={colors.primary} />

@@ -9,6 +9,7 @@ import {
   Alert,
   ActivityIndicator,
   Image,
+  TextInput,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,7 +19,8 @@ import { Order } from '@/types';
 import { useColors, Typography, Spacing } from '@/constants/design';
 import { format } from 'date-fns';
 
-const TABS = ['All Orders', 'New Orders', 'Processing', 'Shipped', 'Delivered', 'Ready for Payout', 'Cancelled'];
+const VENDOR_TABS = ['All Orders', 'New Orders', 'Processing', 'Shipped', 'Delivered', 'Ready for Payout', 'Cancelled'];
+const CUSTOMER_TABS = ['All Orders'];
 
 export default function OrdersScreen() {
   const router = useRouter();
@@ -29,9 +31,21 @@ export default function OrdersScreen() {
   const [purchaseOrders, setPurchaseOrders] = useState<Order[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('New Orders');
-  const isVendor = user?.role === 'vendor';
+  const isVendor = user?.role === 'vendor' || (user?.role || '').toLowerCase().trim() === 'vendor';
+  const [activeTab, setActiveTab] = useState(isVendor ? 'New Orders' : 'All Orders');
+  const [tempEmail, setTempEmail] = useState('');
+  const TABS = isVendor ? VENDOR_TABS : CUSTOMER_TABS;
   const styles = getStyles(colors);
+
+  const { setGuestEmail: updateGuestEmail } = useAuthStore();
+
+  const handleTrackOrders = () => {
+    if (!tempEmail || !tempEmail.includes('@')) {
+      Alert.alert('Invalid Email', 'Please provide a valid email address to track your orders.');
+      return;
+    }
+    updateGuestEmail(tempEmail.trim().toLowerCase());
+  };
 
   useEffect(() => {
     let unsubscribe: () => void | undefined;
@@ -187,7 +201,34 @@ export default function OrdersScreen() {
           <View style={styles.emptyState}>
             <Ionicons name="bag-outline" size={64} color={colors.textTertiary} />
             <Text style={styles.emptyText}>No orders yet</Text>
-            <Text style={styles.emptySubtext}>{isVendor ? 'Orders for your products will appear here' : 'Your marketplace orders will appear here'}</Text>
+            {isGuest && !guestEmail ? (
+              <View style={{ width: '100%', marginTop: 20 }}>
+                <Text style={[styles.emptySubtext, { marginBottom: 15 }]}>
+                  Enter your email to track your marketplace orders
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <TextInput
+                    style={[styles.input, { flex: 1, height: 45, paddingHorizontal: 15, fontSize: 14 }]}
+                    placeholder="your@email.com"
+                    placeholderTextColor={colors.textTertiary}
+                    value={tempEmail}
+                    onChangeText={setTempEmail}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                  />
+                  <TouchableOpacity 
+                    style={{ backgroundColor: colors.textPrimary, paddingHorizontal: 20, borderRadius: 8, justifyContent: 'center' }}
+                    onPress={handleTrackOrders}
+                  >
+                    <Text style={{ color: colors.textInverse, fontWeight: '600' }}>Track</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <Text style={styles.emptySubtext}>
+                {isVendor ? 'Orders for your products will appear here' : 'Your marketplace orders will appear here'}
+              </Text>
+            )}
           </View>
         }
       />
@@ -200,6 +241,13 @@ const getStyles = (colors: any) => StyleSheet.create({
   centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: Spacing.lg, paddingTop: Spacing['5xl'], backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
   headerTitle: { fontSize: Typography.fontSize.xl, fontWeight: Typography.fontWeight.bold, color: colors.textPrimary },
+  input: {
+    backgroundColor: colors.background,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    color: colors.textPrimary,
+  },
   listContent: { padding: 20 },
   orderCard: {
     flexDirection: 'row',

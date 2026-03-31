@@ -494,29 +494,78 @@ export const firebaseService = {
     await deleteDoc(doc(db, 'vehicles', vehicleId));
   },
 
-  async getJobs(userId?: string, workshopId?: string, status?: string[]): Promise<Job[]> {
-    const constraints: QueryConstraint[] = [];
-    if (userId) {
-      constraints.push(where('userId', '==', userId));
-    }
-    if (workshopId) {
-      constraints.push(where('workshopId', '==', workshopId));
-    }
-    if (status && status.length > 0) {
-      constraints.push(where('status', 'in', status));
-    }
-    constraints.push(orderBy('createdAt', 'desc'));
+  async getJobs(userId?: string, workshopId?: string, status?: string[], technicianId?: string): Promise<Job[]> {
+    const jobMap = new Map<string, Job>();
 
-    const q = query(collection(db, 'jobs'), ...constraints);
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-      createdAt: doc.data().createdAt?.toDate(),
-      updatedAt: doc.data().updatedAt?.toDate(),
-      scheduledDate: doc.data().scheduledDate?.toDate(),
-      completedAt: doc.data().completedAt?.toDate(),
-    })) as Job[];
+    const processResults = (snapshot: any) => {
+      snapshot.docs.forEach((doc: any) => {
+        if (!jobMap.has(doc.id)) {
+          const data = doc.data();
+          jobMap.set(doc.id, {
+            id: doc.id,
+            ...data,
+            createdAt: data.createdAt?.toDate(),
+            updatedAt: data.updatedAt?.toDate(),
+            scheduledDate: data.scheduledDate?.toDate(),
+            completedAt: data.completedAt?.toDate(),
+          } as Job);
+        }
+      });
+    };
+
+    const runQuery = async (constraints: QueryConstraint[]) => {
+      try {
+        const q = query(collection(db, 'jobs'), ...constraints, orderBy('createdAt', 'desc'));
+        const snapshot = await getDocs(q);
+        processResults(snapshot);
+      } catch (err) {
+        console.error('[getJobs] Query failed:', err);
+        // Fallback or re-throw? Let's re-throw so and handle in UI
+        throw err;
+      }
+    };
+
+    const queryPromises = [];
+
+    if (userId) {
+      // Fetch by customer
+      const base = [where('userId', '==', userId)];
+      if (workshopId) base.push(where('workshopId', '==', workshopId));
+      if (status && status.length > 0) base.push(where('status', 'in', status));
+      queryPromises.push(runQuery(base));
+    } else if (technicianId) {
+      // Fetch by technician (Two fields: single and multi)
+      const base1 = [where('assignedTechnicianId', '==', technicianId)];
+      const base2 = [where('assignedTechnicianIds', 'array-contains', technicianId)];
+
+      if (workshopId) {
+        base1.push(where('workshopId', '==', workshopId));
+        base2.push(where('workshopId', '==', workshopId));
+      }
+      if (status && status.length > 0) {
+        base1.push(where('status', 'in', status));
+        base2.push(where('status', 'in', status));
+      }
+
+      queryPromises.push(runQuery(base1));
+      queryPromises.push(runQuery(base2));
+    } else if (workshopId) {
+      // Fetch everything for this workshop (admin mode)
+      const base = [where('workshopId', '==', workshopId)];
+      if (status && status.length > 0) base.push(where('status', 'in', status));
+      queryPromises.push(runQuery(base));
+    }
+
+    try {
+      await Promise.all(queryPromises);
+    } catch (e) {
+      // If one of the parallel queries fails due to missing index, etc.
+      console.log('[getJobs] Error waiting for queries:', e);
+    }
+
+    // Sort combined results by createdAt desc in memory
+    return Array.from(jobMap.values())
+      .sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
   },
 
   async getJob(jobId: string): Promise<Job | null> {

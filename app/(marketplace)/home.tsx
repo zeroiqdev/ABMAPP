@@ -35,6 +35,9 @@ const CATEGORIES = [
   'Tools',
 ];
 
+import { ActivityIndicator } from 'react-native';
+import { auth } from '@/config/firebase';
+
 export default function MarketplaceHomeScreen() {
   const router = useRouter();
   const { user, isGuest } = useAuthStore();
@@ -46,8 +49,6 @@ export default function MarketplaceHomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const cartItemCount = useCartStore((state) => state.getItemCount());
-
-
 
   const loadProducts = async () => {
     try {
@@ -116,11 +117,26 @@ export default function MarketplaceHomeScreen() {
     </TouchableOpacity >
   );
 
-  if (user?.role === 'vendor') {
-    if (user.vendorStatus === 'pending_details' || user.vendorStatus === 'rejected' || user.vendorStatus === 'pending_approval') {
+  const role = (user?.role || '').toLowerCase().trim();
+  const status = (user?.vendorStatus || '').toLowerCase().trim();
+
+  // Vendor Dashboard Logic
+  const isVendor = role === 'vendor' || !!user?.vendorStatus;
+  const isExplicitlyUnregistered = status === 'pending_details' || status === 'rejected' || status === 'pending_approval';
+
+  if (isVendor) {
+    if (isExplicitlyUnregistered) {
       return <View style={{ flex: 1, backgroundColor: colors.background }} />;
     }
     return <VendorHome />;
+  }
+
+  if (loading && products.length === 0) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
+        <ActivityIndicator size="large" color={colors.secondary} />
+      </View>
+    );
   }
 
   return (

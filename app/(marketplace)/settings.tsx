@@ -21,9 +21,11 @@ type AccountStep = 'email' | 'login' | 'create' | 'createCustomer' | 'selectWork
 
 export default function SettingsScreen() {
     const router = useRouter();
-    const { user, isGuest, setGuest, logout, acceptStaffInvite, registerCustomerAccount, guestEmail, setGuestEmail } = useAuthStore();
+    const { user, isGuest, setGuest, setUser, login, logout, acceptStaffInvite, registerCustomerAccount, guestEmail, setGuestEmail } = useAuthStore();
     const colors = useColors();
-    const styles = getStyles(colors);
+    const { themeMode } = useThemeStore();
+    const isDark = themeMode === 'dark';
+    const styles = getStyles(colors, isDark);
     const appearanceStyles = getAppearanceStyles(colors);
     const [pushEnabled, setPushEnabled] = useState(true);
     const [emailEnabled, setEmailEnabled] = useState(true);
@@ -126,6 +128,33 @@ export default function SettingsScreen() {
         }
     };
 
+    const handleDeleteAccount = async () => {
+        Alert.alert(
+            'Delete Account',
+            'Are you sure you want to delete your account? This action is permanent and cannot be undone.',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                { 
+                    text: 'Delete', 
+                    style: 'destructive',
+                    onPress: async () => {
+                        setLoading(true);
+                        try {
+                            await firebaseService.deleteAccount();
+                            await logout();
+                            setGuest(true);
+                            router.replace('/(marketplace)/home');
+                        } catch (error: any) {
+                            Alert.alert('Error', error.message || 'Failed to delete account');
+                        } finally {
+                            setLoading(false);
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
     const handleEmailContinue = async () => {
         const trimmedEmail = email.trim().toLowerCase();
         if (!trimmedEmail || !trimmedEmail.includes('@')) {
@@ -191,22 +220,21 @@ export default function SettingsScreen() {
         setError('');
 
         try {
-            const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
-            setGuest(false);
+            // Use the store's login() which atomically sets user + firebaseUser + isGuest
+            await login(email.trim(), password);
 
-            const userDocRef = doc(db, 'users', userCredential.user.uid);
-            const userDocSnap = await getDoc(userDocRef);
+            // Get the fully hydrated user from the store
+            const userData = useAuthStore.getState().user;
 
-            if (userDocSnap.exists()) {
-                const userData = userDocSnap.data();
+            if (userData) {
                 if (!userData.name || !userData.name.trim()) {
-                    setNewUserId(userCredential.user.uid);
+                    setNewUserId(userData.id);
                     setProfileName('');
                     setProfilePhone(userData.phone || '');
                     setStep('completeProfile');
                     return;
                 }
-                navigateUser({ ...userData, role: userData.role } as any);
+                navigateUser(userData);
             } else {
                 console.error('User document not found');
             }
@@ -216,6 +244,8 @@ export default function SettingsScreen() {
                 setStep('createCustomer');
             } else if (signInErr.code === 'auth/wrong-password') {
                 setError('Incorrect password.');
+            } else if (signInErr.message === 'User data not found') {
+                setError('Account not found. Please contact support.');
             } else {
                 setError(signInErr.message || 'Authentication failed.');
             }
@@ -225,17 +255,23 @@ export default function SettingsScreen() {
     };
 
     const navigateUser = (userData: any) => {
-        if (userData.role === 'super_admin' || workshopRoles.includes(userData.role)) {
+        // Ensure user is set in store before navigating
+        setUser(userData);
+        setGuest(false);
+
+        const role = (userData.role || '').toLowerCase().trim();
+        if (role === 'super_admin' || workshopRoles.includes(role)) {
             router.replace('/(workshop)/dashboard');
-        } else if (userData.role === 'vendor') {
-            if (userData.vendorStatus === 'active') {
+        } else if (role === 'vendor') {
+            const status = (userData.vendorStatus || '').toLowerCase().trim();
+            if (status === 'active') {
                 router.replace('/(marketplace)/home');
-            } else if (userData.vendorStatus === 'pending_approval') {
+            } else if (status === 'pending_approval') {
                 router.replace('/(marketplace)/pending-approval');
             } else {
                 router.replace('/(marketplace)/vendor-registration');
             }
-        } else if (userData.role === 'customer') {
+        } else if (role === 'customer') {
             router.replace('/(customer)/home');
         } else if (userData.workshopId) {
             router.replace('/(workshop)/dashboard');
@@ -252,50 +288,35 @@ export default function SettingsScreen() {
         setLoading(true);
         setError('');
         try {
-            const userCredential = await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
-            const userDocRef = doc(db, 'users', userCredential.user.uid);
-            const userDocSnap = await getDoc(userDocRef);
+            // Use the store's login() which atomically sets user + firebaseUser + isGuest
+            await login(email.trim().toLowerCase(), password);
 
-            if (!userDocSnap.exists()) {
+            // Get the fully hydrated user from the store
+            const userData = useAuthStore.getState().user;
+
+            if (!userData) {
                 setError('Account not found. Please contact support.');
                 setLoading(false);
                 return;
             }
 
-            const userData = userDocSnap.data();
-            setGuest(false);
-
             if (!userData.name || !userData.name.trim()) {
-                setNewUserId(userCredential.user.uid);
+                setNewUserId(userData.id);
                 setProfileName('');
                 setProfilePhone(userData.phone || '');
                 setStep('completeProfile');
                 return;
             }
 
-            if (userData.role === 'super_admin' || workshopRoles.includes(userData.role)) {
-                router.replace('/(workshop)/dashboard');
-            } else if (userData.role === 'vendor') {
-                if (userData.vendorStatus === 'active') {
-                    router.replace('/(marketplace)/home');
-                } else if (userData.vendorStatus === 'pending_approval') {
-                    router.replace('/(marketplace)/pending-approval');
-                } else {
-                    router.replace('/(marketplace)/vendor-registration');
-                }
-            } else if (userData.role === 'customer') {
-                router.replace('/(customer)/home');
-            } else if (userData.workshopId) {
-                router.replace('/(workshop)/dashboard');
-            } else {
-                router.replace('/(customer)/home');
-            }
+            navigateUser(userData);
         } catch (error: any) {
             let msg = 'Login failed. Please try again.';
             if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
                 msg = 'Incorrect email or password.';
             } else if (error.code === 'auth/too-many-requests') {
                 msg = 'Too many attempts. Please try again later.';
+            } else if (error.message === 'User data not found') {
+                msg = 'Account not found. Please contact support.';
             }
             setError(msg);
         } finally {
@@ -546,7 +567,7 @@ export default function SettingsScreen() {
                     {/* Member Mode Toggle */}
                     <View style={styles.section}>
                         <View style={[styles.menuItem, { justifyContent: 'space-between', paddingRight: 10 }]}>
-                            <Text style={styles.menuText}>Member Mode</Text>
+                            <Text style={styles.menuText}>Become a Member</Text>
                             <Switch
                                 value={isMemberModeFlow}
                                 onValueChange={(val) => {
@@ -895,9 +916,9 @@ export default function SettingsScreen() {
                 >
                     <View style={styles.modalOverlay}>
                         <View style={styles.modalContent}>
-                            <Text style={styles.modalTitle}>Member Mode</Text>
+                            <Text style={styles.modalTitle}>Become a Member</Text>
                             <Text style={styles.modalText}>
-                                Switch to Member Mode to access full features including workshop repairs and vendor tools. You'll need to create an account or sign in.
+                                This mode helps you manage your car repairs and stay updated with workshop operations.
                             </Text>
                             <View style={styles.modalButtons}>
                                 <TouchableOpacity
@@ -910,14 +931,14 @@ export default function SettingsScreen() {
                                     <Text style={styles.modalButtonTextSecondary}>Cancel</Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity
-                                    style={[styles.modalButton, styles.modalButtonSecondary]}
+                                    style={[styles.modalButton, styles.modalButtonPrimary]}
                                     onPress={() => {
                                         setShowMemberModeModal(false);
                                         setIsMemberModeFlow(false);
                                         router.push('/(marketplace)/member-auth');
                                     }}
                                 >
-                                    <Text style={styles.modalButtonTextSecondary}>Continue</Text>
+                                    <Text style={styles.modalButtonTextPrimary}>Continue</Text>
                                 </TouchableOpacity>
                             </View>
                         </View>
@@ -954,7 +975,16 @@ export default function SettingsScreen() {
                             <Ionicons name="person-circle-outline" size={24} color={colors.textPrimary} />
                         </View>
                         <View style={styles.rowContent}>
-                            <Text style={styles.rowTitle}>{user?.name || 'User'}</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                <Text style={styles.rowTitle}>{user?.name || 'User'}</Text>
+                                {user?.role && (
+                                    <View style={[styles.roleBadge, { backgroundColor: colors.secondary + '20' }]}>
+                                        <Text style={[styles.roleBadgeText, { color: colors.secondary }]}>
+                                            {user.role.charAt(0).toUpperCase() + user.role.slice(1).replace('_', ' ')}
+                                        </Text>
+                                    </View>
+                                )}
+                            </View>
                             <Text style={styles.rowSubtitle}>{user?.email}</Text>
                         </View>
                     </View>
@@ -962,6 +992,18 @@ export default function SettingsScreen() {
                         <Ionicons name="lock-closed-outline" size={22} color={colors.textPrimary} />
                         <Text style={styles.menuText}>Reset Password</Text>
                         <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+                    </TouchableOpacity>
+
+                    <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 10, opacity: 0.5 }} />
+
+                    <TouchableOpacity style={styles.menuItem} onPress={handleLogout}>
+                        <Ionicons name="log-out-outline" size={22} color={colors.error} />
+                        <Text style={[styles.menuText, { color: colors.error }]}>Log Out</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity style={styles.menuItem} onPress={handleDeleteAccount}>
+                        <Ionicons name="trash-outline" size={22} color={colors.error} />
+                        <Text style={[styles.menuText, { color: colors.error }]}>Delete Account</Text>
                     </TouchableOpacity>
                 </View>
 
@@ -1053,13 +1095,6 @@ export default function SettingsScreen() {
                             </View>
                         </View>
                         <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
-                    </TouchableOpacity>
-                </View>
-
-                <View style={styles.section}>
-                    <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-                        <Ionicons name="log-out-outline" size={22} color={colors.error} />
-                        <Text style={styles.logoutText}>Log Out</Text>
                     </TouchableOpacity>
                 </View>
             </ScrollView>
@@ -1158,7 +1193,7 @@ const getAppearanceStyles = (colors: any) => StyleSheet.create({
     },
 });
 
-const getStyles = (colors: any) => StyleSheet.create({
+const getStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: colors.background,
@@ -1253,6 +1288,16 @@ const getStyles = (colors: any) => StyleSheet.create({
         color: colors.error,
         fontWeight: '600',
         fontSize: 16,
+        marginTop: 5,
+    },
+    roleBadge: {
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 12,
+    },
+    roleBadgeText: {
+        fontSize: 10,
+        fontWeight: 'bold',
     },
     toggleRow: {
         flexDirection: 'row',
@@ -1350,20 +1395,22 @@ const getStyles = (colors: any) => StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
         width: '100%',
-        backgroundColor: colors.background,
+        backgroundColor: isDark ? '#fff' : (colors.surface || 'rgba(255, 255, 255, 0.05)'),
         padding: 12,
         borderRadius: 8,
         marginBottom: 15,
+        borderWidth: isDark ? 1 : 0,
+        borderColor: '#eee',
     },
     emailDisplayText: {
         fontSize: 14,
-        color: colors.textPrimary,
+        color: isDark ? '#000' : colors.textPrimary,
         flex: 1,
     },
     changeLink: {
-        color: colors.textPrimary,
+        color: isDark ? '#000' : (colors.primary || colors.textPrimary),
         fontSize: 14,
-        fontWeight: '500',
+        fontWeight: '600',
     },
     // Invitation info styles
     inviteInfoBox: {
@@ -1441,7 +1488,7 @@ const getStyles = (colors: any) => StyleSheet.create({
     modalButtonTextPrimary: {
         fontSize: 14,
         fontWeight: '600',
-        color: '#fff',
+        color: colors.textInverse,
     },
     // Create account link
     createAccountLink: {

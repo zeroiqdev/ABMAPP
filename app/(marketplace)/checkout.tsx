@@ -23,7 +23,7 @@ export default function CheckoutScreen() {
   const router = useRouter();
   const colors = useColors();
   const styles = getStyles(colors);
-  const { user, isGuest, guestEmail, setGuestEmail } = useAuthStore();
+  const { user, isGuest, guestEmail, setGuestEmail, setGuest } = useAuthStore();
   const { items: cartItems, getTotal, clearCart } = useCartStore();
   const [deliveryMethod, setDeliveryMethod] = useState<'delivery' | 'pickup'>('delivery');
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'monnify'>('card');
@@ -63,8 +63,11 @@ export default function CheckoutScreen() {
       return;
     }
 
-    // Save guest email if valid and we are in guest mode
-    if (isGuest && effectiveEmail) {
+    // PERSIST GUEST IDENTITY:
+    // If no user is logged in, treat them as a guest and save their email immediately.
+    // This allows them to see their order history without manually registering in settings.
+    if (!user && effectiveEmail) {
+      setGuest(true);
       setGuestEmail(effectiveEmail);
     }
 

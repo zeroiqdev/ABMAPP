@@ -42,7 +42,7 @@ const CATEGORIES = [
 
 export default function VendorUploadScreen() {
     const router = useRouter();
-    const { user } = useAuthStore();
+    const { user, isGuest } = useAuthStore();
     const colors = useColors();
     const styles = useMemo(() => getStyles(colors), [colors]);
 
@@ -233,11 +233,34 @@ export default function VendorUploadScreen() {
         </TouchableOpacity>
     );
 
-    if (!user || user.role !== 'vendor') {
+    const canManageProducts = useMemo(() => {
+        if (!user || !user.role) return false;
+        const normalizedRole = user.role.toLowerCase().trim();
+        const allowedRoles = ['vendor', 'super_admin', 'admin', 'technician', 'storekeeper', 'accountant', 'service_advisor'];
+        return allowedRoles.includes(normalizedRole);
+    }, [user]);
+
+    // If we have a Firebase session but no user document yet, show loading
+    // This prevents showing the "Lock" screen while data is still hydration
+    const isHydrating = !user && !isGuest; 
+
+    if (isHydrating) {
+        return (
+            <View style={styles.centerContainer}>
+                <ActivityIndicator size="large" color={colors.secondary} />
+                <Text style={[styles.errorText, { marginTop: 20 }]}>Loading Profile...</Text>
+            </View>
+        );
+    }
+
+    if (!canManageProducts) {
         return (
             <View style={styles.centerContainer}>
                 <Ionicons name="lock-closed-outline" size={64} color={colors.textTertiary} />
                 <Text style={styles.errorText}>Vendor Access Required</Text>
+                <Text style={{ color: colors.textTertiary, fontSize: 12, marginBottom: 20 }}>
+                    Current Role: {user?.role || 'Guest'}
+                </Text>
                 <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
                     <Text style={styles.backButtonText}>Go Back</Text>
                 </TouchableOpacity>

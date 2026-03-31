@@ -1,7 +1,11 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+// Import from @firebase/auth directly — its package.json has a "react-native" field
+// that Metro resolves to dist/rn/index.js, which exports getReactNativePersistence
+// @ts-ignore — TypeScript uses the default types which don't include RN exports
+import { initializeAuth, getReactNativePersistence } from '@firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 
 const getConfigValue = (extraKey: string): string => {
@@ -52,7 +56,9 @@ if (missingKeys.length > 0) {
 
 const app = initializeApp(firebaseConfig);
 
-export const auth = getAuth(app);
+export const auth = initializeAuth(app, {
+  persistence: getReactNativePersistence(AsyncStorage)
+});
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 
