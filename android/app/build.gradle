@@ -20,6 +20,9 @@ react {
     cliFile = new File(["node", "--print", "require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })"].execute(null, rootDir).text.trim())
     bundleCommand = "export:embed"
 
+    // V8 pointer compression is not compatible with 16 KB memory pages
+    v8_enable_pointer_compression = false
+
     /* Folders */
      //   The root of your project, i.e. where "package.json" lives. Default is '../..'
     // root = file("../../")
@@ -82,7 +85,8 @@ def enableMinifyInReleaseBuilds = (findProperty('android.enableMinifyInReleaseBu
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
 android {
-    ndkVersion rootProject.ext.ndkVersion
+    // 16 KB support requires NDK 27.2.12470550+
+    ndkVersion "27.2.12470550"
 
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
@@ -94,6 +98,16 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 25
         versionName "1.0.24"
+
+        // Align native libraries to 16 KB memory page boundaries
+        externalNativeBuild {
+            ndkBuild {
+                arguments "-Wl,-z,common-page-size=16384", "-Wl,-z,max-page-size=16384"
+            }
+            cmake {
+                cppFlags "-Wl,-z,common-page-size=16384", "-Wl,-z,max-page-size=16384"
+            }
+        }
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
