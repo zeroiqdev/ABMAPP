@@ -8,8 +8,10 @@ import {
   TextInput,
   Image,
   RefreshControl,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useMemo } from 'react';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { firebaseService } from '@/services/firebaseService';
@@ -19,8 +21,6 @@ import { useCartStore } from '@/store/cartStore';
 import { VendorHome } from '@/components/VendorHome';
 import { useColors } from '@/constants/design';
 
-const { width } = Dimensions.get('window');
-const COLUMN_WIDTH = (width - 40) / 2;
 
 const CATEGORIES = [
   'All',
@@ -39,10 +39,15 @@ import { ActivityIndicator } from 'react-native';
 import { auth } from '@/config/firebase';
 
 export default function MarketplaceHomeScreen() {
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const numColumns = width > 600 ? 3 : 2;
+  const COLUMN_WIDTH = (width - 32 - (numColumns - 1) * 16) / numColumns;
+
   const router = useRouter();
   const { user, isGuest } = useAuthStore();
   const colors = useColors();
-  const styles = getStyles(colors);
+  const styles = useMemo(() => getStyles(colors, insets, COLUMN_WIDTH), [colors, insets, COLUMN_WIDTH]);
   const [products, setProducts] = useState<MarketplaceProduct[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
@@ -208,12 +213,12 @@ export default function MarketplaceHomeScreen() {
           />
         </View>
 
-        {/* Products List */}
         <FlatList
+          key={numColumns} // Force re-render when column count changes
           data={products}
           renderItem={renderProduct}
           keyExtractor={(item) => item.id}
-          numColumns={2}
+          numColumns={numColumns}
           contentContainerStyle={styles.productsList}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -234,13 +239,13 @@ export default function MarketplaceHomeScreen() {
   );
 }
 
-const getStyles = (colors: any) => StyleSheet.create({
+const getStyles = (colors: any, insets: any, COLUMN_WIDTH: number) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
   },
   header: {
-    paddingTop: 60,
+    paddingTop: Math.max(insets.top, 20),
     paddingHorizontal: 20,
     paddingBottom: 15,
     backgroundColor: colors.surface,

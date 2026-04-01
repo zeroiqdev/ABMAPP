@@ -7,8 +7,9 @@ import {
   TouchableOpacity,
   RefreshControl,
   Image,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
 import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
@@ -20,14 +21,17 @@ import { firebaseService } from '@/services/firebaseService';
 import { BrandLogo } from '@/components/BrandLogo';
 import { CAR_BRANDS } from '@/constants/carBrands';
 
-const { width } = Dimensions.get('window');
-const PRODUCT_CARD_WIDTH = (width - 40) / 2;
 
 export default function CustomerHomeScreen() {
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const columnCount = width > 600 ? 3 : 2;
+  const PRODUCT_CARD_WIDTH = (width - 32 - (columnCount - 1) * 12) / columnCount;
+
   const { user } = useAuthStore();
   const router = useRouter();
   const colors = useColors();
-  const styles = useMemo(() => getStyles(colors), [colors]);
+  const styles = useMemo(() => getStyles(colors, insets, PRODUCT_CARD_WIDTH), [colors, insets, PRODUCT_CARD_WIDTH]);
   const [activeTab, setActiveTab] = useState<'tow' | 'repairs' | 'orders'>('repairs');
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
 
@@ -287,7 +291,7 @@ export default function CustomerHomeScreen() {
   );
 }
 
-const getStyles = (colors: any) => StyleSheet.create({
+const getStyles = (colors: any, insets: any, PRODUCT_CARD_WIDTH: number) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
@@ -297,7 +301,7 @@ const getStyles = (colors: any) => StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: Spacing.lg,
-    paddingTop: Spacing['5xl'],
+    paddingTop: Math.max(insets.top, Spacing.lg),
     backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
@@ -479,9 +483,10 @@ const getStyles = (colors: any) => StyleSheet.create({
   productsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     paddingHorizontal: 16,
     paddingTop: Spacing.base,
+    gap: 12,
   },
   productCard: {
     width: PRODUCT_CARD_WIDTH,

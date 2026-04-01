@@ -21,7 +21,7 @@ react {
     bundleCommand = "export:embed"
 
     // V8 pointer compression is not compatible with 16 KB memory pages
-    v8_enable_pointer_compression = false
+    // (Only applicable if using V8 engine, not Hermes)
 
     /* Folders */
      //   The root of your project, i.e. where "package.json" lives. Default is '../..'
@@ -96,18 +96,11 @@ android {
         applicationId 'com.abmtek.abmapp'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 25
-        versionName "1.0.24"
+        versionCode 26
+        versionName "1.0.25"
 
-        // Align native libraries to 16 KB memory page boundaries
-        externalNativeBuild {
-            ndkBuild {
-                arguments "-Wl,-z,common-page-size=16384", "-Wl,-z,max-page-size=16384"
-            }
-            cmake {
-                cppFlags "-Wl,-z,common-page-size=16384", "-Wl,-z,max-page-size=16384"
-            }
-        }
+        // 16 KB memory page alignment is handled automatically by the Android Gradle Plugin
+        // and NDK 27+ when android.bundle.enable16kAlignment=true is set in gradle.properties
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }

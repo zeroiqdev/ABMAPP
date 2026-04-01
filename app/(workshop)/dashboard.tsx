@@ -13,7 +13,9 @@ import {
   Image,
   Modal,
   ActivityIndicator,
+  useWindowDimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
@@ -28,19 +30,19 @@ import { AppConfig } from '@/constants/config';
 
 
 
-const { width } = Dimensions.get('window');
-const CARD_SPACING = 16; // Changed from 15
-const SIDE_PADDING = 20; // Changed from (width - CARD_WIDTH) / 2
-const CARD_WIDTH = width - (SIDE_PADDING * 2); // Changed from width * 0.85
-
-
-
 
 export default function WorkshopDashboard() {
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  
+  const CARD_SPACING = 16;
+  const SIDE_PADDING = 20;
+  const CARD_WIDTH = width - (SIDE_PADDING * 2);
+
   const { user } = useAuthStore();
   const router = useRouter();
   const colors = useColors();
-  const styles = useMemo(() => getStyles(colors), [colors]);
+  const styles = useMemo(() => getStyles(colors, insets, CARD_WIDTH, SIDE_PADDING, CARD_SPACING), [colors, insets, CARD_WIDTH, SIDE_PADDING, CARD_SPACING]);
   const { themeMode } = useThemeStore();
   const [dateRange, setDateRange] = useState<{ start: Date; end: Date }>({
     start: startOfMonth(new Date()),
@@ -121,10 +123,10 @@ export default function WorkshopDashboard() {
 
       // Calculate Revenue based on Payment History within the period
       const calculateRevenueForPeriod = (start: Date, end: Date) => {
-        return safeInvoices.reduce((sum, inv) => {
+        return safeInvoices.reduce((sum: number, inv: any) => {
           if (!inv || !inv.paymentHistory || !Array.isArray(inv.paymentHistory) || inv.paymentHistory.length === 0) return sum;
 
-          const periodPayments = inv.paymentHistory.filter((payment) => {
+          const periodPayments = inv.paymentHistory.filter((payment: any) => {
             if (!payment || !payment.date) return false;
             try {
               const pDate = payment.date;
@@ -135,7 +137,7 @@ export default function WorkshopDashboard() {
             }
           });
 
-          return sum + periodPayments.reduce((pSum, p) => pSum + (p?.amount || 0), 0);
+          return sum + periodPayments.reduce((pSum: number, p: any) => pSum + (p?.amount || 0), 0);
         }, 0);
       };
 
@@ -144,7 +146,7 @@ export default function WorkshopDashboard() {
       const lastMonthRevenue = calculateRevenueForPeriod(prevPeriodStart, prevPeriodEnd);
 
       // --- New Metrics: Outstanding Payments & Pending Jobs ---
-      const totalOwed = safeInvoices.reduce((sum, inv) => {
+      const totalOwed = safeInvoices.reduce((sum: number, inv: any) => {
         const paid = inv.amountPaid || 0;
         const total = inv.total || 0;
         const balance = total - paid;
@@ -175,7 +177,7 @@ export default function WorkshopDashboard() {
           if (techNames.length === 0) return;
 
           // Only count payments in current period
-          const periodPayments = inv.paymentHistory.filter((payment) => {
+          const periodPayments = inv.paymentHistory.filter((payment: any) => {
             if (!payment || !payment.date) return false;
             try {
               const pDate = payment.date;
@@ -187,7 +189,7 @@ export default function WorkshopDashboard() {
           });
 
           if (periodPayments.length > 0) {
-            const amount = periodPayments.reduce((sum, p) => sum + (p?.amount || 0), 0);
+            const amount = periodPayments.reduce((sum: number, p: any) => sum + (p?.amount || 0), 0);
             // Distribute revenue to all assigned technicians (or just assign to each for simple breakdown)
             techNames.forEach(techName => {
               const current = techRevenueMap.get(techName) || 0;
@@ -287,7 +289,7 @@ export default function WorkshopDashboard() {
 
       // --- Birthdays Today ---
       const today = format(new Date(), 'MM-dd');
-      const celebratingToday = allUsers.filter(u => {
+      const celebratingToday = allUsers.filter((u: any) => {
         if (!u.birthday) return false;
         // birthday format: YYYY-MM-DD or MM-DD
         return u.birthday.includes(today);
@@ -313,6 +315,7 @@ export default function WorkshopDashboard() {
       <StatusBar barStyle={themeMode === 'dark' ? "light-content" : "dark-content"} />
       <DashboardHeader
         user={user}
+        styles={styles}
       />
 
       <ScrollView
@@ -322,7 +325,7 @@ export default function WorkshopDashboard() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textPrimary} />
         }
       >
-        {getRoleDashboard({ user, stats, recentJobs, recentJobVehicles, birthdaysToday, onOpenMonthPicker: () => setMonthPickerVisible(true) })}
+      {getRoleDashboard({ user, stats, recentJobs, recentJobVehicles, birthdaysToday, onOpenMonthPicker: () => setMonthPickerVisible(true), styles, CARD_WIDTH, CARD_SPACING, SIDE_PADDING })}
       </ScrollView>
 
       <MonthPickerModal
@@ -335,20 +338,61 @@ export default function WorkshopDashboard() {
   );
 }
 
-function getRoleDashboard({ user, stats, recentJobs, recentJobVehicles, birthdaysToday, onOpenMonthPicker }: { user: any, stats: any, recentJobs: Job[], recentJobVehicles: Record<string, any>, birthdaysToday: User[], onOpenMonthPicker: () => void }) {
-  const router = useRouter();
-
+function getRoleDashboard({
+  user,
+  stats,
+  recentJobs,
+  recentJobVehicles,
+  birthdaysToday,
+  onOpenMonthPicker,
+  styles,
+  CARD_WIDTH,
+  CARD_SPACING,
+  SIDE_PADDING
+}: {
+  user: any,
+  stats: any,
+  recentJobs: Job[],
+  recentJobVehicles: Record<string, any>,
+  birthdaysToday: User[],
+  onOpenMonthPicker: () => void,
+  styles: any,
+  CARD_WIDTH: number,
+  CARD_SPACING: number,
+  SIDE_PADDING: number
+}) {
   switch (user?.role) {
     case 'admin':
     case 'super_admin':
-      return <AdminDashboard user={user} stats={stats} recentJobs={recentJobs} recentJobVehicles={recentJobVehicles} birthdaysToday={birthdaysToday} onOpenMonthPicker={onOpenMonthPicker} />;
+      return <AdminDashboard
+        user={user}
+        stats={stats}
+        recentJobs={recentJobs}
+        recentJobVehicles={recentJobVehicles}
+        birthdaysToday={birthdaysToday}
+        onOpenMonthPicker={onOpenMonthPicker}
+        styles={styles}
+        CARD_WIDTH={CARD_WIDTH}
+        CARD_SPACING={CARD_SPACING}
+        SIDE_PADDING={SIDE_PADDING}
+      />;
     case 'technician':
-      return <TechnicianDashboard stats={stats} recentJobs={recentJobs} recentJobVehicles={recentJobVehicles} onOpenMonthPicker={onOpenMonthPicker} />;
+      return <TechnicianDashboard
+        stats={stats}
+        recentJobs={recentJobs}
+        recentJobVehicles={recentJobVehicles}
+        onOpenMonthPicker={onOpenMonthPicker}
+        styles={styles}
+        SIDE_PADDING={SIDE_PADDING}
+        CARD_WIDTH={CARD_WIDTH}
+        CARD_SPACING={CARD_SPACING}
+      />;
     default:
       // If user ends up here without dashboard access, redirect them to finance (most common for custom roles)
       // The layout's initialRouteName should handle this, but as fallback redirect to finance
+      const localRouter = useRouter();
       useEffect(() => {
-        router.replace('/(workshop)/finance');
+        localRouter.replace('/(workshop)/finance');
       }, []);
       return (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 }}>
@@ -363,12 +407,13 @@ function getRoleDashboard({ user, stats, recentJobs, recentJobVehicles, birthday
 
 function DashboardHeader({
   user,
+  styles,
 }: {
   user: any;
+  styles: any;
 }) {
   const router = useRouter();
   const colors = useColors();
-  const styles = useMemo(() => getStyles(colors), [colors]);
 
   return (
     <View style={[styles.headerContainer, { backgroundColor: colors.background }]}>
@@ -392,10 +437,9 @@ function DashboardHeader({
   );
 }
 
-function TechnicianDashboard({ stats, recentJobs, recentJobVehicles, onOpenMonthPicker }: { stats: any, recentJobs: Job[], recentJobVehicles: Record<string, any>, onOpenMonthPicker: () => void }) {
+function TechnicianDashboard({ stats, recentJobs, recentJobVehicles, onOpenMonthPicker, styles, SIDE_PADDING, CARD_WIDTH, CARD_SPACING }: { stats: any, recentJobs: Job[], recentJobVehicles: Record<string, any>, onOpenMonthPicker: () => void, styles: any, SIDE_PADDING: number, CARD_WIDTH: number, CARD_SPACING: number }) {
   const router = useRouter();
   const colors = useColors();
-  const styles = useMemo(() => getStyles(colors), [colors]);
 
   return (
     <View style={styles.contentContainer}>
@@ -415,7 +459,8 @@ function TechnicianDashboard({ stats, recentJobs, recentJobVehicles, onOpenMonth
             <WeeklyMetricsCard
               assigned={stats.techWeeklyAssigned}
               completed={stats.techWeeklyCompleted}
-              onPressIcon={onOpenMonthPicker}
+              onOpenMonthPicker={onOpenMonthPicker}
+              styles={styles}
             />
           </View>
         </ScrollView>
@@ -432,7 +477,7 @@ function TechnicianDashboard({ stats, recentJobs, recentJobVehicles, onOpenMonth
           </View>
         ) : (
           recentJobs.map((job) => (
-            <RecentJobItem key={job.id} job={job} vehicle={recentJobVehicles[job.id]} />
+            <RecentJobItem key={job.id} job={job} vehicle={recentJobVehicles[job.id]} styles={styles} />
           ))
         )}
       </View>
@@ -440,15 +485,14 @@ function TechnicianDashboard({ stats, recentJobs, recentJobVehicles, onOpenMonth
   );
 }
 
-function WeeklyMetricsCard({ assigned, completed, onPressIcon }: { assigned: number, completed: number, onPressIcon?: () => void }) {
+function WeeklyMetricsCard({ assigned, completed, onOpenMonthPicker, styles }: { assigned: number, completed: number, onOpenMonthPicker?: () => void, styles: any }) {
   const colors = useColors();
-  const styles = useMemo(() => getStyles(colors), [colors]);
   return (
     <View style={[styles.blackCard, { backgroundColor: colors.secondary }]}>
       <View style={[styles.metricHeader, { alignItems: 'center' }]}>
         <Text style={[styles.metricTitle, { color: colors.textInverse }]}>Weekly Overview</Text>
-        {onPressIcon && (
-          <TouchableOpacity onPress={onPressIcon} style={[styles.metricIconCircle, { backgroundColor: colors.surface }]}>
+        {onOpenMonthPicker && (
+          <TouchableOpacity onPress={onOpenMonthPicker} style={[styles.metricIconCircle, { backgroundColor: colors.surface }]}>
             <Ionicons name="calendar-outline" size={16} color={colors.textPrimary} />
           </TouchableOpacity>
         )}
@@ -479,6 +523,10 @@ function AdminDashboard({
   recentJobVehicles,
   birthdaysToday,
   onOpenMonthPicker,
+  styles,
+  CARD_WIDTH,
+  CARD_SPACING,
+  SIDE_PADDING,
 }: {
   user: any;
   stats: any;
@@ -486,10 +534,13 @@ function AdminDashboard({
   recentJobVehicles: Record<string, any>;
   birthdaysToday: User[];
   onOpenMonthPicker: () => void;
+  styles: any;
+  CARD_WIDTH: number;
+  CARD_SPACING: number;
+  SIDE_PADDING: number;
 }) {
   const router = useRouter();
   const colors = useColors();
-  const styles = useMemo(() => getStyles(colors), [colors]);
   const [activeIndex, setActiveIndex] = useState(0);
 
   const calculateGrowth = (current: number, previous: number) => {
@@ -530,12 +581,13 @@ function AdminDashboard({
               growth={revenueGrowth}
               chartData={[40, 60, 45, 70, 80, 65, 85]}
               onPressIcon={onOpenMonthPicker}
+              styles={styles}
             />
           </View>
 
           {/* Slide 2: Technician Revenue */}
           <View style={styles.slideContainer}>
-            <TechnicianRevenueCard data={stats.technicianRevenue} />
+            <TechnicianRevenueCard data={stats.technicianRevenue} styles={styles} />
           </View>
 
           {/* Slide 3: Outstanding Payments */}
@@ -543,10 +595,11 @@ function AdminDashboard({
             <MetricCard
               title="Outstanding Payments"
               value={`₦${stats.totalOwed.toLocaleString()}`}
-              growth={0} // No growth tracking for now
+              growth={0}
               chartData={[50, 40, 60, 55, 70, 45, 60]} // Mock trend
               isCurrency={true}
               hideGrowth={true}
+              styles={styles}
             />
           </View>
 
@@ -559,6 +612,7 @@ function AdminDashboard({
               chartData={[30, 45, 35, 50, 40, 55, 45]}
               isCurrency={false}
               hideGrowth={true}
+              styles={styles}
             />
           </View>
 
@@ -571,13 +625,14 @@ function AdminDashboard({
               chartData={[20, 30, 25, 40, 35, 50, 45]}
               isCurrency={false}
               onPressIcon={onOpenMonthPicker}
+              styles={styles}
             />
           </View>
 
           {/* Birthdays Today */}
           {birthdaysToday.length > 0 && (
             <View style={styles.slideContainer}>
-              <BirthdayCard users={birthdaysToday} />
+              <BirthdayCard users={birthdaysToday} styles={styles} />
             </View>
           )}
         </ScrollView>
@@ -649,7 +704,7 @@ function AdminDashboard({
           </View>
         ) : (
           recentJobs.map((job) => (
-            <RecentJobItem key={job.id} job={job} vehicle={recentJobVehicles[job.id]} />
+            <RecentJobItem key={job.id} job={job} vehicle={recentJobVehicles[job.id]} styles={styles} />
           ))
         )}
       </View>
@@ -665,6 +720,7 @@ function MetricCard({
   isCurrency = true,
   onPressIcon,
   hideGrowth,
+  styles,
 }: {
   title: string;
   value: string;
@@ -673,9 +729,9 @@ function MetricCard({
   isCurrency?: boolean;
   onPressIcon?: () => void;
   hideGrowth?: boolean;
+  styles: any;
 }) {
   const colors = useColors();
-  const styles = useMemo(() => getStyles(colors), [colors]);
   const isPositive = growth >= 0;
 
   return (
@@ -736,11 +792,10 @@ function MetricCard({
   );
 }
 
-function TechnicianRevenueCard({ data }: { data: { name: string; amount: number }[] }) {
+function TechnicianRevenueCard({ data, styles }: { data: { name: string; amount: number }[], styles: any }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [pickerVisible, setPickerVisible] = useState(false);
   const colors = useColors();
-  const styles = useMemo(() => getStyles(colors), [colors]);
 
   // Reset to 0 when data changes so we always show top tech initially
   useEffect(() => {
@@ -827,10 +882,9 @@ function TechnicianRevenueCard({ data }: { data: { name: string; amount: number 
   );
 }
 
-function RecentJobItem({ job, vehicle }: { job: Job, vehicle?: any }) {
+function RecentJobItem({ job, vehicle, styles }: { job: Job, vehicle?: any, styles: any }) {
   const router = useRouter();
   const colors = useColors();
-  const styles = useMemo(() => getStyles(colors), [colors]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -890,9 +944,8 @@ function RecentJobItem({ job, vehicle }: { job: Job, vehicle?: any }) {
 
 
 
-function BirthdayCard({ users }: { users: User[] }) {
+function BirthdayCard({ users, styles }: { users: User[], styles: any }) {
   const colors = useColors();
-  const styles = useMemo(() => getStyles(colors), [colors]);
 
   return (
     <View style={[styles.blackCard, { backgroundColor: colors.secondary }]}>
@@ -920,30 +973,30 @@ function BirthdayCard({ users }: { users: User[] }) {
   );
 }
 
-const getStyles = (colors: any) => StyleSheet.create({
+const getStyles = (colors: any, insets: any, CARD_WIDTH: number, SIDE_PADDING: number, CARD_SPACING: number) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   headerContainer: {
-    backgroundColor: colors.surface,
-    paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.sm,
-    paddingTop: Platform.OS === 'android' ? 40 : Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
   headerContent: {
+    paddingHorizontal: SIDE_PADDING,
+    paddingTop: Math.max(insets.top, 10),
+    paddingBottom: 15,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
   headerGreeting: {
     fontSize: Typography.fontSize.sm,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   headerName: {
     fontSize: Typography.fontSize.xl,
     fontWeight: Typography.fontWeight.bold,
-    color: Colors.textPrimary,
+    color: colors.textPrimary,
   },
   headerActions: {
     flexDirection: 'row',

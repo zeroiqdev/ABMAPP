@@ -29,16 +29,13 @@ export default function CustomerLayout() {
         tabBarActiveTintColor: colors.secondary,
         tabBarInactiveTintColor: colors.textSecondary,
         tabBarStyle: {
-          position: 'absolute',
-          backgroundColor: 'transparent',
-          borderTopWidth: 0,
-          elevation: 0,
-          height: 60 + (Platform.OS === 'ios' ? insets.bottom : Math.max(insets.bottom, 20)),
-          paddingBottom: Platform.OS === 'ios' ? insets.bottom : Math.max(insets.bottom, 20),
+          backgroundColor: colors.surface,
+          borderTopWidth: 1,
+          borderTopColor: colors.border,
+          height: 60 + (Platform.OS === 'ios' ? insets.bottom : Math.max(insets.bottom, 10)),
+          paddingBottom: Platform.OS === 'ios' ? insets.bottom : Math.max(insets.bottom, 10),
         },
-        tabBarBackground: () => (
-          <BlurView intensity={80} tint={colors.background === '#000000' ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-        ),
+        tabBarBackground: undefined,
       }}
     >
       <Tabs.Screen
